@@ -27,6 +27,7 @@ struct BottleCreationView: View {
     @State private var newBottleURL: URL = UserDefaults.standard.url(forKey: "defaultBottleLocation")
                                            ?? BottleData.defaultBottleDir
     @State private var nameValid: Bool = false
+    @State private var missingDependencies: [Wine.RuntimeDependency] = Wine.missingRuntimeDependencies()
 
     @Environment(\.dismiss) private var dismiss
 
@@ -61,6 +62,35 @@ struct BottleCreationView: View {
                         }
                     }
                 }
+
+                if !missingDependencies.isEmpty {
+                    Section {
+                        ForEach(missingDependencies) { dependency in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(dependency.displayName)
+                                    .font(.headline)
+                                Text(dependency.required ? "Required" : "Optional")
+                                    .font(.caption)
+                                    .foregroundStyle(dependency.required ? .red : .secondary)
+                                Text(dependency.reason)
+                                    .foregroundStyle(.secondary)
+                                Text(dependency.installHint)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                            .padding(.vertical, 4)
+                        }
+
+                        Button("Re-check Dependencies") {
+                            missingDependencies = Wine.missingRuntimeDependencies()
+                        }
+                    } header: {
+                        Text("Wine Runtime Dependencies")
+                    } footer: {
+                        Text("Bottle creation is blocked until required Wine runtime dependencies are available.")
+                    }
+                }
             }
             .formStyle(.grouped)
             .navigationTitle("create.title")
@@ -76,11 +106,16 @@ struct BottleCreationView: View {
                         submit()
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!nameValid)
+                    .disabled(!nameValid || !missingDependencies.isEmpty)
                 }
             }
             .onSubmit {
-                submit()
+                if nameValid && missingDependencies.isEmpty {
+                    submit()
+                }
+            }
+            .onAppear {
+                missingDependencies = Wine.missingRuntimeDependencies()
             }
         }
         .fixedSize(horizontal: false, vertical: true)

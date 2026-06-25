@@ -62,6 +62,33 @@ public class Tar {
             }
         }
     }
+
+    public static func list(tarBall: URL) throws -> [String] {
+        let process = Process()
+        let pipe = Pipe()
+
+        process.executableURL = tarBinary
+        process.arguments = ["-tzf", "\(tarBall.path)"]
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        try process.run()
+
+        if let output = try pipe.fileHandleForReading.readToEnd() {
+            let outputString = String(data: output, encoding: .utf8) ?? String()
+            process.waitUntilExit()
+            let status = process.terminationStatus
+            if status != 0 {
+                throw outputString
+            }
+
+            return outputString
+                .split(whereSeparator: \.isNewline)
+                .map(String.init)
+        }
+
+        return []
+    }
 }
 
 extension String: @retroactive Error {}

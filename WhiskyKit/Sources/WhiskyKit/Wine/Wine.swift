@@ -1,3 +1,5 @@
+// swiftlint:disable file_length
+
 //
 //  Wine.swift
 //  Whisky
@@ -22,6 +24,10 @@ import os.log
 public class Wine {
     /// URL to the installed `DXVK` folder
     private static let dxvkFolder: URL = WhiskyWineInstaller.libraryFolder.appending(path: "DXVK")
+    /// URL to the installed Wine `lib` directory.
+    private static let wineLibraryFolder: URL = WhiskyWineInstaller.libraryFolder
+        .appending(path: "Wine")
+        .appending(path: "lib")
     /// Path to the `wine64` binary
     public static let wineBinary: URL = WhiskyWineInstaller.binFolder.appending(path: "wine64")
     /// Parth to the `wineserver` binary
@@ -126,6 +132,8 @@ public class Wine {
     public static func generateTerminalEnvironmentCommand(bottle: Bottle) -> String {
         var cmd = """
         export PATH=\"\(WhiskyWineInstaller.binFolder.path):$PATH\"
+        export DYLD_LIBRARY_PATH=\"\(wineLibraryFolder.path):${DYLD_LIBRARY_PATH:-}\"
+        export DYLD_FALLBACK_LIBRARY_PATH=\"\(wineLibraryFolder.path):${DYLD_FALLBACK_LIBRARY_PATH:-}\"
         export WINE=\"wine64\"
         alias wine=\"wine64\"
         alias winecfg=\"wine64 winecfg\"
@@ -173,7 +181,7 @@ public class Wine {
         var result: [String] = []
         let fileHandle = try makeFileHandle()
         fileHandle.writeApplicaitonInfo()
-        var environment = environment
+        var environment = constructWineRuntimeEnvironment(environment)
 
         if let bottle = bottle {
             fileHandle.writeInfo(for: bottle)
@@ -229,11 +237,11 @@ public class Wine {
     private static func constructWineEnvironment(
         for bottle: Bottle, environment: [String: String] = [:]
     ) -> [String: String] {
-        var result: [String: String] = [
+        var result = constructWineRuntimeEnvironment([
             "WINEPREFIX": bottle.url.path,
             "WINEDEBUG": "fixme-all",
             "GST_DEBUG": "1"
-        ]
+        ])
         bottle.settings.environmentVariables(wineEnv: &result)
         guard !environment.isEmpty else { return result }
         result.merge(environment, uniquingKeysWith: { $1 })
@@ -244,14 +252,70 @@ public class Wine {
     private static func constructWineServerEnvironment(
         for bottle: Bottle, environment: [String: String] = [:]
     ) -> [String: String] {
-        var result: [String: String] = [
+        var result = constructWineRuntimeEnvironment([
             "WINEPREFIX": bottle.url.path,
             "WINEDEBUG": "fixme-all",
             "GST_DEBUG": "1"
+        ])
+        guard !environment.isEmpty else { return result }
+        result.merge(environment, uniquingKeysWith: { $1 })
+        return result
+    }
+
+    private static func constructWineRuntimeEnvironment(_ environment: [String: String] = [:]) -> [String: String] {
+        var result: [String: String] = [
+            "PATH": [
+                WhiskyWineInstaller.binFolder.path,
+                ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+            ].joined(separator: ":"),
+            "DYLD_LIBRARY_PATH": wineLibraryFolder.path,
+            "DYLD_FALLBACK_LIBRARY_PATH": wineLibraryFolder.path
         ]
         guard !environment.isEmpty else { return result }
         result.merge(environment, uniquingKeysWith: { $1 })
         return result
+    }
+}
+
+public extension Wine {
+    struct RuntimeDependency: Identifiable, Sendable {
+        public let id: String
+        public let libraryName: String
+        public let displayName: String
+        public let reason: String
+        public let installHint: String
+        public let required: Bool
+
+        public var isInstalled: Bool {
+            FileManager.default.fileExists(atPath: Wine.wineLibraryFolder.appending(path: libraryName).path)
+        }
+    }
+
+    static let runtimeDependencies: [RuntimeDependency] = [
+        RuntimeDependency(
+            id: "freetype",
+            libraryName: "libfreetype.6.dylib",
+            displayName: "FreeType",
+            reason: "Wine uses FreeType to render Windows fonts.",
+            installHint: "Rebuild the Sikarugir archive with FreeType bundled, " +
+                "or install FreeType locally for development with: brew install freetype",
+            required: true
+        ),
+        RuntimeDependency(
+            id: "gnutls",
+            libraryName: "libgnutls.30.dylib",
+            displayName: "GnuTLS",
+            reason: "Wine uses GnuTLS for encrypted connections and certificate import/export.",
+            installHint: "Rebuild the Sikarugir archive with GnuTLS bundled, " +
+                "or install GnuTLS locally for development with: brew install gnutls",
+            required: true
+        )
+    ]
+
+    static func missingRuntimeDependencies(requiredOnly: Bool = true) -> [RuntimeDependency] {
+        runtimeDependencies.filter { dependency in
+            (!requiredOnly || dependency.required) && !dependency.isInstalled
+        }
     }
 }
 

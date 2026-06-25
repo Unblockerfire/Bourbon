@@ -68,10 +68,11 @@ struct WhiskyWineInstallView: View {
         }
         .frame(width: 400, height: 200)
         .onAppear {
+            let archiveURL = tarLocation
             Task {
                 do {
                     try await Task.detached(priority: .userInitiated) {
-                        try WhiskyWineInstaller.install(from: tarLocation)
+                        try WhiskyWineInstaller.install(from: archiveURL)
                     }.value
                     installing = false
                     try await Task.sleep(nanoseconds: 2_000_000_000)

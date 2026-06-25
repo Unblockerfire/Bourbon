@@ -18,6 +18,9 @@ Optional local sidecars, no downloads:
   SIKARUGIR_DXVK_DIR       Default: ../WhiskyBuilder/DXVK when present
   SIKARUGIR_WINETRICKS     Path to a local winetricks executable
   SIKARUGIR_VERBS_TXT      Path to a local winetricks verbs.txt
+  SIKARUGIR_HOMEBREW_LIB_DIR
+                           Default: /opt/homebrew/lib; used only to bundle
+                           already-installed runtime dylibs for testing.
 
 Expected Sikarugir input:
   wswine.bundle/
@@ -57,6 +60,7 @@ default_dxvk_dir="$repo_root/../WhiskyBuilder/DXVK"
 dxvk_dir="${SIKARUGIR_DXVK_DIR:-}"
 winetricks_path="${SIKARUGIR_WINETRICKS:-}"
 verbs_path="${SIKARUGIR_VERBS_TXT:-}"
+homebrew_lib_dir="${SIKARUGIR_HOMEBREW_LIB_DIR:-/opt/homebrew/lib}"
 
 require_command() {
   local command_name="$1"
@@ -90,6 +94,132 @@ require_file() {
   if [[ ! -f "$path" ]]; then
     echo "Missing $label file: $path" >&2
     exit 1
+  fi
+}
+
+resolve_path() {
+  local path="$1"
+  local target
+  while [[ -L "$path" ]]; do
+    target="$(readlink "$path")"
+    if [[ "$target" = /* ]]; then
+      path="$target"
+    else
+      path="$(dirname "$path")/$target"
+    fi
+  done
+  local dir
+  dir="$(cd "$(dirname "$path")" && pwd -P)"
+  echo "$dir/$(basename "$path")"
+}
+
+is_system_dylib() {
+  local path="$1"
+  [[ "$path" == /usr/lib/* || "$path" == /System/Library/* ]]
+}
+
+is_homebrew_dylib() {
+  local path="$1"
+  [[ "$path" == /opt/homebrew/* || "$path" == "$homebrew_lib_dir"/* ]]
+}
+
+copied_runtime_files=""
+
+has_copied_runtime_file() {
+  local basename="$1"
+  [[ "$copied_runtime_files" == *"|$basename|"* ]]
+}
+
+copy_runtime_dylib_closure() {
+  local dylib_path="$1"
+  local resolved
+  resolved="$(resolve_path "$dylib_path")"
+  local basename
+  basename="$(basename "$dylib_path")"
+
+  if has_copied_runtime_file "$basename"; then
+    return
+  fi
+
+  echo "Bundling runtime dependency: $basename"
+  cp "$resolved" "$wine_dir/lib/$basename"
+  chmod u+w "$wine_dir/lib/$basename"
+  copied_runtime_files="${copied_runtime_files}|${basename}|"
+
+  while IFS= read -r dependency; do
+    if [[ -z "$dependency" ]] || is_system_dylib "$dependency"; then
+      continue
+    fi
+    if is_homebrew_dylib "$dependency"; then
+      copy_runtime_dylib_closure "$dependency"
+    fi
+  done < <(otool -L "$resolved" | awk 'NR > 1 { print $1 }')
+}
+
+rewrite_bundled_runtime_dylibs() {
+  local dylib
+  shopt -s nullglob
+  for dylib in "$wine_dir/lib"/*.dylib; do
+    local basename
+    basename="$(basename "$dylib")"
+    if ! has_copied_runtime_file "$basename"; then
+      continue
+    fi
+
+    install_name_tool -id "@rpath/$basename" "$dylib"
+    while IFS= read -r dependency; do
+      if [[ -z "$dependency" ]] || is_system_dylib "$dependency"; then
+        continue
+      fi
+
+      local dependency_basename
+      dependency_basename="$(basename "$dependency")"
+      if has_copied_runtime_file "$dependency_basename"; then
+        install_name_tool -change "$dependency" "@rpath/$dependency_basename" "$dylib"
+      fi
+    done < <(otool -L "$dylib" | awk 'NR > 1 { print $1 }')
+
+    if command -v codesign >/dev/null 2>&1; then
+      codesign --force --sign - "$dylib" >/dev/null
+    fi
+  done
+  shopt -u nullglob
+}
+
+bundle_required_runtime_dylibs() {
+  require_command otool
+  require_command install_name_tool
+
+  local missing=0
+  local dependency
+  for dependency in libfreetype.6.dylib libgnutls.30.dylib; do
+    local dependency_path="$homebrew_lib_dir/$dependency"
+    if [[ ! -e "$dependency_path" ]]; then
+      local package="${dependency#lib}"
+      package="${package%%.*}"
+      echo "Missing local dependency: $package. Install with brew install $package" >&2
+      missing=1
+      continue
+    fi
+    copy_runtime_dylib_closure "$dependency_path"
+  done
+
+  if [[ "$missing" -ne 0 ]]; then
+    exit 1
+  fi
+
+  rewrite_bundled_runtime_dylibs
+}
+
+version_component() {
+  local index="$1"
+  local fallback="$2"
+  local value
+  value="$(printf '%s\n' "$version_string" | sed -E 's/^[^0-9]*([0-9]+)(\\.([0-9]+))?(\\.([0-9]+))?.*$/\1 \3 \5/' | awk -v index="$index" '{ print $index }')"
+  if [[ "$value" =~ ^[0-9]+$ ]]; then
+    echo "$value"
+  else
+    echo "$fallback"
   fi
 }
 
@@ -151,10 +281,15 @@ if [[ -d "$wine_dir/share/man" ]]; then
   rm -rf "$wine_dir/share/man"
 fi
 
+bundle_required_runtime_dylibs
+
 version_string="$(head -n 1 "$wine_dir/version" | tr -d '\r')"
 if [[ -z "$version_string" ]]; then
   version_string="Sikarugir WhiskyWine"
 fi
+version_major="$(version_component 1 2)"
+version_minor="$(version_component 2 5)"
+version_patch="$(version_component 3 0)"
 
 echo "Writing GPTKVersion.plist from Sikarugir version: $version_string"
 cat > "$libraries_dir/GPTKVersion.plist" <<PLIST
@@ -162,12 +297,19 @@ cat > "$libraries_dir/GPTKVersion.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleShortVersionString</key>
-  <string>${version_string}</string>
-  <key>Version</key>
-  <string>${version_string}</string>
-  <key>Source</key>
-  <string>Sikarugir WS12WhiskyWine2.5.0_3</string>
+  <key>version</key>
+  <dict>
+    <key>major</key>
+    <integer>${version_major}</integer>
+    <key>minor</key>
+    <integer>${version_minor}</integer>
+    <key>patch</key>
+    <integer>${version_patch}</integer>
+    <key>preRelease</key>
+    <string></string>
+    <key>build</key>
+    <string></string>
+  </dict>
 </dict>
 </plist>
 PLIST
