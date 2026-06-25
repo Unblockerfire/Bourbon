@@ -18,9 +18,10 @@ Optional local sidecars, no downloads:
   SIKARUGIR_DXVK_DIR       Default: ../WhiskyBuilder/DXVK when present
   SIKARUGIR_WINETRICKS     Path to a local winetricks executable
   SIKARUGIR_VERBS_TXT      Path to a local winetricks verbs.txt
-  SIKARUGIR_HOMEBREW_LIB_DIR
-                           Default: /opt/homebrew/lib; used only to bundle
-                           already-installed runtime dylibs for testing.
+  SIKARUGIR_RUNTIME_LIB_DIR
+                           Path to an extracted x86_64 runtime lib directory.
+                           The importer looks in this directory, or its lib/
+                           child, for FreeType/GnuTLS and their dylib closure.
 
 Expected Sikarugir input:
   wswine.bundle/
@@ -60,7 +61,7 @@ default_dxvk_dir="$repo_root/../WhiskyBuilder/DXVK"
 dxvk_dir="${SIKARUGIR_DXVK_DIR:-}"
 winetricks_path="${SIKARUGIR_WINETRICKS:-}"
 verbs_path="${SIKARUGIR_VERBS_TXT:-}"
-homebrew_lib_dir="${SIKARUGIR_HOMEBREW_LIB_DIR:-/opt/homebrew/lib}"
+runtime_lib_dir="${SIKARUGIR_RUNTIME_LIB_DIR:-}"
 
 require_command() {
   local command_name="$1"
@@ -97,6 +98,35 @@ require_file() {
   fi
 }
 
+binary_archs() {
+  local path="$1"
+  local archs
+  archs="$(lipo -archs "$path" 2>/dev/null || true)"
+  if [[ -n "$archs" ]]; then
+    echo "$archs"
+    return
+  fi
+
+  file "$path" | sed -E 's/.*Mach-O [^ ]+ ([^ ]+) .*/\1/'
+}
+
+has_arch() {
+  local archs="$1"
+  local arch="$2"
+  [[ " $archs " == *" $arch "* ]]
+}
+
+is_arch_compatible() {
+  local dependency_archs="$1"
+  local engine_arch
+  for engine_arch in $wine_binary_archs; do
+    if has_arch "$dependency_archs" "$engine_arch"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 resolve_path() {
   local path="$1"
   local target
@@ -118,16 +148,116 @@ is_system_dylib() {
   [[ "$path" == /usr/lib/* || "$path" == /System/Library/* ]]
 }
 
-is_homebrew_dylib() {
-  local path="$1"
-  [[ "$path" == /opt/homebrew/* || "$path" == "$homebrew_lib_dir"/* ]]
-}
-
 copied_runtime_files=""
+visiting_runtime_files=""
+required_runtime_dylibs=(
+  libfreetype.6.dylib
+  libgnutls.30.dylib
+)
+optional_runtime_dylibs=(
+  libgmp.10.dylib
+)
+managed_runtime_dylibs=(
+  libfreetype.6.dylib
+  libgnutls.30.dylib
+  libasprintf.0.dylib
+  libcharset.1.dylib
+  libffi.8.dylib
+  libgmp.10.dylib
+  libhogweed.6.dylib
+  libhogweed.6.6.dylib
+  libhogweed.7.dylib
+  libhogweed.7.0.dylib
+  libiconv.2.dylib
+  libidn2.0.dylib
+  libintl.8.dylib
+  libnettle.8.dylib
+  libnettle.8.6.dylib
+  libnettle.9.dylib
+  libnettle.9.0.dylib
+  libp11-kit.0.dylib
+  libpng16.16.dylib
+  libtasn1.6.dylib
+  libtextstyle.0.dylib
+  libunistring.2.dylib
+  libunistring.5.dylib
+  libz.1.dylib
+  libz.1.2.12.dylib
+  libzlib.dylib
+)
 
 has_copied_runtime_file() {
   local basename="$1"
   [[ "$copied_runtime_files" == *"|$basename|"* ]]
+}
+
+is_visiting_runtime_file() {
+  local basename="$1"
+  [[ "$visiting_runtime_files" == *"|$basename|"* ]]
+}
+
+remove_managed_runtime_dylibs() {
+  local dylib
+  for dylib in "${managed_runtime_dylibs[@]}"; do
+    rm -f "$wine_dir/lib/$dylib"
+  done
+}
+
+configured_runtime_lib_dir() {
+  if [[ -z "$runtime_lib_dir" ]]; then
+    return 1
+  fi
+  if [[ -d "$runtime_lib_dir/lib" ]]; then
+    echo "$runtime_lib_dir/lib"
+  elif [[ -d "$runtime_lib_dir" ]]; then
+    echo "$runtime_lib_dir"
+  else
+    return 1
+  fi
+}
+
+dependency_basename() {
+  local dependency="$1"
+  case "$dependency" in
+    @rpath/*|@loader_path/*|@executable_path/*)
+      basename "$dependency"
+      ;;
+    *)
+      basename "$dependency"
+      ;;
+  esac
+}
+
+runtime_dependency_path() {
+  local dependency="$1"
+  local basename
+  basename="$(dependency_basename "$dependency")"
+  if [[ -n "$runtime_source_lib_dir" && -f "$runtime_source_lib_dir/$basename" ]]; then
+    echo "$runtime_source_lib_dir/$basename"
+    return 0
+  fi
+  return 1
+}
+
+has_rpath() {
+  local binary="$1"
+  local rpath="$2"
+  otool -l "$binary" | grep -A2 LC_RPATH | grep -Fq "path $rpath "
+}
+
+ensure_rpath() {
+  local binary="$1"
+  local rpath="$2"
+  if ! has_rpath "$binary" "$rpath"; then
+    install_name_tool -add_rpath "$rpath" "$binary"
+  fi
+}
+
+sign_binary_if_possible() {
+  local binary="$1"
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --sign - "$binary" >/dev/null
+  fi
 }
 
 copy_runtime_dylib_closure() {
@@ -136,24 +266,43 @@ copy_runtime_dylib_closure() {
   resolved="$(resolve_path "$dylib_path")"
   local basename
   basename="$(basename "$dylib_path")"
+  local dependency_archs
+  dependency_archs="$(binary_archs "$resolved")"
 
   if has_copied_runtime_file "$basename"; then
     return
   fi
+  if is_visiting_runtime_file "$basename"; then
+    return
+  fi
 
-  echo "Bundling runtime dependency: $basename"
-  cp "$resolved" "$wine_dir/lib/$basename"
-  chmod u+w "$wine_dir/lib/$basename"
-  copied_runtime_files="${copied_runtime_files}|${basename}|"
+  if ! is_arch_compatible "$dependency_archs"; then
+    echo "Warning: not bundling incompatible runtime dependency: $basename" >&2
+    echo "  Wine binary architectures: $wine_binary_archs" >&2
+    echo "  Dependency architectures: $dependency_archs" >&2
+    return 1
+  fi
+
+  visiting_runtime_files="${visiting_runtime_files}|${basename}|"
 
   while IFS= read -r dependency; do
     if [[ -z "$dependency" ]] || is_system_dylib "$dependency"; then
       continue
     fi
-    if is_homebrew_dylib "$dependency"; then
-      copy_runtime_dylib_closure "$dependency"
+    local dependency_path
+    if dependency_path="$(runtime_dependency_path "$dependency")"; then
+      copy_runtime_dylib_closure "$dependency_path" || return 1
+    else
+      echo "Warning: missing runtime dependency for $basename: $(dependency_basename "$dependency")" >&2
+      echo "  Looked in: $runtime_source_lib_dir" >&2
+      return 1
     fi
   done < <(otool -L "$resolved" | awk 'NR > 1 { print $1 }')
+
+  echo "Bundling runtime dependency: $basename"
+  cp "$resolved" "$wine_dir/lib/$basename"
+  chmod u+w "$wine_dir/lib/$basename"
+  copied_runtime_files="${copied_runtime_files}|${basename}|"
 }
 
 rewrite_bundled_runtime_dylibs() {
@@ -167,6 +316,7 @@ rewrite_bundled_runtime_dylibs() {
     fi
 
     install_name_tool -id "@rpath/$basename" "$dylib"
+    ensure_rpath "$dylib" "@loader_path/"
     while IFS= read -r dependency; do
       if [[ -z "$dependency" ]] || is_system_dylib "$dependency"; then
         continue
@@ -179,36 +329,87 @@ rewrite_bundled_runtime_dylibs() {
       fi
     done < <(otool -L "$dylib" | awk 'NR > 1 { print $1 }')
 
-    if command -v codesign >/dev/null 2>&1; then
-      codesign --force --sign - "$dylib" >/dev/null
-    fi
+    sign_binary_if_possible "$dylib"
   done
   shopt -u nullglob
 }
 
+add_runtime_rpath_to_wine_binaries() {
+  local binary
+  local touched_binaries=""
+  for binary in "$wine_dir/bin/wine" "$wine_dir/bin/wine64" "$wine_dir/bin/wineserver"; do
+    if [[ ! -e "$binary" ]]; then
+      continue
+    fi
+
+    local resolved
+    resolved="$(resolve_path "$binary")"
+    if [[ "$touched_binaries" == *"|$resolved|"* ]]; then
+      continue
+    fi
+
+    ensure_rpath "$resolved" "@loader_path/../lib"
+    sign_binary_if_possible "$resolved"
+    touched_binaries="${touched_binaries}|${resolved}|"
+  done
+}
+
 bundle_required_runtime_dylibs() {
+  require_command file
+  require_command lipo
   require_command otool
   require_command install_name_tool
 
-  local missing=0
+  remove_managed_runtime_dylibs
+
+  runtime_source_lib_dir="$(configured_runtime_lib_dir || true)"
+  if [[ -z "$runtime_source_lib_dir" ]]; then
+    echo "Missing Sikarugir runtime lib source." >&2
+    echo "  Set SIKARUGIR_RUNTIME_LIB_DIR to an extracted x86_64 runtime directory to bundle FreeType/GnuTLS." >&2
+    return 0
+  fi
+  echo "Using Sikarugir runtime lib source: $runtime_source_lib_dir"
+
   local dependency
-  for dependency in libfreetype.6.dylib libgnutls.30.dylib; do
-    local dependency_path="$homebrew_lib_dir/$dependency"
+  for dependency in "${required_runtime_dylibs[@]}"; do
+    local dependency_path="$runtime_source_lib_dir/$dependency"
     if [[ ! -e "$dependency_path" ]]; then
       local package="${dependency#lib}"
       package="${package%%.*}"
-      echo "Missing local dependency: $package. Install with brew install $package" >&2
-      missing=1
+      echo "Missing local x86_64 dependency: $package." >&2
+      echo "  Expected: $dependency_path" >&2
       continue
     fi
-    copy_runtime_dylib_closure "$dependency_path"
+    if ! copy_runtime_dylib_closure "$dependency_path"; then
+      local package="${dependency#lib}"
+      package="${package%%.*}"
+      echo "Missing local x86_64 dependency: $package." >&2
+      echo "  Found $dependency, but it or one of its dependencies is not compatible with Wine architectures: $wine_binary_archs" >&2
+    fi
   done
 
-  if [[ "$missing" -ne 0 ]]; then
-    exit 1
-  fi
+  for dependency in "${optional_runtime_dylibs[@]}"; do
+    local dependency_path="$runtime_source_lib_dir/$dependency"
+    if [[ ! -e "$dependency_path" ]]; then
+      local package="${dependency#lib}"
+      package="${package%%.*}"
+      echo "Optional local x86_64 runtime dependency missing: $package." >&2
+      echo "  Expected: $dependency_path" >&2
+      echo "  GnuTLS may keep reporting reduced DH support until it is present." >&2
+      continue
+    fi
+    if ! copy_runtime_dylib_closure "$dependency_path"; then
+      local package="${dependency#lib}"
+      package="${package%%.*}"
+      echo "Optional local x86_64 runtime dependency not bundled: $package." >&2
+      echo "  Found $dependency, but it or one of its dependencies is not compatible with Wine architectures: $wine_binary_archs" >&2
+    fi
+  done
 
   rewrite_bundled_runtime_dylibs
+  if [[ -n "$copied_runtime_files" ]]; then
+    add_runtime_rpath_to_wine_binaries
+  fi
 }
 
 version_component() {
@@ -280,6 +481,13 @@ fi
 if [[ -d "$wine_dir/share/man" ]]; then
   rm -rf "$wine_dir/share/man"
 fi
+
+wine_binary_archs="$(binary_archs "$wine_dir/bin/wine64")"
+if [[ -z "$wine_binary_archs" ]]; then
+  echo "Unable to detect Wine binary architecture: $wine_dir/bin/wine64" >&2
+  exit 1
+fi
+echo "Detected Wine binary architectures: $wine_binary_archs"
 
 bundle_required_runtime_dylibs
 

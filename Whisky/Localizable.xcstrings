@@ -273,9 +273,6 @@
         }
       }
     },
-    "Bottle creation is blocked until required Wine runtime dependencies are available." : {
-
-    },
     "button.cDrive" : {
       "localizations" : {
         "ar" : {

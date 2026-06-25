@@ -102,7 +102,7 @@ public class Wine {
         )
     }
 
-    /// Execute a `wine start /unix {url}` command returning the output result
+    /// Execute a program with Wine, using direct execution for Windows installer binaries.
     public static func runProgram(
         at url: URL, args: [String] = [], bottle: Bottle, environment: [String: String] = [:]
     ) async throws {
@@ -110,17 +110,53 @@ public class Wine {
             try enableDXVK(bottle: bottle)
         }
 
-        for await _ in try Self.runWineProcess(
+        let fileHandle = try makeFileHandle()
+        fileHandle.writeApplicaitonInfo()
+        fileHandle.writeInfo(for: bottle)
+
+        let diagnostics = ProgramLaunchDiagnostics.inspect(url: url)
+        logProgramLaunchDiagnostics(url: url, diagnostics: diagnostics, fileHandle: fileHandle)
+
+        var output: [String] = []
+        var terminationStatus: Int32 = 0
+
+        let stream = try runWineProcess(
             name: url.lastPathComponent,
-            args: ["start", "/unix", url.path(percentEncoded: false)] + args,
-            bottle: bottle, environment: environment
-        ) { }
+            args: runProgramArguments(for: url, args: args),
+            environment: constructWineEnvironment(for: bottle, environment: environment),
+            fileHandle: fileHandle
+        )
+
+        for await result in stream {
+            switch result {
+            case .started:
+                break
+            case .message(let message), .error(let message):
+                output.append(message)
+            case .terminated(let process):
+                terminationStatus = process.terminationStatus
+            }
+        }
+
+        guard terminationStatus == 0 else {
+            Logger.wineKit.warning(
+                """
+                Failed to launch \(url.lastPathComponent, privacy: .public).
+                \(diagnostics.summary, privacy: .public)
+                """
+            )
+            throw ProgramLaunchError(
+                url: url,
+                diagnostics: diagnostics,
+                output: output.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
     }
 
     public static func generateRunCommand(
         at url: URL, bottle: Bottle, args: String, environment: [String: String]
     ) -> String {
-        var wineCmd = "\(wineBinary.esc) start /unix \(url.esc) \(args)"
+        var wineCmd = generateRunProgramCommand(at: url, args: args)
         let env = constructWineEnvironment(for: bottle, environment: environment)
         for environment in env {
             wineCmd = "\(environment.key)=\"\(environment.value)\" " + wineCmd
@@ -277,6 +313,108 @@ public class Wine {
     }
 }
 
+private extension Wine {
+    static func runProgramArguments(for url: URL, args: [String]) -> [String] {
+        let path = url.path(percentEncoded: false)
+        switch url.pathExtension.lowercased() {
+        case "exe":
+            return [path] + args
+        case "msi":
+            return ["msiexec", "/i", path] + args
+        default:
+            return ["start", "/unix", path] + args
+        }
+    }
+
+    static func generateRunProgramCommand(at url: URL, args: String) -> String {
+        switch url.pathExtension.lowercased() {
+        case "exe":
+            return "\(wineBinary.esc) \(url.esc) \(args)"
+        case "msi":
+            return "\(wineBinary.esc) msiexec /i \(url.esc) \(args)"
+        default:
+            return "\(wineBinary.esc) start /unix \(url.esc) \(args)"
+        }
+    }
+
+    struct ProgramLaunchDiagnostics {
+        let isWindowsExecutable: Bool
+        let peType: String
+        let architecture: String
+        let machine: String
+
+        static func inspect(url: URL) -> ProgramLaunchDiagnostics {
+            guard url.pathExtension.lowercased() == "exe" else {
+                return ProgramLaunchDiagnostics(
+                    isWindowsExecutable: false,
+                    peType: "not inspected",
+                    architecture: "not inspected",
+                    machine: "not inspected"
+                )
+            }
+
+            do {
+                let peFile = try PEFile(url: url)
+                return ProgramLaunchDiagnostics(
+                    isWindowsExecutable: true,
+                    peType: peFile.optionalHeader?.magic.description ?? "unknown",
+                    architecture: peFile.architecture.toString() ?? "unknown",
+                    machine: String(format: "0x%04X", peFile.coffFileHeader.machine)
+                )
+            } catch {
+                return ProgramLaunchDiagnostics(
+                    isWindowsExecutable: true,
+                    peType: "unknown",
+                    architecture: "unknown",
+                    machine: "unknown"
+                )
+            }
+        }
+
+        var summary: String {
+            "PE Type: \(peType), Architecture: \(architecture), Machine: \(machine)"
+        }
+    }
+
+    struct ProgramLaunchError: LocalizedError {
+        let url: URL
+        let diagnostics: ProgramLaunchDiagnostics
+        let output: String
+
+        var errorDescription: String? {
+            var message = "Wine could not launch \(url.lastPathComponent)."
+            if diagnostics.peType == "PE32" || diagnostics.architecture == "32-bit" {
+                message += " This appears to be a 32-bit Windows app. " +
+                    "32-bit Windows apps may not be supported by this imported Sikarugir Wine runtime."
+            }
+            if !output.isEmpty {
+                message += "\n\nWine output:\n\(output)"
+            }
+            return message
+        }
+    }
+
+    static func logProgramLaunchDiagnostics(
+        url: URL, diagnostics: ProgramLaunchDiagnostics, fileHandle: FileHandle
+    ) {
+        guard diagnostics.isWindowsExecutable else { return }
+        Logger.wineKit.info(
+            """
+            Launching Windows executable: \(url.path(percentEncoded: false), privacy: .public)
+            \(diagnostics.summary, privacy: .public)
+            """
+        )
+        fileHandle.write(
+            line: """
+            Launch Diagnostics:
+            File: \(url.path(percentEncoded: false))
+            \(diagnostics.summary)
+
+            """
+        )
+    }
+}
+
 public extension Wine {
     struct RuntimeDependency: Identifiable, Sendable {
         public let id: String
@@ -299,7 +437,7 @@ public extension Wine {
             reason: "Wine uses FreeType to render Windows fonts.",
             installHint: "Rebuild the Sikarugir archive with FreeType bundled, " +
                 "or install FreeType locally for development with: brew install freetype",
-            required: true
+            required: false
         ),
         RuntimeDependency(
             id: "gnutls",
@@ -308,7 +446,7 @@ public extension Wine {
             reason: "Wine uses GnuTLS for encrypted connections and certificate import/export.",
             installHint: "Rebuild the Sikarugir archive with GnuTLS bundled, " +
                 "or install GnuTLS locally for development with: brew install gnutls",
-            required: true
+            required: false
         )
     ]
 

@@ -93,7 +93,8 @@ struct BottleView: View {
                                                 try await Wine.runProgram(at: url, bottle: bottle)
                                             }
                                         } catch {
-                                            print("Failed to run external program: \(error)")
+                                            await showRunError(fileName: url.lastPathComponent,
+                                                               message: error.localizedDescription)
                                         }
                                         programLoading = false
                                     }
@@ -161,5 +162,14 @@ struct BottleView: View {
                 ))
             }
         }
+    }
+
+    @MainActor private func showRunError(fileName: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "alert.message")
+        alert.informativeText = String(localized: "alert.info") + " \(fileName): " + message
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: String(localized: "button.ok"))
+        alert.runModal()
     }
 }

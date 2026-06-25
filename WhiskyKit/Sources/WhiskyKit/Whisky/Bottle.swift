@@ -49,12 +49,16 @@ public final class Bottle: ObservableObject, Equatable, Hashable, Identifiable, 
         self.isAvailable = isAvailable
         self.metadataURL = metadataURL
 
-        do {
-            self.settings = try BottleSettings.decode(from: metadataURL)
-        } catch {
-            Logger.wineKit.error(
-              "Failed to load settings for bottle `\(metadataURL.path(percentEncoded: false))`: \(error)"
-            )
+        if FileManager.default.fileExists(atPath: metadataURL.path(percentEncoded: false)) {
+            do {
+                self.settings = try BottleSettings.decode(from: metadataURL)
+            } catch {
+                Logger.wineKit.error(
+                  "Failed to load settings for bottle `\(metadataURL.path(percentEncoded: false))`: \(error)"
+                )
+                self.settings = BottleSettings()
+            }
+        } else {
             self.settings = BottleSettings()
         }
 
@@ -79,6 +83,10 @@ public final class Bottle: ObservableObject, Equatable, Hashable, Identifiable, 
     /// Encode and save the bottle settings
     private func saveSettings() {
         do {
+            try FileManager.default.createDirectory(
+                at: self.url,
+                withIntermediateDirectories: true
+            )
             try settings.encode(to: self.metadataURL)
         } catch {
             Logger.wineKit.error(

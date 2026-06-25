@@ -51,18 +51,27 @@ public struct BottleData: Codable {
 
     public mutating func loadBottles() -> [Bottle] {
         var bottles: [Bottle] = []
+        var validPaths: [URL] = []
 
         for path in paths {
+            let bottlePath = path.path(percentEncoded: false)
             let bottleMetadata = path
                 .appending(path: "Metadata")
                 .appendingPathExtension("plist")
                 .path(percentEncoded: false)
 
             if FileManager.default.fileExists(atPath: bottleMetadata) {
+                validPaths.append(path)
                 bottles.append(Bottle(bottleUrl: path, isAvailable: true))
+            } else if FileManager.default.fileExists(atPath: bottlePath) {
+                validPaths.append(path)
             } else {
-                bottles.append(Bottle(bottleUrl: path))
+                continue
             }
+        }
+
+        if validPaths != paths {
+            paths = validPaths
         }
 
         return bottles

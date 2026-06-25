@@ -17,6 +17,7 @@
 //
 
 import SwiftUI
+import AppKit
 import WhiskyKit
 
 struct FileOpenView: View {
@@ -86,10 +87,19 @@ struct FileOpenView: View {
                         try await Wine.runProgram(at: fileURL, bottle: bottle)
                     }
                 } catch {
-                    print(error)
+                    await showRunError(message: error.localizedDescription)
                 }
             }
             dismiss()
         }
+    }
+
+    @MainActor private func showRunError(message: String) {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "alert.message")
+        alert.informativeText = String(localized: "alert.info") + " \(fileURL.lastPathComponent): " + message
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: String(localized: "button.ok"))
+        alert.runModal()
     }
 }

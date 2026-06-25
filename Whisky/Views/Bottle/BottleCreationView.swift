@@ -27,7 +27,8 @@ struct BottleCreationView: View {
     @State private var newBottleURL: URL = UserDefaults.standard.url(forKey: "defaultBottleLocation")
                                            ?? BottleData.defaultBottleDir
     @State private var nameValid: Bool = false
-    @State private var missingDependencies: [Wine.RuntimeDependency] = Wine.missingRuntimeDependencies()
+    @State private var missingDependencies: [Wine.RuntimeDependency] = Wine
+        .missingRuntimeDependencies(requiredOnly: false)
 
     @Environment(\.dismiss) private var dismiss
 
@@ -83,12 +84,12 @@ struct BottleCreationView: View {
                         }
 
                         Button("Re-check Dependencies") {
-                            missingDependencies = Wine.missingRuntimeDependencies()
+                            missingDependencies = Wine.missingRuntimeDependencies(requiredOnly: false)
                         }
                     } header: {
                         Text("Wine Runtime Dependencies")
                     } footer: {
-                        Text("Bottle creation is blocked until required Wine runtime dependencies are available.")
+                        Text(runtimeDependencyFooter)
                     }
                 }
             }
@@ -106,16 +107,16 @@ struct BottleCreationView: View {
                         submit()
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!nameValid || !missingDependencies.isEmpty)
+                    .disabled(!nameValid || hasMissingRequiredDependencies)
                 }
             }
             .onSubmit {
-                if nameValid && missingDependencies.isEmpty {
+                if nameValid && !hasMissingRequiredDependencies {
                     submit()
                 }
             }
             .onAppear {
-                missingDependencies = Wine.missingRuntimeDependencies()
+                missingDependencies = Wine.missingRuntimeDependencies(requiredOnly: false)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -127,6 +128,17 @@ struct BottleCreationView: View {
                                                                 winVersion: newBottleVersion,
                                                                 bottleURL: newBottleURL)
         dismiss()
+    }
+
+    private var hasMissingRequiredDependencies: Bool {
+        missingDependencies.contains(where: \.required)
+    }
+
+    private var runtimeDependencyFooter: String {
+        if hasMissingRequiredDependencies {
+            return "Bottle creation is blocked until required Wine runtime dependencies are available."
+        }
+        return "These optional Wine runtime dependencies are not currently bundled. Bottle creation can continue."
     }
 }
 
