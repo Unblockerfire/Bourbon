@@ -342,6 +342,9 @@ private extension Wine {
         let peType: String
         let architecture: String
         let machine: String
+        let imageBase: UInt64?
+        let sizeOfImage: UInt32?
+        let relocationsStripped: Bool?
 
         static func inspect(url: URL) -> ProgramLaunchDiagnostics {
             guard url.pathExtension.lowercased() == "exe" else {
@@ -349,7 +352,10 @@ private extension Wine {
                     isWindowsExecutable: false,
                     peType: "not inspected",
                     architecture: "not inspected",
-                    machine: "not inspected"
+                    machine: "not inspected",
+                    imageBase: nil,
+                    sizeOfImage: nil,
+                    relocationsStripped: nil
                 )
             }
 
@@ -359,20 +365,35 @@ private extension Wine {
                     isWindowsExecutable: true,
                     peType: peFile.optionalHeader?.magic.description ?? "unknown",
                     architecture: peFile.architecture.toString() ?? "unknown",
-                    machine: String(format: "0x%04X", peFile.coffFileHeader.machine)
+                    machine: String(format: "0x%04X", peFile.coffFileHeader.machine),
+                    imageBase: peFile.optionalHeader?.imageBase,
+                    sizeOfImage: peFile.optionalHeader?.sizeOfImage,
+                    relocationsStripped: peFile.coffFileHeader.characteristics & 0x0001 != 0
                 )
             } catch {
                 return ProgramLaunchDiagnostics(
                     isWindowsExecutable: true,
                     peType: "unknown",
                     architecture: "unknown",
-                    machine: "unknown"
+                    machine: "unknown",
+                    imageBase: nil,
+                    sizeOfImage: nil,
+                    relocationsStripped: nil
                 )
             }
         }
 
+        var hasLowFixedImageBase: Bool {
+            guard let imageBase, relocationsStripped == true else { return false }
+            return imageBase < 0x6800_0000
+        }
+
         var summary: String {
-            "PE Type: \(peType), Architecture: \(architecture), Machine: \(machine)"
+            let imageBase = imageBase.map { String(format: "0x%llX", $0) } ?? "unknown"
+            let sizeOfImage = sizeOfImage.map { String(format: "0x%X", $0) } ?? "unknown"
+            let relocations = relocationsStripped.map { $0 ? "stripped" : "present" } ?? "unknown"
+            return "PE Type: \(peType), Architecture: \(architecture), Machine: \(machine), " +
+                "ImageBase: \(imageBase), SizeOfImage: \(sizeOfImage), Relocations: \(relocations)"
         }
     }
 
@@ -386,6 +407,9 @@ private extension Wine {
             if diagnostics.peType == "PE32" || diagnostics.architecture == "32-bit" {
                 message += " This appears to be a 32-bit Windows app. " +
                     "32-bit Windows apps may not be supported by this imported Sikarugir Wine runtime."
+            } else if diagnostics.hasLowFixedImageBase {
+                message += " This 64-bit Windows app has a fixed low image base and no relocation data. " +
+                    "The imported Sikarugir Wine runtime could not reserve the low memory range it needs."
             }
             if !output.isEmpty {
                 message += "\n\nWine output:\n\(output)"
