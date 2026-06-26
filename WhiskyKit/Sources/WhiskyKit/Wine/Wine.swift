@@ -21,21 +21,164 @@
 import Foundation
 import os.log
 
+// swiftlint:disable:next type_body_length
 public class Wine {
+    private enum WineProcessOutputMode {
+        case captured
+        case normalGUI
+    }
+
+    private enum CustomWineSettings {
+        static let rootEnvironmentKey = "WHISKY_CUSTOM_WINE_ROOT"
+        static let wineEnvironmentKey = "WHISKY_CUSTOM_WINE"
+        static let wineserverEnvironmentKey = "WHISKY_CUSTOM_WINESERVER"
+
+        static let rootDefaultsKey = "whiskyCustomWineRoot"
+        static let wineDefaultsKey = "whiskyCustomWinePath"
+        static let wineserverDefaultsKey = "whiskyCustomWineserverPath"
+
+        static var root: String? {
+            value(environmentKey: rootEnvironmentKey, defaultsKey: rootDefaultsKey)
+        }
+
+        static var wine: String? {
+            value(environmentKey: wineEnvironmentKey, defaultsKey: wineDefaultsKey)
+        }
+
+        static var wineserver: String? {
+            value(environmentKey: wineserverEnvironmentKey, defaultsKey: wineserverDefaultsKey)
+        }
+
+        static var configuredEnvironment: [String: String] {
+            [
+                rootEnvironmentKey: root,
+                wineEnvironmentKey: wine,
+                wineserverEnvironmentKey: wineserver
+            ].compactMapValues { value in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+        }
+
+        static var startupDebugMessage: String {
+            let environment = ProcessInfo.processInfo.environment
+            let defaults = UserDefaults.standard.dictionaryRepresentation()
+            let runner = CustomWineRunner.active
+            let whiskyEnvironment = environment
+                .filter { key, _ in key.hasPrefix("WHISKY_") }
+                .sorted { $0.key < $1.key }
+            let whiskyDefaults = defaults
+                .filter { key, _ in key.hasPrefix("WHISKY_") || key.hasPrefix("whiskyCustomWine") }
+                .sorted { $0.key < $1.key }
+
+            return """
+
+            [Whisky Wine Debug] App startup custom Wine configuration
+            Visible WHISKY_* process environment:
+            \(format(values: whiskyEnvironment))
+            Visible custom Wine UserDefaults:
+            \(format(values: whiskyDefaults.map { key, value in (key, String(describing: value)) }))
+            Resolved custom Wine root: \(root ?? "<not set>")
+            Resolved custom Wine executable: \(runner?.wine.path(percentEncoded: false) ?? "<bundled>")
+            Resolved custom wineserver: \(runner?.wineserver.path(percentEncoded: false) ?? "<bundled>")
+
+            """
+        }
+
+        private static func value(environmentKey: String, defaultsKey: String) -> String? {
+            let environment = ProcessInfo.processInfo.environment
+            let defaults = UserDefaults.standard
+
+            return nonEmpty(environment[environmentKey])
+                ?? nonEmpty(defaults.string(forKey: environmentKey))
+                ?? nonEmpty(defaults.string(forKey: defaultsKey))
+        }
+
+        private static func nonEmpty(_ value: String?) -> String? {
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        }
+
+        private static func format(values: [(key: String, value: String)]) -> String {
+            guard !values.isEmpty else { return "<none>" }
+            return values
+                .map { key, value in "\(key)=\(value)" }
+                .joined(separator: "\n")
+        }
+    }
+
+    private struct CustomWineRunner {
+        let wine: URL
+        let wineserver: URL
+
+        var binFolder: URL {
+            wine.deletingLastPathComponent()
+        }
+
+        static var active: CustomWineRunner? {
+            guard let rootValue = CustomWineSettings.root else {
+                return nil
+            }
+
+            let root = URL(fileURLWithPath: expandTilde(in: rootValue))
+            let wine = URL(
+                fileURLWithPath: expandTilde(
+                    in: CustomWineSettings.wine ?? root.appending(path: "wine").path
+                )
+            )
+            let wineserver = URL(
+                fileURLWithPath: expandTilde(
+                    in: CustomWineSettings.wineserver
+                        ?? root.appending(path: "server").appending(path: "wineserver").path
+                )
+            )
+
+            return CustomWineRunner(wine: wine, wineserver: wineserver)
+        }
+
+        private static func expandTilde(in path: String) -> String {
+            NSString(string: path).expandingTildeInPath
+        }
+    }
+
     /// URL to the installed `DXVK` folder
     private static let dxvkFolder: URL = WhiskyWineInstaller.libraryFolder.appending(path: "DXVK")
     /// URL to the installed Wine `lib` directory.
     private static let wineLibraryFolder: URL = WhiskyWineInstaller.libraryFolder
         .appending(path: "Wine")
         .appending(path: "lib")
-    /// Path to the `wine64` binary
-    public static let wineBinary: URL = WhiskyWineInstaller.binFolder.appending(path: "wine64")
-    /// Parth to the `wineserver` binary
-    private static let wineserverBinary: URL = WhiskyWineInstaller.binFolder.appending(path: "wineserver")
+
+    /// Local custom Wine runner for testing TikFinity with a Wine10 build tree.
+    /// Enable with `WHISKY_CUSTOM_WINE_ROOT=/path/to/build`; normal WhiskyWine remains the default.
+    private static var customWineRunner: CustomWineRunner? {
+        CustomWineRunner.active
+    }
+
+    /// Path to the selected `wine` binary.
+    public static var wineBinary: URL {
+        customWineRunner?.wine ?? WhiskyWineInstaller.binFolder.appending(path: "wine64")
+    }
+
+    /// Path to the selected `wineserver` binary.
+    private static var wineserverBinary: URL {
+        customWineRunner?.wineserver ?? WhiskyWineInstaller.binFolder.appending(path: "wineserver")
+    }
+
+    /// Directory that should be placed first on PATH for Wine helper programs.
+    public static var wineBinFolder: URL {
+        customWineRunner?.binFolder ?? WhiskyWineInstaller.binFolder
+    }
+
+    public static func logCustomWineStartupEnvironment() {
+        // swiftlint:disable:next todo
+        // TODO: Remove this temporary startup diagnostic after the custom Wine/Rosetta issue is resolved.
+        Logger.wineKit.info("\(CustomWineSettings.startupDebugMessage, privacy: .public)")
+    }
 
     /// Run a process on a executable file given by the `executableURL`
     private static func runProcess(
         name: String? = nil, args: [String], environment: [String: String], executableURL: URL, directory: URL? = nil,
+        outputMode: WineProcessOutputMode = .captured,
         fileHandle: FileHandle?
     ) throws -> AsyncStream<ProcessOutput> {
         let process = Process()
@@ -45,19 +188,44 @@ public class Wine {
         process.environment = environment
         process.qualityOfService = .userInitiated
 
-        return try process.runStream(
-            name: name ?? args.joined(separator: " "), fileHandle: fileHandle
+        let processName = name ?? args.joined(separator: " ")
+        debugLogWineLaunch(
+            name: processName,
+            args: args,
+            environment: environment,
+            executableURL: executableURL,
+            workingDirectory: process.currentDirectoryURL,
+            fileHandle: fileHandle
         )
+
+        do {
+            switch outputMode {
+            case .captured:
+                return try process.runStream(name: processName, fileHandle: fileHandle)
+            case .normalGUI:
+                return try process.runUncaptured(name: processName, fileHandle: fileHandle)
+            }
+        } catch {
+            debugLogProcessLaunchError(
+                error,
+                name: processName,
+                executableURL: executableURL,
+                fileHandle: fileHandle
+            )
+            throw error
+        }
     }
 
     /// Run a `wine` process with the given arguments and environment variables returning a stream of output
     private static func runWineProcess(
         name: String? = nil, args: [String], environment: [String: String] = [:],
+        directory: URL? = nil,
+        outputMode: WineProcessOutputMode = .captured,
         fileHandle: FileHandle?
     ) throws -> AsyncStream<ProcessOutput> {
         return try runProcess(
             name: name, args: args, environment: environment, executableURL: wineBinary,
-            fileHandle: fileHandle
+            directory: directory, outputMode: outputMode, fileHandle: fileHandle
         )
     }
 
@@ -102,9 +270,14 @@ public class Wine {
         )
     }
 
-    /// Execute a program with Wine, using direct execution for Windows installer binaries.
+    // Execute a program with Wine, using direct execution for Windows installer binaries.
+    // swiftlint:disable:next function_body_length
     public static func runProgram(
-        at url: URL, args: [String] = [], bottle: Bottle, environment: [String: String] = [:]
+        at url: URL,
+        args: [String] = [],
+        bottle: Bottle,
+        environment: [String: String] = [:],
+        progress: (@Sendable (CompatibilityProgress) -> Void)? = nil
     ) async throws {
         if bottle.settings.dxvk {
             try enableDXVK(bottle: bottle)
@@ -116,14 +289,30 @@ public class Wine {
 
         let diagnostics = ProgramLaunchDiagnostics.inspect(url: url)
         logProgramLaunchDiagnostics(url: url, diagnostics: diagnostics, fileHandle: fileHandle)
+        let launchPlan = try await CompatibilityManager.shared.launchPlan(
+            for: url,
+            bottle: bottle,
+            arguments: args,
+            progress: progress
+        )
+        logCompatibilityLaunchPlan(launchPlan, fileHandle: fileHandle)
+        let launchDiagnostics = logFinalLaunchDiagnostics(
+            for: launchPlan,
+            originalURL: url,
+            fileHandle: fileHandle
+        )
+        let outputMode = outputMode(for: launchPlan, diagnostics: launchDiagnostics)
+        logProgramOutputMode(outputMode, fileHandle: fileHandle)
 
         var output: [String] = []
         var terminationStatus: Int32 = 0
 
         let stream = try runWineProcess(
-            name: url.lastPathComponent,
-            args: runProgramArguments(for: url, args: args),
+            name: launchPlan.executableURL.lastPathComponent,
+            args: runProgramArguments(for: launchPlan.executableURL, args: launchPlan.arguments),
             environment: constructWineEnvironment(for: bottle, environment: environment),
+            directory: launchPlan.workingDirectory,
+            outputMode: outputMode,
             fileHandle: fileHandle
         )
 
@@ -147,7 +336,7 @@ public class Wine {
             )
             throw ProgramLaunchError(
                 url: url,
-                diagnostics: diagnostics,
+                diagnostics: launchDiagnostics,
                 output: output.joined().trimmingCharacters(in: .whitespacesAndNewlines)
             )
         }
@@ -166,22 +355,28 @@ public class Wine {
     }
 
     public static func generateTerminalEnvironmentCommand(bottle: Bottle) -> String {
+        let wineCommand = wineBinary.esc
         var cmd = """
-        export PATH=\"\(WhiskyWineInstaller.binFolder.path):$PATH\"
-        export DYLD_LIBRARY_PATH=\"\(wineLibraryFolder.path):${DYLD_LIBRARY_PATH:-}\"
-        export DYLD_FALLBACK_LIBRARY_PATH=\"\(wineLibraryFolder.path):${DYLD_FALLBACK_LIBRARY_PATH:-}\"
-        export WINE=\"wine64\"
-        alias wine=\"wine64\"
-        alias winecfg=\"wine64 winecfg\"
-        alias msiexec=\"wine64 msiexec\"
-        alias regedit=\"wine64 regedit\"
-        alias regsvr32=\"wine64 regsvr32\"
-        alias wineboot=\"wine64 wineboot\"
-        alias wineconsole=\"wine64 wineconsole\"
-        alias winedbg=\"wine64 winedbg\"
-        alias winefile=\"wine64 winefile\"
-        alias winepath=\"wine64 winepath\"
+        export PATH=\"\(wineBinFolder.path):$PATH\"
+        export WINE=\"\(wineBinary.path)\"
+        alias wine=\"\(wineCommand)\"
+        alias winecfg=\"\(wineCommand) winecfg\"
+        alias msiexec=\"\(wineCommand) msiexec\"
+        alias regedit=\"\(wineCommand) regedit\"
+        alias regsvr32=\"\(wineCommand) regsvr32\"
+        alias wineboot=\"\(wineCommand) wineboot\"
+        alias wineconsole=\"\(wineCommand) wineconsole\"
+        alias winedbg=\"\(wineCommand) winedbg\"
+        alias winefile=\"\(wineCommand) winefile\"
+        alias winepath=\"\(wineCommand) winepath\"
         """
+        if customWineRunner == nil {
+            cmd += """
+
+            export DYLD_LIBRARY_PATH=\"\(wineLibraryFolder.path):${DYLD_LIBRARY_PATH:-}\"
+            export DYLD_FALLBACK_LIBRARY_PATH=\"\(wineLibraryFolder.path):${DYLD_FALLBACK_LIBRARY_PATH:-}\"
+            """
+        }
 
         let env = constructWineEnvironment(for: bottle, environment: constructWineEnvironment(for: bottle))
         for environment in env {
@@ -258,6 +453,13 @@ public class Wine {
         }
     }
 
+    public static func killProgram(program: Program, bottle: Bottle) throws {
+        let executableName = program.url.lastPathComponent
+        Task.detached(priority: .userInitiated) {
+            try await runWine(["taskkill", "/F", "/IM", executableName], bottle: bottle)
+        }
+    }
+
     public static func enableDXVK(bottle: Bottle) throws {
         try FileManager.default.replaceDLLs(
             in: bottle.url.appending(path: "drive_c").appending(path: "windows").appending(path: "system32"),
@@ -301,12 +503,27 @@ public class Wine {
     private static func constructWineRuntimeEnvironment(_ environment: [String: String] = [:]) -> [String: String] {
         var result: [String: String] = [
             "PATH": [
-                WhiskyWineInstaller.binFolder.path,
+                wineBinFolder.path,
                 ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-            ].joined(separator: ":"),
-            "DYLD_LIBRARY_PATH": wineLibraryFolder.path,
-            "DYLD_FALLBACK_LIBRARY_PATH": wineLibraryFolder.path
+            ].joined(separator: ":")
         ]
+
+        if customWineRunner == nil {
+            result["DYLD_LIBRARY_PATH"] = wineLibraryFolder.path
+            result["DYLD_FALLBACK_LIBRARY_PATH"] = wineLibraryFolder.path
+        } else {
+            if let dyldLibraryPath = ProcessInfo.processInfo.environment["DYLD_LIBRARY_PATH"],
+               !dyldLibraryPath.isEmpty {
+                result["DYLD_LIBRARY_PATH"] = dyldLibraryPath
+            }
+            if let dyldFallbackLibraryPath = ProcessInfo.processInfo.environment["DYLD_FALLBACK_LIBRARY_PATH"],
+               !dyldFallbackLibraryPath.isEmpty {
+                result["DYLD_FALLBACK_LIBRARY_PATH"] = dyldFallbackLibraryPath
+            }
+        }
+
+        result.merge(CustomWineSettings.configuredEnvironment, uniquingKeysWith: { $1 })
+
         guard !environment.isEmpty else { return result }
         result.merge(environment, uniquingKeysWith: { $1 })
         return result
@@ -314,6 +531,127 @@ public class Wine {
 }
 
 private extension Wine {
+    // swiftlint:disable:next todo
+    // TODO: Remove this temporary launch diagnostics block after the custom Wine/Rosetta issue is resolved.
+    // swiftlint:disable:next function_parameter_count
+    static func debugLogWineLaunch(
+        name: String,
+        args: [String],
+        environment: [String: String],
+        executableURL: URL,
+        workingDirectory: URL?,
+        fileHandle: FileHandle?
+    ) {
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+        let executablePath = executableURL.path(percentEncoded: false)
+        let exists = fileManager.fileExists(atPath: executablePath, isDirectory: &isDirectory)
+        let isExecutable = fileManager.isExecutableFile(atPath: executablePath)
+        let customEnvironment = ProcessInfo.processInfo.environment
+        let rootOverride = CustomWineSettings.root
+        let wineOverride = CustomWineSettings.wine
+        let wineserverOverride = CustomWineSettings.wineserver
+        let filteredEnvironment = debugFilteredEnvironment(environment)
+        let filteredParentEnvironment = debugFilteredEnvironment(customEnvironment)
+        let fileOutput = debugFileOutput(for: executableURL)
+
+        let message = """
+
+        [Whisky Wine Debug] Preparing Wine process launch
+        Launch name: \(name)
+        WHISKY_CUSTOM_WINE_ROOT detected: \(rootOverride != nil)
+        WHISKY_CUSTOM_WINE_ROOT value: \(rootOverride ?? "<not set>")
+        WHISKY_CUSTOM_WINE override used: \(wineOverride != nil)
+        WHISKY_CUSTOM_WINE value: \(wineOverride ?? "<not set>")
+        WHISKY_CUSTOM_WINESERVER override used: \(wineserverOverride != nil)
+        WHISKY_CUSTOM_WINESERVER value: \(wineserverOverride ?? "<not set>")
+        Resolved Wine executable: \(wineBinary.path(percentEncoded: false))
+        Resolved wineserver executable: \(wineserverBinary.path(percentEncoded: false))
+        Process executable: \(executablePath)
+        Process arguments: \(args)
+        Process working directory: \(workingDirectory?.path(percentEncoded: false) ?? "<nil>")
+        Executable exists: \(exists)
+        Executable is directory: \(isDirectory.boolValue)
+        Executable is executable: \(isExecutable)
+        file output: \(fileOutput)
+        Filtered child environment:
+        \(filteredEnvironment)
+        Filtered Whisky app environment:
+        \(filteredParentEnvironment)
+
+        """
+        Logger.wineKit.info("\(message, privacy: .public)")
+        fileHandle?.write(line: message)
+    }
+
+    // swiftlint:disable:next todo
+    // TODO: Remove this temporary launch diagnostics block after the custom Wine/Rosetta issue is resolved.
+    static func debugLogProcessLaunchError(
+        _ error: Error,
+        name: String,
+        executableURL: URL,
+        fileHandle: FileHandle?
+    ) {
+        let errorText = String(describing: error)
+        let rosettaContext: String
+        if error.localizedDescription.contains("Attachment of code signature supplement failed")
+            || errorText.contains("Attachment of code signature supplement failed") {
+            rosettaContext = """
+            Rosetta/code-signature context: failure happened while calling Process.run, \
+            before Whisky received a running Wine process.
+            """
+        } else {
+            rosettaContext = "Rosetta/code-signature context: " +
+                "no matching Rosetta supplement error in Process.run error."
+        }
+
+        let message = """
+
+        [Whisky Wine Debug] Process launch error
+        Launch name: \(name)
+        Process executable: \(executableURL.path(percentEncoded: false))
+        Error localizedDescription: \(error.localizedDescription)
+        Error description: \(errorText)
+        \(rosettaContext)
+
+        """
+        Logger.wineKit.error("\(message, privacy: .public)")
+        fileHandle?.write(line: message)
+    }
+
+    static func debugFilteredEnvironment(_ environment: [String: String]) -> String {
+        let prefixes = ["WINE", "DYLD", "PATH", "WHISKY_", "ROSETTA"]
+        let values = environment
+            .filter { key, _ in prefixes.contains(where: { key.hasPrefix($0) }) }
+            .sorted { $0.key < $1.key }
+
+        guard !values.isEmpty else { return "<none>" }
+        return values
+            .map { key, value in "\(key)=\(value)" }
+            .joined(separator: "\n")
+    }
+
+    static func debugFileOutput(for url: URL) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/file")
+        process.arguments = [url.path(percentEncoded: false)]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return output ?? "<unreadable file output>"
+        } catch {
+            return "file command failed: \(error.localizedDescription)"
+        }
+    }
+
     static func runProgramArguments(for url: URL, args: [String]) -> [String] {
         let path = url.path(percentEncoded: false)
         switch url.pathExtension.lowercased() {
@@ -342,6 +680,7 @@ private extension Wine {
         let peType: String
         let architecture: String
         let machine: String
+        let subsystem: String
         let imageBase: UInt64?
         let sizeOfImage: UInt32?
         let relocationsStripped: Bool?
@@ -353,6 +692,7 @@ private extension Wine {
                     peType: "not inspected",
                     architecture: "not inspected",
                     machine: "not inspected",
+                    subsystem: "not inspected",
                     imageBase: nil,
                     sizeOfImage: nil,
                     relocationsStripped: nil
@@ -366,6 +706,7 @@ private extension Wine {
                     peType: peFile.optionalHeader?.magic.description ?? "unknown",
                     architecture: peFile.architecture.toString() ?? "unknown",
                     machine: String(format: "0x%04X", peFile.coffFileHeader.machine),
+                    subsystem: subsystemDescription(peFile.optionalHeader?.subsystem),
                     imageBase: peFile.optionalHeader?.imageBase,
                     sizeOfImage: peFile.optionalHeader?.sizeOfImage,
                     relocationsStripped: peFile.coffFileHeader.characteristics & 0x0001 != 0
@@ -376,11 +717,16 @@ private extension Wine {
                     peType: "unknown",
                     architecture: "unknown",
                     machine: "unknown",
+                    subsystem: "unknown",
                     imageBase: nil,
                     sizeOfImage: nil,
                     relocationsStripped: nil
                 )
             }
+        }
+
+        var isWindowsGUI: Bool {
+            subsystem.hasPrefix("Windows GUI")
         }
 
         var hasLowFixedImageBase: Bool {
@@ -393,7 +739,20 @@ private extension Wine {
             let sizeOfImage = sizeOfImage.map { String(format: "0x%X", $0) } ?? "unknown"
             let relocations = relocationsStripped.map { $0 ? "stripped" : "present" } ?? "unknown"
             return "PE Type: \(peType), Architecture: \(architecture), Machine: \(machine), " +
-                "ImageBase: \(imageBase), SizeOfImage: \(sizeOfImage), Relocations: \(relocations)"
+                "Subsystem: \(subsystem), ImageBase: \(imageBase), SizeOfImage: \(sizeOfImage), " +
+                "Relocations: \(relocations)"
+        }
+
+        private static func subsystemDescription(_ value: UInt16?) -> String {
+            guard let value else { return "unknown" }
+            switch value {
+            case 2:
+                return "Windows GUI (0x0002)"
+            case 3:
+                return "Windows console (0x0003)"
+            default:
+                return String(format: "0x%04X", value)
+            }
         }
     }
 
@@ -433,6 +792,85 @@ private extension Wine {
             Launch Diagnostics:
             File: \(url.path(percentEncoded: false))
             \(diagnostics.summary)
+
+            """
+        )
+    }
+
+    static func logCompatibilityLaunchPlan(_ plan: CompatibilityLaunchPlan, fileHandle: FileHandle) {
+        let technologies = plan.analysis.technologies
+            .map(\.rawValue)
+            .sorted()
+            .joined(separator: ", ")
+        let rule = plan.ruleID ?? "normal-launch"
+        let profiles = plan.appliedProfiles.isEmpty
+            ? "none"
+            : plan.appliedProfiles.joined(separator: ", ")
+        let finalArguments = plan.arguments.isEmpty
+            ? "none"
+            : plan.arguments.joined(separator: " ")
+        Logger.wineKit.info(
+            """
+            Compatibility launch plan:
+            Rule: \(rule, privacy: .public)
+            Technologies: \(technologies, privacy: .public)
+            Applied launch profiles: \(profiles, privacy: .public)
+            Target: \(plan.executableURL.path(percentEncoded: false), privacy: .public)
+            Final arguments: \(finalArguments, privacy: .public)
+            """
+        )
+        fileHandle.write(
+            line: """
+            Compatibility:
+            Rule: \(rule)
+            Technologies: \(technologies)
+            Applied launch profiles: \(profiles)
+            Target: \(plan.executableURL.path(percentEncoded: false))
+            Final arguments: \(finalArguments)
+
+            """
+        )
+    }
+
+    static func logFinalLaunchDiagnostics(
+        for plan: CompatibilityLaunchPlan,
+        originalURL: URL,
+        fileHandle: FileHandle
+    ) -> ProgramLaunchDiagnostics {
+        let diagnostics = ProgramLaunchDiagnostics.inspect(url: plan.executableURL)
+        guard plan.executableURL != originalURL else { return diagnostics }
+        logProgramLaunchDiagnostics(
+            url: plan.executableURL,
+            diagnostics: diagnostics,
+            fileHandle: fileHandle
+        )
+        return diagnostics
+    }
+
+    private static func outputMode(
+        for plan: CompatibilityLaunchPlan,
+        diagnostics: ProgramLaunchDiagnostics
+    ) -> WineProcessOutputMode {
+        if diagnostics.isWindowsGUI || plan.analysis.technologies.contains(.electron) {
+            return .normalGUI
+        }
+        return .captured
+    }
+
+    private static func logProgramOutputMode(_ mode: WineProcessOutputMode, fileHandle: FileHandle) {
+        let description: String
+        switch mode {
+        case .captured:
+            description = "captured stdout/stderr"
+        case .normalGUI:
+            description = "normal GUI launch; stdout/stderr are not piped into Swift"
+        }
+
+        Logger.wineKit.info("Wine output mode: \(description, privacy: .public)")
+        fileHandle.write(
+            line: """
+            Wine output mode:
+            \(description)
 
             """
         )

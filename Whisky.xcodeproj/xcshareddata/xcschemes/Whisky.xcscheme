@@ -49,6 +49,13 @@
             ReferencedContainer = "container:Whisky.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <EnvironmentVariables>
+         <EnvironmentVariable
+            key = "WHISKY_CUSTOM_WINE_ROOT"
+            value = "/Users/carsonlivezey/Documents/Wine10/build-wow64-pe-ft2"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

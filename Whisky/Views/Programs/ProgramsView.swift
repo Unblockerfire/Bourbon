@@ -28,6 +28,8 @@ struct ProgramsView: View {
     @State private var sortedPrograms: [Program] = []
     @State private var resortPrograms = false
     @State private var searchText = ""
+    @State private var showQuitApplicationsDialog = false
+    @State private var quitError: String?
 
     @AppStorage("areProgramsExpanded") private var areProgramsExpanded = true
     @AppStorage("isBlocklistExpanded") private var isBlocklistExpanded = false
@@ -48,7 +50,14 @@ struct ProgramsView: View {
 
     var body: some View {
         Form {
-            Section("program.title", isExpanded: $areProgramsExpanded) {
+            Section {
+                Button("Quit Applications...", systemImage: "xmark.circle") {
+                    showQuitApplicationsDialog = true
+                }
+                .help("Close a running Windows app in this bottle")
+            }
+
+            Section("Installed apps", isExpanded: $areProgramsExpanded) {
                 List(searchResults, id: \.self, selection: $selectedPrograms) { program in
                     ProgramItemView(
                         bottle: bottle, program: program, path: $path
@@ -108,8 +117,38 @@ struct ProgramsView: View {
         .animation(.whiskyDefault, value: searchText)
         .animation(.whiskyDefault, value: areProgramsExpanded)
         .animation(.whiskyDefault, value: isBlocklistExpanded)
-        .navigationTitle("tab.programs")
+        .navigationTitle("Installed apps")
         .searchable(text: $searchText)
+        .confirmationDialog(
+            "What application would you like to close?",
+            isPresented: $showQuitApplicationsDialog,
+            titleVisibility: .visible
+        ) {
+            ForEach(sortedPrograms, id: \.url) { program in
+                Button(program.name) {
+                    quit(program)
+                }
+            }
+
+            Button("Force Quit All Applications", role: .destructive) {
+                quitAllApplications()
+            }
+
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Choose one app to close, or force quit everything running in this bottle.")
+        }
+        .alert(
+            "Could not quit application",
+            isPresented: Binding(
+                get: { quitError != nil },
+                set: { if !$0 { quitError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(quitError ?? "")
+        }
         .onAppear {
             loadData()
         }
@@ -118,6 +157,22 @@ struct ProgramsView: View {
         }
         .onChange(of: bottle.settings) {
             loadData()
+        }
+    }
+
+    private func quit(_ program: Program) {
+        do {
+            try Wine.killProgram(program: program, bottle: bottle)
+        } catch {
+            quitError = error.localizedDescription
+        }
+    }
+
+    private func quitAllApplications() {
+        do {
+            try Wine.killBottle(bottle: bottle)
+        } catch {
+            quitError = error.localizedDescription
         }
     }
 

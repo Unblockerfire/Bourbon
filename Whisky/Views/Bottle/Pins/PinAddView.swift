@@ -35,7 +35,7 @@ struct PinAddView: View {
             .buttonStyle(.plain)
             .frame(width: 45, height: 45)
             Spacer()
-            Text("pin.help")
+            Text("Pin app")
                 .multilineTextAlignment(.center)
                 .lineLimit(2, reservesSpace: true)
         }

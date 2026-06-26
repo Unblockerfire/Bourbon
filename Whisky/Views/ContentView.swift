@@ -23,6 +23,7 @@ import SemanticVersion
 
 struct ContentView: View {
     @AppStorage("selectedBottleURL") private var selectedBottleURL: URL?
+    @AppStorage("hasCompletedFirstRunOnboarding") private var hasCompletedFirstRunOnboarding = false
     @EnvironmentObject var bottleVM: BottleVM
     @Binding var showSetup: Bool
 
@@ -75,7 +76,11 @@ struct ContentView: View {
             BottleCreationView(newlyCreatedBottleURL: $newlyCreatedBottleURL)
         }
         .sheet(isPresented: $showSetup) {
-            SetupView(showSetup: $showSetup, firstTime: false)
+            SetupView(
+                showSetup: $showSetup,
+                showBottleCreation: $showBottleCreation,
+                firstTime: !hasCompletedFirstRunOnboarding
+            )
         }
         .sheet(item: $openedFileURL) { url in
             FileOpenView(fileURL: url,

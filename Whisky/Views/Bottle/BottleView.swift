@@ -30,6 +30,7 @@ struct BottleView: View {
     @ObservedObject var bottle: Bottle
     @State private var path = NavigationPath()
     @State private var programLoading: Bool = false
+    @State private var installStatus: String?
     @State private var showWinetricksSheet: Bool = false
 
     private let gridLayout = [GridItem(.adaptive(minimum: 100, maximum: .infinity))]
@@ -37,28 +38,66 @@ struct BottleView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
-                LazyVGrid(columns: gridLayout, alignment: .center) {
-                    ForEach(bottle.pinnedPrograms, id: \.id) { pinnedProgram in
-                        PinView(
-                            bottle: bottle, program: pinnedProgram.program, pin: pinnedProgram.pin, path: $path
-                        )
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Pinned apps")
+                            .font(.headline)
+
+                        if bottle.pinnedPrograms.isEmpty {
+                            Text("Pin installed apps here for quick access.")
+                                .foregroundStyle(.secondary)
+                        }
+
+                        LazyVGrid(columns: gridLayout, alignment: .center) {
+                            ForEach(bottle.pinnedPrograms, id: \.id) { pinnedProgram in
+                                PinView(
+                                    bottle: bottle, program: pinnedProgram.program, pin: pinnedProgram.pin, path: $path
+                                )
+                            }
+                            PinAddView(bottle: bottle)
+                        }
                     }
-                    PinAddView(bottle: bottle)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Installed apps")
+                            .font(.headline)
+
+                        if installedPrograms.isEmpty {
+                            ContentUnavailableView {
+                                Label("No installed apps yet", systemImage: "app.dashed")
+                            } description: {
+                                Text("Install a Windows app into this bottle to get started.")
+                            } actions: {
+                                Button("Install app") {
+                                    installApp()
+                                }
+                            }
+                        } else {
+                            ForEach(installedPrograms.prefix(6), id: \.url) { program in
+                                Button {
+                                    program.run()
+                                } label: {
+                                    Label(program.name, systemImage: "play.circle")
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            NavigationLink(value: BottleStage.programs) {
+                                Label("Show all installed apps", systemImage: "list.bullet")
+                            }
+                        }
+                    }
+
+                    HStack {
+                        Button("Install app", systemImage: "square.and.arrow.down") {
+                            installApp()
+                        }
+                        NavigationLink(value: BottleStage.config) {
+                            Label("Bottle settings", systemImage: "gearshape")
+                        }
+                    }
                 }
                 .padding()
-                Form {
-                    NavigationLink(value: BottleStage.programs) {
-                        Label("tab.programs", systemImage: "list.bullet")
-                    }
-                    NavigationLink(value: BottleStage.config) {
-                        Label("tab.config", systemImage: "gearshape")
-                    }
-//                    NavigationLink(value: BottleStage.processes) {
-//                        Label("tab.processes", systemImage: "hockey.puck.circle")
-//                    }
-                }
-                .formStyle(.grouped)
-                .scrollDisabled(true)
             }
             .bottomBar {
                 HStack {
@@ -72,38 +111,8 @@ struct BottleView: View {
                     Button("button.winetricks") {
                         showWinetricksSheet.toggle()
                     }
-                    Button("button.run") {
-                        let panel = NSOpenPanel()
-                        panel.allowsMultipleSelection = false
-                        panel.canChooseDirectories = false
-                        panel.canChooseFiles = true
-                        panel.allowedContentTypes = [UTType.exe,
-                                                     UTType(exportedAs: "com.microsoft.msi-installer"),
-                                                     UTType(exportedAs: "com.microsoft.bat")]
-                        panel.directoryURL = bottle.url.appending(path: "drive_c")
-                        panel.begin { result in
-                            programLoading = true
-                            Task(priority: .userInitiated) {
-                                if result == .OK {
-                                    if let url = panel.urls.first {
-                                        do {
-                                            if url.pathExtension == "bat" {
-                                                try await Wine.runBatchFile(url: url, bottle: bottle)
-                                            } else {
-                                                try await Wine.runProgram(at: url, bottle: bottle)
-                                            }
-                                        } catch {
-                                            await showRunError(fileName: url.lastPathComponent,
-                                                               message: error.localizedDescription)
-                                        }
-                                        programLoading = false
-                                    }
-                                } else {
-                                    programLoading = false
-                                }
-                                updateStartMenu()
-                            }
-                        }
+                    Button("Install app") {
+                        installApp()
                     }
                     .disabled(programLoading)
                     if programLoading {
@@ -111,6 +120,10 @@ struct BottleView: View {
                             .frame(width: 10)
                         ProgressView()
                             .controlSize(.small)
+                        if let installStatus {
+                            Text(installStatus)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .padding()
@@ -157,9 +170,53 @@ struct BottleView: View {
                 program.pinned = true
                 guard !bottle.settings.pins.contains(where: { $0.url == program.url }) else { return }
                 bottle.settings.pins.append(PinnedProgram(
-                    name: program.url.deletingPathExtension().lastPathComponent,
+                    name: program.name,
                     url: program.url
                 ))
+            }
+        }
+    }
+
+    private var installedPrograms: [Program] {
+        bottle.programs
+            .filter { FileManager.default.fileExists(atPath: $0.url.path(percentEncoded: false)) }
+            .sorted { $0.name < $1.name }
+    }
+
+    private func installApp() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [UTType.exe,
+                                     UTType(exportedAs: "com.microsoft.msi-installer"),
+                                     UTType(exportedAs: "com.microsoft.bat")]
+        panel.directoryURL = bottle.url.appending(path: "drive_c")
+        panel.begin { result in
+            programLoading = true
+            installStatus = "Analyzing installer..."
+            Task(priority: .userInitiated) {
+                if result == .OK, let url = panel.urls.first {
+                    do {
+                        if url.pathExtension == "bat" {
+                            try await Wine.runBatchFile(url: url, bottle: bottle)
+                        } else {
+                            try await Wine.runProgram(at: url, bottle: bottle) { progress in
+                                Task { @MainActor in
+                                    installStatus = progress.rawValue
+                                }
+                            }
+                        }
+                    } catch {
+                        await showRunError(fileName: url.lastPathComponent,
+                                           message: error.localizedDescription)
+                    }
+                }
+                await MainActor.run {
+                    programLoading = false
+                    installStatus = nil
+                    updateStartMenu()
+                }
             }
         }
     }

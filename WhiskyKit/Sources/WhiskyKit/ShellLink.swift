@@ -21,6 +21,7 @@ import AppKit
 
 public struct ShellLinkHeader {
     public static func getProgram(url: URL, handle: FileHandle, bottle: Bottle) -> Program? {
+        let preferredName = url.deletingPathExtension().lastPathComponent
         var offset: UInt64 = 0
         let headerSize = handle.extract(UInt32.self) ?? 0
         // Move past headerSize and linkCLSID
@@ -37,6 +38,7 @@ public struct ShellLinkHeader {
         if linkFlags.contains(.hasLinkInfo) {
             let linkInfo = LinkInfo(handle: handle,
                                     bottle: bottle,
+                                    preferredName: preferredName,
                                     offset: &offset)
             return linkInfo.program
         } else {
@@ -61,7 +63,7 @@ public struct LinkInfo: Hashable {
     public var linkInfoFlags: LinkInfoFlags
     public var program: Program?
 
-    public init(handle: FileHandle, bottle: Bottle, offset: inout UInt64) {
+    public init(handle: FileHandle, bottle: Bottle, preferredName: String?, offset: inout UInt64) {
         let startOfSection = offset
 
         let linkInfoSize = handle.extract(UInt32.self, offset: offset) ?? 0
@@ -82,6 +84,7 @@ public struct LinkInfo: Hashable {
                 program = getProgram(handle: handle,
                                      offset: localPathOffset,
                                      bottle: bottle,
+                                     preferredName: preferredName,
                                      unicode: true)
             } else {
                 offset += 8
@@ -91,6 +94,7 @@ public struct LinkInfo: Hashable {
                 program = getProgram(handle: handle,
                                      offset: localPathOffset,
                                      bottle: bottle,
+                                     preferredName: preferredName,
                                      unicode: false)
             }
         }
@@ -98,7 +102,13 @@ public struct LinkInfo: Hashable {
         offset = startOfSection + UInt64(linkInfoSize)
     }
 
-    func getProgram(handle: FileHandle, offset: UInt64, bottle: Bottle, unicode: Bool) -> Program? {
+    func getProgram(
+        handle: FileHandle,
+        offset: UInt64,
+        bottle: Bottle,
+        preferredName: String?,
+        unicode: Bool
+    ) -> Program? {
         do {
             try handle.seek(toOffset: offset)
             if let pathData = try handle.readToEnd() {
@@ -109,7 +119,7 @@ public struct LinkInfo: Hashable {
                         string.replace("\\", with: "/")
                         string.replace("C:", with: "\(bottle.url.path)/drive_c")
                         let url = URL(filePath: string)
-                        return Program(url: url, bottle: bottle)
+                        return Program(url: url, bottle: bottle, preferredName: preferredName)
                     }
                 }
             }

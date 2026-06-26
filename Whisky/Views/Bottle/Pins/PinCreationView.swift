@@ -17,14 +17,12 @@
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 import WhiskyKit
 
 struct PinCreationView: View {
     let bottle: Bottle
 
-    @State private var newPinURL: URL?
-    @State private var pinPath: String = ""
+    @State private var selectedProgram: Program?
     @State private var newPinName: String = ""
     @State private var isDuplicate: Bool = false
 
@@ -33,31 +31,24 @@ struct PinCreationView: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("pin.name", text: $newPinName)
-
-                ActionView(
-                    text: "pin.path",
-                    subtitle: pinPath,
-                    actionName: "create.browse"
-                ) {
-                    let panel = NSOpenPanel()
-                    panel.canChooseFiles = true
-                    panel.allowedContentTypes = [UTType.exe,
-                                                 UTType(exportedAs: "com.microsoft.msi-installer"),
-                                                 UTType(exportedAs: "com.microsoft.bat")]
-                    panel.directoryURL = newPinURL ?? bottle.url.appending(path: "drive_c")
-                    panel.canChooseDirectories = false
-                    panel.allowsMultipleSelection = false
-                    panel.canCreateDirectories = false
-                    panel.begin { result in
-                        if result == .OK, let url = panel.urls.first {
-                            newPinURL = url
+                if installedPrograms.isEmpty {
+                    ContentUnavailableView {
+                        Label("No installed apps yet", systemImage: "app.dashed")
+                    } description: {
+                        Text("Install a Windows app into this bottle before pinning it for quick access.")
+                    }
+                } else {
+                    Picker("Installed app", selection: $selectedProgram) {
+                        Text("Choose an app").tag(nil as Program?)
+                        ForEach(installedPrograms, id: \.url) { program in
+                            Text(program.name).tag(program as Program?)
                         }
                     }
+                    TextField("Pin name", text: $newPinName)
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("pin.title")
+            .navigationTitle("Pin installed app")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("create.cancel") {
@@ -66,28 +57,23 @@ struct PinCreationView: View {
                     .keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("pin.create") {
+                    Button("Pin app") {
                         submit()
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(newPinName.isEmpty || newPinURL == nil)
+                    .disabled(newPinName.isEmpty || selectedProgram == nil)
                     .alert("pin.error.title", isPresented: $isDuplicate) {
                     } message: {
-                        Text("pin.error.duplicate.\(newPinURL?.lastPathComponent ?? "unknown")")
+                        Text("This app is already pinned.")
                     }
                 }
             }
-            .onChange(of: newPinURL, initial: true) { oldValue, newValue in
-                guard let newValue = newValue else { return }
-
-                // Only reset newPinName if the textbox hasn't been modified
-                if newPinName.isEmpty ||
-                    newPinName == oldValue?.deletingPathExtension().lastPathComponent {
-
-                    newPinName = newValue.deletingPathExtension().lastPathComponent
-                }
-
-                pinPath = newValue.prettyPath()
+            .onAppear {
+                bottle.updateInstalledPrograms()
+            }
+            .onChange(of: selectedProgram) { _, program in
+                guard let program else { return }
+                newPinName = program.name
             }
             .onSubmit {
                 submit()
@@ -98,20 +84,26 @@ struct PinCreationView: View {
     }
 
     func submit() {
-        guard let newPinURL else { return }
+        guard let selectedProgram else { return }
 
         // Ensure this pin doesn't already exist
-        guard !bottle.settings.pins.contains(where: { $0.url == newPinURL })
+        guard !bottle.settings.pins.contains(where: { $0.url == selectedProgram.url })
         else {
             isDuplicate = true
             return
         }
 
-        bottle.settings.pins.append(PinnedProgram(name: newPinName, url: newPinURL))
+        bottle.settings.pins.append(PinnedProgram(name: newPinName, url: selectedProgram.url))
 
         // Trigger a reload
         bottle.updateInstalledPrograms()
         dismiss()
+    }
+
+    private var installedPrograms: [Program] {
+        bottle.programs
+            .filter { FileManager.default.fileExists(atPath: $0.url.path(percentEncoded: false)) }
+            .sorted { $0.name < $1.name }
     }
 }
 

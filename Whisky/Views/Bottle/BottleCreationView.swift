@@ -22,6 +22,9 @@ import WhiskyKit
 struct BottleCreationView: View {
     @Binding var newlyCreatedBottleURL: URL?
 
+    private let supportedWindowsVersions: [WinVersion] = [.win11, .win10, .win81, .win8, .win7, .winXP]
+    private let deprecatedWindowsVersions: Set<WinVersion> = [.win7, .winXP]
+
     @State private var newBottleName: String = ""
     @State private var newBottleVersion: WinVersion = .win10
     @State private var newBottleURL: URL = UserDefaults.standard.url(forKey: "defaultBottleLocation")
@@ -35,14 +38,31 @@ struct BottleCreationView: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("create.name", text: $newBottleName)
-                    .onChange(of: newBottleName) { _, name in
-                        nameValid = !name.isEmpty
+                Section {
+                    Text(
+                        "A bottle is a separate Windows environment for your app. " +
+                        "It keeps apps, settings, and dependencies from messing with each other."
+                    )
+                        .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    TextField("Bottle name", text: $newBottleName)
+                        .onChange(of: newBottleName) { _, name in
+                            nameValid = !name.isEmpty
+                        }
+
+                    Picker("Windows version", selection: $newBottleVersion) {
+                        ForEach(supportedWindowsVersions, id: \.self) { version in
+                            Text(versionTitle(version))
+                                .tag(version)
+                        }
                     }
 
-                Picker("create.win", selection: $newBottleVersion) {
-                    ForEach(WinVersion.allCases.reversed(), id: \.self) {
-                        Text($0.pretty())
+                    if deprecatedWindowsVersions.contains(newBottleVersion) {
+                        Text("This Windows version is deprecated. Some apps may not work correctly.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
                 }
 
@@ -94,7 +114,7 @@ struct BottleCreationView: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("create.title")
+            .navigationTitle("Create bottle")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("create.cancel") {
@@ -139,6 +159,13 @@ struct BottleCreationView: View {
             return "Bottle creation is blocked until required Wine runtime dependencies are available."
         }
         return "These optional Wine runtime dependencies are not currently bundled. Bottle creation can continue."
+    }
+
+    private func versionTitle(_ version: WinVersion) -> String {
+        if deprecatedWindowsVersions.contains(version) {
+            return "\(version.pretty()) (deprecated)"
+        }
+        return version.pretty()
     }
 }
 

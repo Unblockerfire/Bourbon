@@ -26,9 +26,10 @@ public final class Program: ObservableObject, Equatable, Hashable, Identifiable,
     public let bottle: Bottle
     public let url: URL
     public let settingsURL: URL
+    public let preferredName: String?
 
     public var name: String {
-        url.lastPathComponent
+        ProgramDisplayName.friendlyName(for: url, preferredName: preferredName)
     }
 
     @Published public var settings: ProgramSettings {
@@ -39,7 +40,7 @@ public final class Program: ObservableObject, Equatable, Hashable, Identifiable,
         didSet {
             if pinned {
                 bottle.settings.pins.append(PinnedProgram(
-                    name: name.replacingOccurrences(of: ".exe", with: ""),
+                    name: name,
                     url: url
                 ))
             } else {
@@ -50,10 +51,11 @@ public final class Program: ObservableObject, Equatable, Hashable, Identifiable,
 
     public let peFile: PEFile?
 
-    public init(url: URL, bottle: Bottle) {
+    public init(url: URL, bottle: Bottle, preferredName: String? = nil) {
         let name = url.lastPathComponent
         self.bottle = bottle
         self.url = url
+        self.preferredName = preferredName
         self.pinned = bottle.settings.pins.contains(where: { $0.url == url })
 
         // Warning: This will break if two programs share the same name such as "Launch.exe"

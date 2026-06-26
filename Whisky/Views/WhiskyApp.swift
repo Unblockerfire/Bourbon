@@ -23,11 +23,13 @@ import WhiskyKit
 @main
 struct WhiskyApp: App {
     @State var showSetup: Bool = false
+    @AppStorage("hasCompletedFirstRunOnboarding") private var hasCompletedFirstRunOnboarding = false
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openURL) var openURL
     private let updaterController: SPUStandardUpdaterController
 
     init() {
+        Wine.logCustomWineStartupEnvironment()
         updaterController = SPUStandardUpdaterController(startingUpdater: true,
                                                          updaterDelegate: nil,
                                                          userDriverDelegate: nil)
@@ -40,6 +42,9 @@ struct WhiskyApp: App {
                 .environmentObject(BottleVM.shared)
                 .onAppear {
                     NSWindow.allowsAutomaticWindowTabbing = false
+                    if !hasCompletedFirstRunOnboarding {
+                        showSetup = true
+                    }
 
                     Task.detached {
                         await WhiskyApp.deleteOldLogs()

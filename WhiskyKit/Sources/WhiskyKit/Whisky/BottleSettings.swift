@@ -26,7 +26,7 @@ public struct PinnedProgram: Codable, Hashable, Equatable {
     public var removable: Bool
 
     public init(name: String, url: URL) {
-        self.name = name
+        self.name = ProgramDisplayName.friendlyName(for: url, preferredName: name)
         self.url = url
         do {
             let volume = try url.resourceValues(forKeys: [.volumeURLKey]).volume
@@ -34,13 +34,36 @@ public struct PinnedProgram: Codable, Hashable, Equatable {
         } catch {
             self.removable = false
         }
+        let displayName = self.name
+        let displayPath = url.path(percentEncoded: false)
+        Logger.wineKit.info(
+            """
+            Pinned app display name:
+            Name: \(displayName, privacy: .public)
+            Path: \(displayPath, privacy: .public)
+            """
+        )
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         self.url = try container.decodeIfPresent(URL.self, forKey: .url)
+        let decodedName = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        if let url {
+            self.name = ProgramDisplayName.friendlyName(for: url, preferredName: decodedName)
+        } else {
+            self.name = ProgramDisplayName.friendlyName(for: URL(fileURLWithPath: decodedName))
+        }
         self.removable = try container.decodeIfPresent(Bool.self, forKey: .removable) ?? false
+        let displayName = self.name
+        let displayPath = self.url?.path(percentEncoded: false) ?? "<missing>"
+        Logger.wineKit.info(
+            """
+            Pinned app display name:
+            Name: \(displayName, privacy: .public)
+            Path: \(displayPath, privacy: .public)
+            """
+        )
     }
 }
 

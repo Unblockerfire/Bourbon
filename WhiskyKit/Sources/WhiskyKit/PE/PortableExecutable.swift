@@ -25,7 +25,7 @@ public struct PEError: Error {
     static let invalidPEFile = PEError(message: "Invalid PE file")
 }
 
-public enum Architecture: Hashable {
+public enum Architecture: Hashable, Sendable {
     case x32
     case x64
     case unknown
@@ -141,6 +141,51 @@ public struct PEFile: Hashable, Equatable, Sendable {
         }
 
         return rsrc(handle: handle)
+    }
+
+    public var versionDisplayName: String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            return nil
+        }
+        defer {
+            try? handle.close()
+        }
+
+        guard let versionEntry = rsrc(handle: handle, types: [.version])?.allEntries.first,
+              let offset = versionEntry.resolveRVA(sections: sections) else {
+            return nil
+        }
+
+        do {
+            try handle.seek(toOffset: UInt64(offset))
+            guard let data = try handle.read(upToCount: Int(versionEntry.size)) else {
+                return nil
+            }
+            return Self.versionString(in: data, keys: ["ProductName", "FileDescription"])
+        } catch {
+            return nil
+        }
+    }
+
+    private static func versionString(in data: Data, keys: [String]) -> String? {
+        guard let text = String(data: data, encoding: .utf16LittleEndian) else {
+            return nil
+        }
+        for key in keys {
+            guard let keyRange = text.range(of: key) else { continue }
+            let suffix = text[keyRange.upperBound...]
+            let rawValue = suffix
+                .drop { $0 == "\0" || $0.isWhitespace || !$0.isASCII }
+                .prefix { character in
+                    character != "\0" && !character.isNewline
+                }
+            let value = String(rawValue)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty {
+                return value
+            }
+        }
+        return nil
     }
 
     /// The best icon for this executable
