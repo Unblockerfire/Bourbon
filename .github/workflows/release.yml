@@ -18,13 +18,27 @@ jobs:
       PROJECT_PATH: Source/Whisky.xcodeproj
       SCHEME: Bourbon
       CONFIGURATION: Release
-      DERIVED_DATA: ${{ runner.temp }}/BourbonDerivedData
-      PACKAGE_CACHE: ${{ runner.temp }}/BourbonSourcePackages
-      BUILD_ROOT: ${{ runner.temp }}/BourbonRelease
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Configure release paths
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DERIVED_DATA="$RUNNER_TEMP/BourbonDerivedData"
+          PACKAGE_CACHE="$RUNNER_TEMP/BourbonSourcePackages"
+          BUILD_ROOT="$RUNNER_TEMP/BourbonRelease"
+
+          echo "DERIVED_DATA=$DERIVED_DATA" >> "$GITHUB_ENV"
+          echo "PACKAGE_CACHE=$PACKAGE_CACHE" >> "$GITHUB_ENV"
+          echo "BUILD_ROOT=$BUILD_ROOT" >> "$GITHUB_ENV"
+          echo "dmg=$BUILD_ROOT/Bourbon.dmg" >> "$GITHUB_OUTPUT"
+          echo "sha256=$BUILD_ROOT/Bourbon.dmg.sha256" >> "$GITHUB_OUTPUT"
+          echo "appcast=$BUILD_ROOT/appcast.xml" >> "$GITHUB_OUTPUT"
 
       - name: Select Xcode
         shell: bash
@@ -47,11 +61,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAG="${GITHUB_REF_NAME}"
-          VERSION="${TAG#v}"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && [[ "$GITHUB_REF_NAME" == v* ]]; then
+            TAG="$GITHUB_REF_NAME"
+            VERSION="${TAG#v}"
+          else
+            TAG="manual-${GITHUB_RUN_NUMBER}"
+            VERSION="$(awk -F ' = |;' '/MARKETING_VERSION = / { print $2; exit }' "$PROJECT_PATH/project.pbxproj")"
+          fi
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "build=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Build Bourbon
         shell: bash
@@ -141,7 +161,7 @@ jobs:
 
             "$GENERATE_APPCAST" \
               --ed-key-file "$SPARKLE_KEY_FILE" \
-              --download-url-prefix "https://github.com/Unblockerfire/Bourbon/releases/download/${GITHUB_REF_NAME}/" \
+              --download-url-prefix "https://github.com/Unblockerfire/Bourbon/releases/download/${{ steps.version.outputs.tag }}/" \
               "$APPCAST_DIR"
 
             rm -f "$SPARKLE_KEY_FILE"
@@ -164,7 +184,7 @@ jobs:
                 <sparkle:shortVersionString>${{ steps.version.outputs.version }}</sparkle:shortVersionString>
                 <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
                 <enclosure
-                  url="https://github.com/Unblockerfire/Bourbon/releases/download/${GITHUB_REF_NAME}/Bourbon.dmg"
+                  url="https://github.com/Unblockerfire/Bourbon/releases/download/${{ steps.version.outputs.tag }}/Bourbon.dmg"
                   length="$DMG_LENGTH"
                   type="application/octet-stream" />
               </item>
@@ -177,7 +197,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          tag_name: ${{ steps.version.outputs.tag }}
           files: |
-            ${{ runner.temp }}/BourbonRelease/Bourbon.dmg
-            ${{ runner.temp }}/BourbonRelease/Bourbon.dmg.sha256
-            ${{ runner.temp }}/BourbonRelease/appcast.xml
+            ${{ steps.paths.outputs.dmg }}
+            ${{ steps.paths.outputs.sha256 }}
+            ${{ steps.paths.outputs.appcast }}
