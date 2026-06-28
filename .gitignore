@@ -112,3 +112,6 @@ Source/Whisky/Admin/LocalOnly/
 
 # Ignore accidental root Xcode project copy
 /Whisky.xcodeproj/
+
+# Ignore accidental root Xcode project copy
+/Whisky.xcodeproj/
