@@ -109,3 +109,6 @@ AdminSecrets.json
 .env.admin
 Source/Whisky/Admin/Secrets/
 Source/Whisky/Admin/LocalOnly/
+
+# Ignore accidental root Xcode project copy
+/Whisky.xcodeproj/
