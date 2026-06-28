@@ -50,7 +50,7 @@ public class WhiskyWineInstaller {
         configuredURL(forKey: runtimeAPIBaseURLDefaultsKey, defaultValue: defaultRuntimeAPIBaseURLString)
     }
 
-    public struct BourbonRuntimeInfo: Codable {
+    public struct BourbonRuntimeInfo: Codable, Sendable {
         public let version: String
         public let wineVersion: String
         public let archiveName: String
