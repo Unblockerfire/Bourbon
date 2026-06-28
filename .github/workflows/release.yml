@@ -73,6 +73,9 @@ jobs:
           echo "build=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
       - name: Build Bourbon
         shell: bash
         run: |
