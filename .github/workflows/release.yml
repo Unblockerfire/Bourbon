@@ -91,6 +91,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION="${{ steps.version.outputs.version }}" \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}" \
+            INFOPLIST_KEY_SUFeedURL="https://github.com/Unblockerfire/Bourbon/releases/latest/download/appcast.xml" \
             build
 
       - name: Prepare application bundle

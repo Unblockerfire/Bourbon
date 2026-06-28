@@ -813,6 +813,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "A Windows application is trying to access the camera.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © Bourbon ( Created from Whisky ©)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A Windows application is trying to access the microphone.";
+				INFOPLIST_KEY_SUFeedURL = "https://github.com/Unblockerfire/Bourbon/releases/latest/download/appcast.xml";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -854,6 +855,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "A Windows application is trying to access the camera.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © Bourbon ( Created from Whisky ©)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A Windows application is trying to access the microphone.";
+				INFOPLIST_KEY_SUFeedURL = "https://github.com/Unblockerfire/Bourbon/releases/latest/download/appcast.xml";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
