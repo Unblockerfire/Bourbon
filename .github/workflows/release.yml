@@ -1,0 +1,182 @@
+name: Bourbon Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build DMG and Appcast
+    runs-on: macos-15
+
+    env:
+      PROJECT_PATH: Source/Whisky.xcodeproj
+      SCHEME: Bourbon
+      CONFIGURATION: Release
+      DERIVED_DATA: ${{ runner.temp }}/BourbonDerivedData
+      PACKAGE_CACHE: ${{ runner.temp }}/BourbonSourcePackages
+      BUILD_ROOT: ${{ runner.temp }}/BourbonRelease
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -d /Applications/Xcode-beta.app ]; then
+            sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer
+          elif [ -d /Applications/Xcode_16.4.app ]; then
+            sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          else
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          fi
+
+          xcodebuild -version
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Bourbon
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          xcodebuild \
+            -project "$PROJECT_PATH" \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            -clonedSourcePackagesDirPath "$PACKAGE_CACHE" \
+            CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="${{ steps.version.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}" \
+            build
+
+      - name: Prepare application bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/Bourbon.app"
+          RELEASE_APP="$BUILD_ROOT/dmg-root/Bourbon.app"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Bourbon.app was not found at $APP_PATH"
+            find "$DERIVED_DATA/Build/Products" -maxdepth 3 -name 'Bourbon.app' -print || true
+            exit 1
+          fi
+
+          mkdir -p "$BUILD_ROOT/dmg-root"
+          ditto "$APP_PATH" "$RELEASE_APP"
+          ln -s /Applications "$BUILD_ROOT/dmg-root/Applications"
+
+          # Temporary release pipeline: use ad-hoc signing until Developer ID
+          # signing and notarization secrets are configured in GitHub Actions.
+          /usr/bin/codesign --force --deep --sign - "$RELEASE_APP"
+
+      - name: Create DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          hdiutil create \
+            -volname "Bourbon" \
+            -srcfolder "$BUILD_ROOT/dmg-root" \
+            -ov \
+            -format UDZO \
+            "$BUILD_ROOT/Bourbon.dmg"
+
+          shasum -a 256 "$BUILD_ROOT/Bourbon.dmg" > "$BUILD_ROOT/Bourbon.dmg.sha256"
+
+      - name: Generate Sparkle appcast
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APPCAST_DIR="$BUILD_ROOT/appcast"
+          APPCAST_PATH="$BUILD_ROOT/appcast.xml"
+          DMG_PATH="$BUILD_ROOT/Bourbon.dmg"
+          DMG_LENGTH="$(stat -f%z "$DMG_PATH")"
+          PUB_DATE="$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')"
+
+          mkdir -p "$APPCAST_DIR"
+          cp "$DMG_PATH" "$APPCAST_DIR/Bourbon.dmg"
+
+          GENERATE_APPCAST=""
+          for candidate in \
+            "/Applications/Sparkle/bin/generate_appcast" \
+            "/usr/local/bin/generate_appcast" \
+            "/opt/homebrew/bin/generate_appcast"; do
+            if [ -x "$candidate" ]; then
+              GENERATE_APPCAST="$candidate"
+              break
+            fi
+          done
+
+          if [ -n "$GENERATE_APPCAST" ] && [ -n "${SPARKLE_PRIVATE_KEY:-}" ]; then
+            # Real public Sparkle updates require a signed appcast plus Developer
+            # ID signing and notarization. Store private keys only in GitHub
+            # Actions Secrets, never in the repository.
+            SPARKLE_KEY_FILE="$RUNNER_TEMP/sparkle_ed_private_key"
+            printf '%s' "$SPARKLE_PRIVATE_KEY" > "$SPARKLE_KEY_FILE"
+            chmod 600 "$SPARKLE_KEY_FILE"
+
+            "$GENERATE_APPCAST" \
+              --ed-key-file "$SPARKLE_KEY_FILE" \
+              --download-url-prefix "https://github.com/Unblockerfire/Bourbon/releases/download/${GITHUB_REF_NAME}/" \
+              "$APPCAST_DIR"
+
+            rm -f "$SPARKLE_KEY_FILE"
+            cp "$APPCAST_DIR/appcast.xml" "$APPCAST_PATH"
+          else
+            # Placeholder appcast for early release-pipeline testing. Sparkle can
+            # fetch this feed URL, but production updates should be generated by
+            # Sparkle tools with SPARKLE_PRIVATE_KEY configured in Actions.
+            cat > "$APPCAST_PATH" <<XML
+          <?xml version="1.0" standalone="yes"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <channel>
+              <title>Bourbon Updates</title>
+              <link>https://github.com/Unblockerfire/Bourbon/releases</link>
+              <description>Bourbon release feed.</description>
+              <item>
+                <title>Bourbon ${{ steps.version.outputs.version }}</title>
+                <pubDate>$PUB_DATE</pubDate>
+                <sparkle:version>${{ steps.version.outputs.build }}</sparkle:version>
+                <sparkle:shortVersionString>${{ steps.version.outputs.version }}</sparkle:shortVersionString>
+                <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+                <enclosure
+                  url="https://github.com/Unblockerfire/Bourbon/releases/download/${GITHUB_REF_NAME}/Bourbon.dmg"
+                  length="$DMG_LENGTH"
+                  type="application/octet-stream" />
+              </item>
+            </channel>
+          </rss>
+          XML
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            ${{ runner.temp }}/BourbonRelease/Bourbon.dmg
+            ${{ runner.temp }}/BourbonRelease/Bourbon.dmg.sha256
+            ${{ runner.temp }}/BourbonRelease/appcast.xml

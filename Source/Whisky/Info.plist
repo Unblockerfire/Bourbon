@@ -54,7 +54,7 @@
 		</dict>
 	</array>
 	<key>SUFeedURL</key>
-	<string>https://getbourbon.app/appcast.xml</string>
+	<string>https://github.com/Unblockerfire/Bourbon/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>tnZFAvPUfCpM7Tr7Sx5gKRm6BUQQ6htJQeOMP44evms=</string>
 	<key>UTExportedTypeDeclarations</key>
