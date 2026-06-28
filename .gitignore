@@ -29,6 +29,7 @@ DerivedData/
 
 ## App packaging
 *.ipa
+*.dmg
 *.dSYM.zip
 *.dSYM
 
@@ -91,3 +92,20 @@ fastlane/test_output
 
 iOSInjectionProject/
 PROTECTRED/
+
+# Private runtime files
+PROTECTRED/
+*.tar.gz
+*.tar.gz.*
+BourbonWine-package/
+BourbonWine-release/
+BourbonWine-runtime/
+BourbonWine-stage/
+
+# Bourbon local admin development files
+AdminLocalConfig.json
+AdminSecrets.json
+.env
+.env.admin
+Source/Whisky/Admin/Secrets/
+Source/Whisky/Admin/LocalOnly/
