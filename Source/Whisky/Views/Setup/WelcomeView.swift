@@ -772,7 +772,7 @@ enum BourbonLicenseAPI {
             displayName: displayName,
             status: "Free",
             messages: ["Local mock account created. Online activation can be connected later."],
-            permissions: ["library", "local-installs"],
+            permissions: ["distillery", "local-installs"],
             warnings: [],
             strikes: 0
         )
@@ -859,46 +859,163 @@ enum BourbonAPIConfiguration {
 
 enum LicenseKeychainStore {
     private static let service = "com.unblockerfire.Bourbon.license"
-    private static let licenseAccount = "license-record"
-    private static let installAccount = "install-id"
+    private static let legacyLicenseAccount = "license-record"
+    private static let licenseTokenAccount = "license-token"
+    private static var defaults: UserDefaults { .standard }
+
+    private enum DefaultsKey {
+        static let publicLicenseId = "bourbon.publicLicenseId"
+        static let installId = "bourbon.installId"
+        static let licenseDisplayName = "bourbon.licenseDisplayName"
+        static let licenseStatus = "bourbon.licenseStatus"
+        static let licenseMessages = "bourbon.licenseMessages"
+        static let licensePermissions = "bourbon.licensePermissions"
+        static let licenseWarnings = "bourbon.licenseWarnings"
+        static let licenseStrikes = "bourbon.licenseStrikes"
+        static let legacyLicenseMigrationAttempted = "bourbon.legacyLicenseMigrationAttempted"
+    }
 
     static func save(_ record: BourbonLicenseRecord) throws {
-        let data = try JSONEncoder().encode(record)
-        try set(data, account: licenseAccount)
-        try set(Data(record.installId.utf8), account: installAccount)
+        savePublicMetadata(record)
+        try updateLicenseToken(record.licenseToken)
     }
 
     static func currentLicense() -> BourbonLicenseRecord? {
-        guard let data = data(account: licenseAccount),
-              let record = try? JSONDecoder().decode(BourbonLicenseRecord.self, from: data),
-              !record.licenseToken.isEmpty else {
-            return nil
+        if let record = publicMetadataRecord() {
+            return record
         }
-        return record
+
+        return migrateLegacyLicenseRecordIfNeeded()
     }
 
     static func installID() throws -> String {
-        if let data = data(account: installAccount),
-           let existing = String(data: data, encoding: .utf8),
+        if let existing = defaults.string(forKey: DefaultsKey.installId),
            !existing.isEmpty {
             return existing
         }
 
         let newID = UUID().uuidString
-        try set(Data(newID.utf8), account: installAccount)
+        defaults.set(newID, forKey: DefaultsKey.installId)
         return newID
     }
 
-    private static func set(_ data: Data, account: String) throws {
+    static func readLicenseToken() -> String? {
+        guard let data = data(account: licenseTokenAccount, logDescription: "license token"),
+              let token = String(data: data, encoding: .utf8),
+              !token.isEmpty else {
+            return nil
+        }
+
+        print("License token found in Keychain")
+        return token
+    }
+
+    static func saveLicenseTokenIfMissing(_ token: String) throws {
+        guard !token.isEmpty else { return }
+
+        do {
+            try add(Data(token.utf8), account: licenseTokenAccount)
+            print("License token missing, creating new token")
+        } catch LicenseActivationError.keychain(let status) where status == errSecDuplicateItem {
+            print("License token found in Keychain")
+            return
+        }
+    }
+
+    static func updateLicenseToken(_ token: String) throws {
+        guard !token.isEmpty else { return }
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: licenseTokenAccount
+        ]
+
+        let attributes: [String: Any] = [
+            kSecValueData as String: Data(token.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecSuccess {
+            print("License token updated")
+        } else if status == errSecItemNotFound {
+            print("License token missing, creating new token")
+            try add(Data(token.utf8), account: licenseTokenAccount)
+        } else {
+            print("License token update failed: \(status)")
+            throw LicenseActivationError.keychain(status)
+        }
+    }
+
+    static func deleteLicenseToken() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: licenseTokenAccount
         ]
 
         SecItemDelete(query as CFDictionary)
+    }
 
-        var addQuery = query
+    private static func savePublicMetadata(_ record: BourbonLicenseRecord) {
+        defaults.set(record.publicLicenseId, forKey: DefaultsKey.publicLicenseId)
+        defaults.set(record.installId, forKey: DefaultsKey.installId)
+        defaults.set(record.displayName, forKey: DefaultsKey.licenseDisplayName)
+        defaults.set(record.status, forKey: DefaultsKey.licenseStatus)
+        defaults.set(record.messages, forKey: DefaultsKey.licenseMessages)
+        defaults.set(record.permissions, forKey: DefaultsKey.licensePermissions)
+        defaults.set(record.warnings, forKey: DefaultsKey.licenseWarnings)
+        defaults.set(record.strikes, forKey: DefaultsKey.licenseStrikes)
+    }
+
+    private static func publicMetadataRecord() -> BourbonLicenseRecord? {
+        guard let publicLicenseId = defaults.string(forKey: DefaultsKey.publicLicenseId),
+              !publicLicenseId.isEmpty else {
+            return nil
+        }
+
+        return BourbonLicenseRecord(
+            publicLicenseId: publicLicenseId,
+            licenseToken: "",
+            installId: defaults.string(forKey: DefaultsKey.installId) ?? "",
+            displayName: defaults.string(forKey: DefaultsKey.licenseDisplayName) ?? "Bourbon User",
+            status: defaults.string(forKey: DefaultsKey.licenseStatus) ?? "Active",
+            messages: defaults.stringArray(forKey: DefaultsKey.licenseMessages) ?? ["Welcome to Bourbon."],
+            permissions: defaults.stringArray(forKey: DefaultsKey.licensePermissions)
+            ?? ["Distillery: Enabled", "Uploads: Enabled"],
+            warnings: defaults.stringArray(forKey: DefaultsKey.licenseWarnings) ?? [],
+            strikes: defaults.integer(forKey: DefaultsKey.licenseStrikes)
+        )
+    }
+
+    private static func migrateLegacyLicenseRecordIfNeeded() -> BourbonLicenseRecord? {
+        guard !defaults.bool(forKey: DefaultsKey.legacyLicenseMigrationAttempted) else {
+            return nil
+        }
+
+        defaults.set(true, forKey: DefaultsKey.legacyLicenseMigrationAttempted)
+
+        guard let data = data(account: legacyLicenseAccount, logDescription: "legacy license record"),
+              let record = try? JSONDecoder().decode(BourbonLicenseRecord.self, from: data) else {
+            return nil
+        }
+
+        savePublicMetadata(record)
+
+        do {
+            try saveLicenseTokenIfMissing(record.licenseToken)
+            delete(account: legacyLicenseAccount)
+        } catch {
+            print("License token migration failed")
+        }
+
+        return publicMetadataRecord()
+    }
+
+    private static func add(_ data: Data, account: String) throws {
+        var addQuery = baseQuery(account: account)
+
         addQuery[kSecValueData as String] = data
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
@@ -908,19 +1025,36 @@ enum LicenseKeychainStore {
         }
     }
 
-    private static func data(account: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
+    private static func data(account: String, logDescription: String) -> Data? {
+        var query = baseQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
 
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
+        let messageSubject = logDescription == "license token" ? "License token" : logDescription
+        switch status {
+        case errSecSuccess:
+            return result as? Data
+        case errSecItemNotFound:
+            print("\(messageSubject) missing in Keychain")
+            return nil
+        default:
+            print("\(messageSubject) read failed: \(status)")
+            return nil
+        }
+    }
+
+    private static func delete(account: String) {
+        SecItemDelete(baseQuery(account: account) as CFDictionary)
+    }
+
+    private static func baseQuery(account: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
     }
 }
 

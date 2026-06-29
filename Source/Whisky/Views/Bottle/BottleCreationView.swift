@@ -32,122 +32,42 @@ struct BottleCreationView: View {
     @State private var bottleType: BourbonBottleType = .applications
     @State private var newBottleURL: URL = UserDefaults.standard.url(forKey: "defaultBottleLocation")
                                            ?? BottleData.defaultBottleDir
-    @State private var missingDependencies: [Wine.RuntimeDependency] = Wine
-        .missingRuntimeDependencies(requiredOnly: false)
 
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             BourbonBackground {
-                BourbonGlassCard(maxWidth: 520) {
-                    VStack(alignment: .leading, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Create Bottle")
-                                .font(.largeTitle.bold())
-                            Text("Set up a private Windows environment for this app.")
-                            .foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 22) {
+                            headerSection
+                            bottleDetailsSection
+                            installerSection
+                            storageSection
                         }
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            TextField("Bottle Name (optional)", text: $newBottleName)
-                                .textFieldStyle(.roundedBorder)
-                                .help("Name this bottle after the app or game you plan to install.")
-                            Text(bottleNameHelperText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            Picker("Bottle Type", selection: $bottleType) {
-                                ForEach(BourbonBottleType.allCases) { type in
-                                    Label(type.title, systemImage: type.systemImage)
-                                        .tag(type)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .help("Choose a simple starting profile for this bottle.")
-
-                            Picker("Windows version", selection: $newBottleVersion) {
-                                ForEach(supportedWindowsVersions, id: \.self) { version in
-                                    Text(versionTitle(version))
-                                        .tag(version)
-                                }
-                            }
-                            .help("Choose the Windows version this app should see.")
-
-                            if deprecatedWindowsVersions.contains(newBottleVersion) {
-                                Text("This Windows version is deprecated. Some apps may not work correctly.")
-                                    .font(.caption)
-                                    .foregroundStyle(BourbonStyle.amber)
-                            }
-                        }
-                        .padding(16)
-                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Choose your installer.")
-                                .font(.headline)
-
-                            InstallerPickerCard(
-                                title: selectedInstallerURL?.lastPathComponent ?? "Choose File",
-                                subtitle: "Drag & Drop or choose a supported installer.",
-                                supportedText: ".exe .msi .bat .zip .rar .7z .iso"
-                            ) {
-                                if let url = selectInstaller(startingDirectory: newBottleURL) {
-                                    selectedInstallerURL = url
-                                    if newBottleName.isEmpty {
-                                        newBottleName = defaultBottleName(for: url)
-                                    }
-                                }
-                            }
-                        }
-
-                        Button {
-                            browseBottleLocation()
-                        } label: {
-                            Label(newBottleURL.prettyPath(), systemImage: "folder")
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(BourbonSecondaryButtonStyle())
-                        .help("Choose where this bottle will be stored.")
-
-                        if !missingDependencies.isEmpty {
-                            runtimeDependencySection
-                        }
-
-                        HStack {
-                            Button("Cancel") {
-                                dismiss()
-                            }
-                            .buttonStyle(BourbonSecondaryButtonStyle())
-                            .keyboardShortcut(.cancelAction)
-
-                            Spacer()
-
-                            Button("Create Bottle") {
-                                submit()
-                            }
-                            .buttonStyle(BourbonPrimaryButtonStyle())
-                            .keyboardShortcut(.defaultAction)
-                            .disabled(hasMissingRequiredDependencies)
-                            .help("Create a new Windows environment.")
-                        }
+                        .frame(maxWidth: 820)
+                        .padding(.horizontal, 34)
+                        .padding(.top, 34)
+                        .padding(.bottom, 26)
+                        .frame(maxWidth: .infinity)
                     }
+
+                    actionBar
                 }
             }
             .onSubmit {
-                if !hasMissingRequiredDependencies {
+                if canCreate {
                     submit()
                 }
             }
-            .onAppear {
-                missingDependencies = Wine.missingRuntimeDependencies(requiredOnly: false)
-            }
         }
-        .frame(width: 720, height: 680)
+        .frame(minWidth: 760, idealWidth: 880, minHeight: 720, idealHeight: 820)
     }
 
     func submit() {
+        guard canCreate else { return }
+
         let bottleName = newBottleName.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalName = bottleName.isEmpty ? "My Bottle" : bottleName
         newlyCreatedBottleURL = BottleVM.shared.createNewBottle(
@@ -158,8 +78,137 @@ struct BottleCreationView: View {
         dismiss()
     }
 
-    private var hasMissingRequiredDependencies: Bool {
-        missingDependencies.contains(where: \.required)
+    private var canCreate: Bool {
+        true
+    }
+
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Create Bottle")
+                .font(.largeTitle.bold())
+            Text("Set up a private Windows environment for your app or game.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var bottleDetailsSection: some View {
+        BourbonGlassCard(maxWidth: 820) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Bottle setup")
+                    .font(.title2.bold())
+
+                TextField("Bottle Name (optional)", text: $newBottleName)
+                    .textFieldStyle(.roundedBorder)
+                    .help("Name this bottle after the app or game you plan to install.")
+
+                Text(bottleNameHelperText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker("Bottle Type", selection: $bottleType) {
+                    ForEach(BourbonBottleType.allCases) { type in
+                        Label(type.title, systemImage: type.systemImage)
+                            .tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .help("Choose a simple starting profile for this bottle.")
+
+                Picker("Windows version", selection: $newBottleVersion) {
+                    ForEach(supportedWindowsVersions, id: \.self) { version in
+                        Text(versionTitle(version))
+                            .tag(version)
+                    }
+                }
+                .help("Choose the Windows version this app should see.")
+
+                if deprecatedWindowsVersions.contains(newBottleVersion) {
+                    Text("This Windows version is deprecated. Some apps may not work correctly.")
+                        .font(.caption)
+                        .foregroundStyle(BourbonStyle.amber)
+                }
+            }
+        }
+    }
+
+    private var installerSection: some View {
+        BourbonGlassCard(maxWidth: 820) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Choose your installer")
+                    .font(.title2.bold())
+                Text("Pick the Windows installer you want to use after this bottle is created.")
+                    .foregroundStyle(.secondary)
+
+                InstallerPickerCard(
+                    title: selectedInstallerURL?.lastPathComponent ?? "Choose File",
+                    subtitle: "Drag & Drop or choose a supported installer.",
+                    supportedText: ".exe .msi .bat .zip .rar .7z .iso"
+                ) {
+                    if let url = selectInstaller(startingDirectory: newBottleURL) {
+                        selectedInstallerURL = url
+                        if newBottleName.isEmpty {
+                            newBottleName = defaultBottleName(for: url)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var storageSection: some View {
+        BourbonGlassCard(maxWidth: 820) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Storage")
+                    .font(.title2.bold())
+                Text("Bourbon will keep this bottle in your selected storage folder.")
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    browseBottleLocation()
+                } label: {
+                    HStack {
+                        Label(storageLocationLabel, systemImage: "folder")
+                            .lineLimit(1)
+                        Spacer()
+                        Text("Change")
+                            .foregroundStyle(BourbonStyle.amber)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(BourbonSecondaryButtonStyle())
+                .help("Choose where this bottle will be stored.")
+            }
+        }
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 12) {
+            Button("Cancel") {
+                dismiss()
+            }
+            .buttonStyle(BourbonSecondaryButtonStyle())
+            .keyboardShortcut(.cancelAction)
+            .help("Close without creating a bottle.")
+
+            Spacer()
+
+            Button("Create") {
+                submit()
+            }
+            .buttonStyle(BourbonPrimaryButtonStyle())
+            .keyboardShortcut(.defaultAction)
+            .disabled(!canCreate)
+            .help("Create a new Windows environment.")
+        }
+        .padding(.horizontal, 34)
+        .padding(.vertical, 18)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(.white.opacity(0.08))
+                .frame(height: 1)
+        }
     }
 
     private var bottleNameHelperText: String {
@@ -170,11 +219,12 @@ struct BottleCreationView: View {
         return "Ready to create \"\(name)\""
     }
 
-    private var runtimeDependencyFooter: String {
-        if hasMissingRequiredDependencies {
-            return "Bottle creation is blocked until required Bourbon runtime dependencies are available."
+    private var storageLocationLabel: String {
+        if newBottleURL == BottleData.defaultBottleDir {
+            return "Default Bourbon location"
         }
-        return "These optional Bourbon runtime dependencies are not currently bundled. Bottle creation can continue."
+
+        return "Custom location selected"
     }
 
     private func versionTitle(_ version: WinVersion) -> String {
@@ -182,38 +232,6 @@ struct BottleCreationView: View {
             return "\(version.pretty()) (deprecated)"
         }
         return version.pretty()
-    }
-
-    private var runtimeDependencySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Runtime notes")
-                .font(.headline)
-            ForEach(missingDependencies) { dependency in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(dependency.displayName)
-                        .font(.subheadline.bold())
-                    Text(dependency.required ? "Required" : "Optional")
-                        .font(.caption)
-                        .foregroundStyle(dependency.required ? .red : .secondary)
-                    Text(dependency.reason)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(dependency.installHint)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-            }
-            Text(runtimeDependencyFooter)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Button("Re-check") {
-                missingDependencies = Wine.missingRuntimeDependencies(requiredOnly: false)
-            }
-            .buttonStyle(BourbonSecondaryButtonStyle())
-        }
-        .padding(16)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private func browseBottleLocation() {

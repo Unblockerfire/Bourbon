@@ -20,6 +20,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WhiskyKit
 import SemanticVersion
+import Sparkle
 
 // swiftlint:disable file_length
 
@@ -32,6 +33,7 @@ struct ContentView: View {
     @EnvironmentObject var bottleVM: BottleVM
     @ObservedObject private var installManager = InstallManager.shared
     @Binding var showSetup: Bool
+    let updater: SPUUpdater
 
     @State private var selected: URL?
     @State private var showBottleCreation: Bool = false
@@ -40,8 +42,7 @@ struct ContentView: View {
     @State private var newlyCreatedBottleURL: URL?
     @State private var firstInstallBottleURL: URL?
     @State private var firstInstallerURL: URL?
-    @State private var showingMarketplace = false
-    @State private var showAccountPanel = false
+    @State private var activePage: MainContentPage? = .home
     @State private var openedFileURL: URL?
     @State private var triggerRefresh: Bool = false
     @State private var refreshAnimation: Angle = .degrees(0)
@@ -62,7 +63,16 @@ struct ContentView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showAccountPanel = true
+                    updater.checkForUpdates()
+                } label: {
+                    Label("Check for Updates", systemImage: "arrow.down.circle")
+                }
+                .help("Check for Bourbon updates.")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    selected = nil
+                    activePage = .account
                 } label: {
                     Label("Account", systemImage: "person.crop.circle")
                 }
@@ -129,9 +139,6 @@ struct ContentView: View {
                          currentBottle: selected,
                          bottles: bottleVM.bottles)
         }
-        .sheet(isPresented: $showAccountPanel) {
-            AccountPanelSheet(displayName: resolvedDisplayName, license: accountLicense)
-        }
         .onChange(of: selected) {
             selectedBottleURL = selected
         }
@@ -142,14 +149,6 @@ struct ContentView: View {
         .task {
             bottleVM.loadBottles()
             bottlesLoaded = true
-
-            if !bottleVM.bottles.isEmpty || bottleVM.countActive() != 0 {
-                if let bottle = bottleVM.bottles.first(where: { $0.url == selectedBottleURL && $0.isAvailable }) {
-                    selected = bottle.url
-                } else {
-                    selected = bottleVM.bottles[0].url
-                }
-            }
 
             if !WhiskyWineInstaller.isWhiskyWineInstalled() {
                 showSetup = true
@@ -212,13 +211,24 @@ struct ContentView: View {
         ScrollViewReader { proxy in
             List(selection: $selected) {
                 Section {
-                    Button {
+                    SidebarPageButton(
+                        title: "Home",
+                        systemImage: "house",
+                        isActive: activePage == .home
+                    ) {
                         selected = nil
-                        showingMarketplace = true
-                    } label: {
-                        Label("Library", systemImage: "books.vertical")
+                        activePage = .home
                     }
-                    .buttonStyle(.plain)
+                    .help("Go to Bourbon Home.")
+
+                    SidebarPageButton(
+                        title: "🥃 Distillery",
+                        systemImage: "books.vertical",
+                        isActive: activePage == .library
+                    ) {
+                        selected = nil
+                        activePage = .library
+                    }
                     .help("Browse games and apps.")
                 }
 
@@ -246,7 +256,9 @@ struct ContentView: View {
             .listStyle(.sidebar)
             .searchable(text: $bottleFilter, placement: .sidebar)
             .onChange(of: selected) {
-                showingMarketplace = false
+                if selected != nil {
+                    activePage = nil
+                }
             }
             .onChange(of: newlyCreatedBottleURL) { _, url in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -265,8 +277,23 @@ struct ContentView: View {
 
     @ViewBuilder
     var detail: some View {
-        if showingMarketplace {
-            MarketplaceView()
+        if activePage == .home {
+            BourbonHomeView(
+                bottles: bottleVM.bottles,
+                displayName: resolvedDisplayName,
+                subtitle: homeSubtitle,
+                createBottle: {
+                    showBottleCreation.toggle()
+                },
+                openBottle: { bottle in
+                    selected = bottle.url
+                    activePage = nil
+                }
+            )
+        } else if activePage == .library {
+            DistilleryView()
+        } else if activePage == .account {
+            AccountPageView(displayName: resolvedDisplayName, license: accountLicense)
         } else if let bottle = selected {
             if let bottle = bottleVM.bottles.first(where: { $0.url == bottle }) {
                 BottleView(bottle: bottle)
@@ -275,37 +302,18 @@ struct ContentView: View {
             }
         } else {
             if (bottleVM.bottles.isEmpty || bottleVM.countActive() == 0) && bottlesLoaded {
-                BourbonBackground {
-                    VStack(spacing: 16) {
-                        BourbonGlassCard(maxWidth: 420) {
-                            VStack(spacing: 16) {
-                                Image(systemName: "shippingbox.fill")
-                                    .font(.system(size: 42, weight: .semibold))
-                                    .foregroundStyle(BourbonStyle.amber)
-
-                                Text(homeTitle)
-                                    .font(.title2.bold())
-
-                                Text(homeSubtitle)
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.center)
-
-                                Button {
-                                    showBottleCreation.toggle()
-                                } label: {
-                                    Label("Create Bottle", systemImage: "plus")
-                                        .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(BourbonPrimaryButtonStyle())
-                                .help("Create a new bottle for a Windows app or game.")
-                            }
-                        }
-
-                        if let license = LicenseKeychainStore.currentLicense() {
-                            AccountPanelView(displayName: resolvedDisplayName, license: license)
-                        }
+                BourbonHomeView(
+                    bottles: bottleVM.bottles,
+                    displayName: resolvedDisplayName,
+                    subtitle: homeSubtitle,
+                    createBottle: {
+                        showBottleCreation.toggle()
+                    },
+                    openBottle: { bottle in
+                        selected = bottle.url
+                        activePage = nil
                     }
-                }
+                )
             }
         }
     }
@@ -338,10 +346,266 @@ struct ContentView: View {
             displayName: resolvedDisplayName == "there" ? "Bourbon User" : resolvedDisplayName,
             status: "Active",
             messages: ["Welcome to Bourbon."],
-            permissions: ["Library: Enabled", "Uploads: Enabled"],
+            permissions: ["Distillery: Enabled", "Uploads: Enabled"],
             warnings: [],
             strikes: 0
         )
+    }
+}
+
+enum MainContentPage {
+    case home
+    case library
+    case account
+}
+
+struct SidebarPageButton: View {
+    let title: String
+    let systemImage: String
+    let isActive: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .fontWeight(isActive ? .semibold : .regular)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isActive ? BourbonStyle.amber : .primary)
+    }
+}
+
+struct BourbonHomeView: View {
+    let bottles: [Bottle]
+    let displayName: String
+    let subtitle: String
+    let createBottle: () -> Void
+    let openBottle: (Bottle) -> Void
+
+    var body: some View {
+        BourbonBackground {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    header
+
+                    HStack(alignment: .top, spacing: 22) {
+                        VStack(alignment: .leading, spacing: 22) {
+                            overviewCard
+                            topBottlesCard
+                        }
+                        .frame(maxWidth: 620)
+
+                        VStack(spacing: 22) {
+                            donationsCard
+                            messagesCard
+                        }
+                        .frame(width: 320)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
+                .padding(32)
+                .frame(maxWidth: 1040)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .navigationTitle("Home")
+        .onAppear {
+            refreshInstalledApplicationCounts()
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Welcome, \(displayName)")
+                .font(.largeTitle.bold())
+            Text(subtitle)
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var overviewCard: some View {
+        BourbonGlassCard(maxWidth: 620, cornerRadius: 22) {
+            HStack(spacing: 18) {
+                overviewMetric(
+                    title: "Bottles",
+                    value: "\(availableBottles.count)",
+                    systemImage: "shippingbox"
+                )
+
+                divider
+
+                overviewMetric(
+                    title: "Installed apps",
+                    value: "\(installedApplicationCount)",
+                    systemImage: "app.badge"
+                )
+
+                Spacer(minLength: 12)
+
+                Button {
+                    createBottle()
+                } label: {
+                    Label("Create Bottle", systemImage: "plus")
+                }
+                .buttonStyle(BourbonPrimaryButtonStyle())
+                .help("Create a new bottle for a Windows app or game.")
+            }
+        }
+    }
+
+    private var topBottlesCard: some View {
+        BourbonGlassCard(maxWidth: 620, cornerRadius: 22) {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    Text("Your Bottles")
+                        .font(.title2.bold())
+                    Spacer()
+                    Text("Top 3")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                }
+
+                if topBottles.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("No bottles yet.")
+                            .font(.headline)
+                        Text("Create a bottle to install your first Windows app.")
+                            .foregroundStyle(.secondary)
+                        Button {
+                            createBottle()
+                        } label: {
+                            Label("Create Bottle", systemImage: "plus")
+                        }
+                        .buttonStyle(BourbonSecondaryButtonStyle())
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    VStack(spacing: 12) {
+                        ForEach(topBottles) { bottle in
+                            Button {
+                                openBottle(bottle)
+                            } label: {
+                                bottleRow(bottle)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Open \(bottle.settings.name).")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var donationsCard: some View {
+        BourbonGlassCard(maxWidth: 320, cornerRadius: 22) {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Top Donations", systemImage: "heart")
+                    .font(.title3.bold())
+                    .foregroundStyle(BourbonStyle.amber)
+
+                Text("Coming soon")
+                    .font(.headline)
+
+                Text("Community support highlights will appear here.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var messagesCard: some View {
+        BourbonGlassCard(maxWidth: 320, cornerRadius: 22) {
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Messages", systemImage: "text.bubble")
+                    .font(.title3.bold())
+                    .foregroundStyle(BourbonStyle.amber)
+
+                Text("There are no new messages.")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var availableBottles: [Bottle] {
+        bottles.filter(\.isAvailable).sorted()
+    }
+
+    private var topBottles: [Bottle] {
+        Array(availableBottles.prefix(3))
+    }
+
+    private var installedApplicationCount: Int {
+        availableBottles.reduce(0) { total, bottle in
+            total + bottle.programs.count
+        }
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(.white.opacity(0.1))
+            .frame(width: 1, height: 48)
+    }
+
+    private func overviewMetric(title: String, value: String, systemImage: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.title2)
+                .foregroundStyle(BourbonStyle.amber)
+                .frame(width: 34, height: 34)
+                .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.title.bold())
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func bottleRow(_ bottle: Bottle) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: "shippingbox.fill")
+                .font(.title3)
+                .foregroundStyle(BourbonStyle.amber)
+                .frame(width: 38, height: 38)
+                .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(bottle.settings.name)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text("\(bottle.programs.count) installed app\(bottle.programs.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(Rectangle())
+    }
+
+    private func refreshInstalledApplicationCounts() {
+        for bottle in availableBottles {
+            bottle.updateInstalledPrograms()
+        }
     }
 }
 
@@ -443,7 +707,13 @@ struct GlobalInstallStatusBanner: View {
 }
 
 #Preview {
-    ContentView(showSetup: .constant(false))
+    let updaterController = SPUStandardUpdaterController(
+        startingUpdater: false,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
+
+    ContentView(showSetup: .constant(false), updater: updaterController.updater)
         .environmentObject(BottleVM.shared)
 }
 
@@ -528,242 +798,66 @@ struct BourbonSecondaryButtonStyle: ButtonStyle {
     }
 }
 
-struct MarketplaceView: View {
-    @State private var searchText = ""
-    @State private var selectedCategory = "Games"
+struct DistilleryView: View {
     @State private var showRequestForm = false
     @State private var requestSubmitted = false
 
-    private let categories = [
-        "Games",
-        "Launchers",
-        "Utilities",
-        "Productivity",
-        "Development",
-        "Media",
-        "Browsers",
-        "Modding",
-        "Community"
-    ]
-
-    private let featuredApps = [
-        MarketplaceApp(
-            name: "Steam",
-            publisher: "Valve",
-            category: "Launchers",
-            compatibility: "Good",
-            sourceType: "Official installer",
-            description: "Install Valve’s game launcher from the official Steam download page.",
-            officialWebsite: "https://store.steampowered.com/about/"
-        ),
-        MarketplaceApp(name: "Epic Games Launcher",
-                       publisher: "Epic Games",
-                       category: "Launchers",
-                       compatibility: "Testing",
-                       sourceType: "Official installer",
-                       description: "Epic’s launcher using official download links only.",
-                       officialWebsite: "https://store.epicgames.com/download"),
-        MarketplaceApp(name: "Battle.net",
-                       publisher: "Blizzard Entertainment",
-                       category: "Launchers",
-                       compatibility: "Testing",
-                       sourceType: "Official installer",
-                       description: "Install Blizzard’s launcher from the official Battle.net download page.",
-                       officialWebsite: "https://www.blizzard.com/apps/battle.net/desktop"),
-        MarketplaceApp(name: "Roblox",
-                       publisher: "Roblox Corporation",
-                       category: "Games",
-                       compatibility: "Community testing",
-                       sourceType: "Official installer",
-                       description: "Community-requested placeholder for Roblox’s official Windows installer.",
-                       officialWebsite: "https://www.roblox.com/download"),
-        MarketplaceApp(name: "GOG Galaxy",
-                       publisher: "GOG",
-                       category: "Launchers",
-                       compatibility: "Testing",
-                       sourceType: "Official installer",
-                       description: "Install GOG’s official library client with Bourbon compatibility notes.",
-                       officialWebsite: "https://www.gog.com/galaxy"),
-        MarketplaceApp(name: "Discord",
-                       publisher: "Discord Inc.",
-            category: "Community",
-                       compatibility: "Good",
-                       sourceType: "Official installer",
-                       description: "Electron app support with safe rendering fallback flags when needed.",
-                       officialWebsite: "https://discord.com/download"),
-        MarketplaceApp(name: "OBS Studio",
-                       publisher: "OBS Project",
-                       category: "Media",
-                       compatibility: "Testing",
-                       sourceType: "Official installer",
-                       description: "Open-source broadcaster linked from the official OBS site.",
-                       officialWebsite: "https://obsproject.com/download"),
-        MarketplaceApp(name: "Notepad++",
-                       publisher: "Notepad++ Team",
-                       category: "Utilities",
-                       compatibility: "Good",
-                       sourceType: "Official installer",
-                       description: "Lightweight editor using official Notepad++ release links.",
-                       officialWebsite: "https://notepad-plus-plus.org/downloads/"),
-        MarketplaceApp(name: "WinRAR",
-                       publisher: "win.rar GmbH",
-                       category: "Utilities",
-                       compatibility: "Good",
-                       sourceType: "Official installer",
-                       description: "Archive manager from WinRAR’s official download page.",
-                       officialWebsite: "https://www.win-rar.com/download.html"),
-        MarketplaceApp(name: "7-Zip",
-                       publisher: "Igor Pavlov",
-                       category: "Utilities",
-                       compatibility: "Great",
-                       sourceType: "Official installer",
-                       description: "Archive utility using official 7-Zip download links.",
-                       officialWebsite: "https://www.7-zip.org/download.html")
-    ]
-
     var body: some View {
         BourbonBackground {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    header
-                    categoryPicker
-                    appGrid
-                    submissionCard
-                }
-                .padding(32)
-                .frame(maxWidth: 980)
-                .frame(maxWidth: .infinity, alignment: .top)
+            VStack {
+                Spacer(minLength: 48)
+                comingSoonCard
+                Spacer(minLength: 48)
             }
+            .padding(32)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationTitle("Library")
-        .searchable(text: $searchText, placement: .toolbar, prompt: "Search applications")
+        .navigationTitle("🥃 Distillery")
         .sheet(isPresented: $showRequestForm) {
-            LibraryRequestView(requestSubmitted: $requestSubmitted)
+            DistilleryRequestView(requestSubmitted: $requestSubmitted)
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Coming soon!")
-                .font(.largeTitle.bold())
-            Text("A library of games and apps ready to install at your fingertips.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-            Button {
-                showRequestForm = true
-            } label: {
-                Label("Request a Game or App", systemImage: "plus.bubble")
-            }
-            .buttonStyle(BourbonPrimaryButtonStyle())
-            .help("Request a game or app for the Library.")
-
-            if requestSubmitted {
-                Text("Request submitted for review.")
-                    .font(.caption)
+    private var comingSoonCard: some View {
+        BourbonGlassCard(maxWidth: 500, cornerRadius: 22) {
+            VStack(spacing: 18) {
+                Image(systemName: "sparkles.rectangle.stack")
+                    .font(.system(size: 42, weight: .semibold))
                     .foregroundStyle(BourbonStyle.amber)
-            }
-        }
-    }
+                    .frame(width: 72, height: 72)
+                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-    private var categoryPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(categories, id: \.self) { category in
-                    if category == selectedCategory {
-                        Button(category) {
-                            selectedCategory = category
-                        }
-                        .buttonStyle(BourbonPrimaryButtonStyle())
-                        .help("Show \(category.lowercased()) entries.")
-                    } else {
-                        Button(category) {
-                            selectedCategory = category
-                        }
-                        .buttonStyle(BourbonSecondaryButtonStyle())
-                        .help("Show \(category.lowercased()) entries.")
-                    }
-                }
-            }
-        }
-    }
+                Text("Coming soon!")
+                    .font(.largeTitle.bold())
 
-    private var appGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 16)], spacing: 16) {
-            ForEach(filteredApps) { app in
-                MarketplaceAppCard(app: app)
-            }
-        }
-    }
+                Text("A curated collection of games and apps ready to install at your fingertips.")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
 
-    private var submissionCard: some View {
-        BourbonGlassCard(maxWidth: 980, cornerRadius: 18) {
-            HStack(spacing: 18) {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 32, weight: .semibold))
-                    .foregroundStyle(BourbonStyle.amber)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Request an app or game")
-                        .font(.headline)
-                    Text("Tell us what you want to see next. Requests are reviewed before appearing in Library.")
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Button("Request a Game or App") {
+                Button {
                     showRequestForm = true
+                } label: {
+                    Label("Request a Game or App", systemImage: "plus.bubble")
+                        .font(.headline)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
                 }
-                .buttonStyle(BourbonSecondaryButtonStyle())
-                .help("Request a Library entry for review.")
+                .buttonStyle(BourbonPrimaryButtonStyle())
+                .controlSize(.large)
+                .help("Request a game or app for the Distillery.")
+
+                if requestSubmitted {
+                    Text("Request submitted for review.")
+                        .font(.caption)
+                        .foregroundStyle(BourbonStyle.amber)
+                }
             }
+            .frame(maxWidth: .infinity)
+            .multilineTextAlignment(.center)
+            .padding(.vertical, 6)
         }
-    }
-
-    private var filteredApps: [MarketplaceApp] {
-        featuredApps.filter { app in
-            let matchesCategory = app.category == selectedCategory || selectedCategory == "Community"
-            let matchesSearch = searchText.isEmpty ||
-            app.name.localizedCaseInsensitiveContains(searchText) ||
-            app.publisher.localizedCaseInsensitiveContains(searchText) ||
-            app.category.localizedCaseInsensitiveContains(searchText)
-            return matchesCategory && matchesSearch
-        }
-    }
-}
-
-struct MarketplaceApp: Identifiable {
-    let id = UUID()
-    let name: String
-    let publisher: String
-    let category: String
-    let compatibility: String
-    let sourceType: String
-    let description: String
-    let officialWebsite: String
-    let iconURL: URL?
-    let logoAssetName: String?
-
-    init(
-        name: String,
-        publisher: String,
-        category: String,
-        compatibility: String,
-        sourceType: String,
-        description: String,
-        officialWebsite: String,
-        iconURL: URL? = nil,
-        logoAssetName: String? = nil
-    ) {
-        self.name = name
-        self.publisher = publisher
-        self.category = category
-        self.compatibility = compatibility
-        self.sourceType = sourceType
-        self.description = description
-        self.officialWebsite = officialWebsite
-        self.iconURL = iconURL
-        self.logoAssetName = logoAssetName
     }
 }
 
@@ -823,101 +917,7 @@ enum LibraryItemStatus: String, Codable {
     case removed
 }
 
-struct MarketplaceAppCard: View {
-    let app: MarketplaceApp
-
-    var body: some View {
-        BourbonGlassCard(maxWidth: 320, cornerRadius: 18) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    appLogo
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(app.name)
-                            .font(.headline)
-                        Text(app.publisher)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text(app.compatibility)
-                        .font(.caption.bold())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.white.opacity(0.08), in: Capsule())
-                        .foregroundStyle(BourbonStyle.amber)
-                }
-
-                Text(app.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack {
-                    Label(app.category, systemImage: "folder")
-                    Text(app.sourceType)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(BourbonStyle.amber.opacity(0.18), in: Capsule())
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-                HStack {
-                    Button {
-                        print("TODO: Library install selected for \(app.name): \(app.officialWebsite)")
-                    } label: {
-                        Label("Install", systemImage: "arrow.down.circle")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(BourbonPrimaryButtonStyle())
-                    .help("Install \(app.name) from official links.")
-
-                    Button("Details") {
-                        if let url = URL(string: app.officialWebsite) {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .buttonStyle(BourbonSecondaryButtonStyle())
-                    .help("Open official website details.")
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var appLogo: some View {
-        if let logoAssetName = app.logoAssetName,
-           NSImage(named: logoAssetName) != nil {
-            Image(logoAssetName)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 42, height: 42)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        } else if let iconURL = app.iconURL {
-            AsyncImage(url: iconURL) { image in
-                image
-                    .resizable()
-                    .scaledToFit()
-            } placeholder: {
-                placeholderLogo
-            }
-            .frame(width: 42, height: 42)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        } else {
-            placeholderLogo
-        }
-    }
-
-    private var placeholderLogo: some View {
-        Image(systemName: "app.badge")
-            .font(.system(size: 30, weight: .semibold))
-            .foregroundStyle(BourbonStyle.amber)
-            .frame(width: 42, height: 42)
-            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-}
-
-struct LibraryRequestView: View {
+struct DistilleryRequestView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var requestSubmitted: Bool
     @State private var appName = ""
@@ -935,7 +935,7 @@ struct LibraryRequestView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Request a Game or App")
                         .font(.largeTitle.bold())
-                    Text("Requests are reviewed before appearing in Bourbon Library. No binaries are uploaded.")
+                    Text("Requests are reviewed before appearing in the Bourbon Distillery. No binaries are uploaded.")
                         .foregroundStyle(.secondary)
 
                     TextField("Game or app name", text: $appName)
@@ -977,9 +977,9 @@ struct LibraryRequestView: View {
                                 notes: notes
                             )
                             // Future endpoint: POST /library/submissions.
-                            // Approved server-side items should publish into Library data
+                            // Approved server-side items should publish into Distillery data
                             // without requiring an app update.
-                            print("Library request submitted: \(submission)")
+                            print("Distillery request submitted: \(submission)")
                             dismiss()
                         }
                         .buttonStyle(BourbonPrimaryButtonStyle())
@@ -1013,85 +1013,341 @@ enum BourbonHomeCopy {
     }
 }
 
-struct AccountPanelView: View {
+struct AccountPageView: View {
     let displayName: String
     let license: BourbonLicenseRecord
-    var updateAvailable = false
-
-    var body: some View {
-        BourbonGlassCard(maxWidth: 420, cornerRadius: 18) {
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Account", systemImage: "person.crop.circle")
-                    .font(.headline)
-                    .foregroundStyle(BourbonStyle.amber)
-
-                accountRow("Display name", displayName)
-                accountRow("Public license ID", license.publicLicenseId)
-                accountRow("License status", license.status)
-                accountRow("Warnings", "\(license.warnings.count)")
-                accountRow("Strikes", "\(license.strikes)")
-                accountRow("Messages", license.messages.isEmpty ? "None" : license.messages.joined(separator: ", "))
-                accountRow("App update status", appUpdateStatus)
-                accountRow("Library permissions", libraryPermissions)
-
-                if updateAvailable {
-                    Button("Update Bourbon") {
-                        if let url = URL(string: "https://getbourbon.app/") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .buttonStyle(BourbonPrimaryButtonStyle())
-                    .help("Download the latest Bourbon update.")
-                }
-            }
-        }
-    }
-
-    private var appUpdateStatus: String {
-        updateAvailable ? "Update available" : "Up to date"
-    }
-
-    private var libraryPermissions: String {
-        if license.permissions.isEmpty {
-            return "Library: Enabled, Uploads: Enabled"
-        }
-        return license.permissions.joined(separator: ", ")
-    }
-
-    private func accountRow(_ title: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .multilineTextAlignment(.trailing)
-                .textSelection(.enabled)
-        }
-        .font(.caption)
-    }
-}
-
-struct AccountPanelSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let displayName: String
-    let license: BourbonLicenseRecord
+    @State private var showingStandingDetails = false
+    @State private var copiedLicense = false
+    @AppStorage(BourbonUpdatePolicy.preReleaseUpdatesEnabledKey) private var preReleaseUpdatesEnabled = false
 
     var body: some View {
         BourbonBackground {
-            VStack(spacing: 16) {
-                AccountPanelView(displayName: resolvedDisplayName, license: license)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    header
+                    accountStatusCard
+                    BourbonBuildDiagnosticsCard()
 
-                Button("Done") {
-                    dismiss()
+                    if showingStandingDetails {
+                        standingDetailsCard
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
-                .buttonStyle(BourbonSecondaryButtonStyle())
-                .keyboardShortcut(.defaultAction)
+                .padding(32)
+                .frame(maxWidth: 900)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
-        .frame(width: 520, height: 520)
+        .navigationTitle("Account")
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Welcome, \(resolvedDisplayName)")
+                .font(.largeTitle.bold())
+            Text("Here’s your account standing.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var accountStatusCard: some View {
+        BourbonGlassCard(maxWidth: 900, cornerRadius: 20) {
+            VStack(spacing: 0) {
+                accountStandingRow
+                divider
+                licenseRow
+                divider
+                accountRow(title: "Bourbon Board Member", value: "Coming soon")
+                divider
+                preReleaseRow
+            }
+        }
+    }
+
+    private var standingDetailsCard: some View {
+        BourbonGlassCard(maxWidth: 900, cornerRadius: 20) {
+            VStack(alignment: .leading, spacing: 18) {
+                Label("Account Standing Details", systemImage: "info.circle")
+                    .font(.headline)
+                    .foregroundStyle(BourbonStyle.amber)
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    detailTile(title: "Warnings", value: "\(license.warnings.count)")
+                    detailTile(title: "Strikes", value: "\(license.strikes)")
+                    detailTile(title: "Current Permissions", value: formattedPermissions)
+                    detailTile(title: "Account Messages", value: formattedMessages)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Standing levels")
+                        .font(.headline)
+                    standingDefinition("Good", "No active issues.", color: .green)
+                    standingDefinition("Degraded", "Warnings or limited permissions.", color: BourbonStyle.amber)
+                    standingDefinition("Bad", "Suspended or banned status.", color: .red)
+                }
+            }
+        }
+    }
+
+    private var accountStandingRow: some View {
+        Button {
+            withAnimation(.snappy) {
+                showingStandingDetails.toggle()
+            }
+        } label: {
+            accountRowContent(
+                title: "Account Standing",
+                value: accountStanding.title,
+                valueColor: accountStanding.color,
+                accessory: Image(systemName: showingStandingDetails ? "chevron.up" : "chevron.down")
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Explain what your account standing means.")
+    }
+
+    private var licenseRow: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(license.publicLicenseId, forType: .string)
+            withAnimation(.snappy) {
+                copiedLicense = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+                withAnimation(.snappy) {
+                    copiedLicense = false
+                }
+            }
+        } label: {
+            accountRowContent(
+                title: "License ID",
+                value: copiedLicense ? "Copied" : license.publicLicenseId,
+                valueColor: copiedLicense ? .green : .primary,
+                accessory: Image(systemName: copiedLicense ? "checkmark.circle.fill" : "doc.on.doc")
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Copy your public license ID.")
+    }
+
+    private var preReleaseRow: some View {
+        accountRow(
+            title: "Pre-release Sign Up",
+            value: preReleaseUpdatesEnabled ? "Yes" : "No",
+            valueColor: preReleaseUpdatesEnabled ? BourbonStyle.amber : .green
+        )
+        .help("Pre-release sign up controls will be added here later.")
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(.white.opacity(0.08))
+            .frame(height: 1)
     }
 
     private var resolvedDisplayName: String {
         displayName == "there" ? "Bourbon User" : displayName
+    }
+
+    private var accountStanding: (title: String, color: Color) {
+        let normalizedStatus = license.status.lowercased()
+        if normalizedStatus.contains("suspended") ||
+            normalizedStatus.contains("banned") ||
+            normalizedStatus.contains("bad") ||
+            license.strikes >= 3 {
+            return ("Bad", .red)
+        }
+
+        if normalizedStatus.contains("limited") ||
+            normalizedStatus.contains("degraded") ||
+            !license.warnings.isEmpty ||
+            license.strikes > 0 {
+            return ("Degraded", BourbonStyle.amber)
+        }
+
+        return ("Good", .green)
+    }
+
+    private var formattedPermissions: String {
+        let permissions = license.permissions.isEmpty ? ["distillery", "uploads"] : license.permissions
+        return permissions
+            .map { permission in
+                switch permission.lowercased() {
+                case "library", "library: enabled", "distillery", "distillery: enabled":
+                    return "Distillery access"
+                case "uploads", "uploads: enabled":
+                    return "Uploads"
+                case "local-installs":
+                    return "Local installs"
+                default:
+                    return permission
+                        .replacingOccurrences(of: "-", with: " ")
+                        .replacingOccurrences(of: ": enabled", with: "", options: .caseInsensitive)
+                        .capitalized
+                }
+            }
+            .joined(separator: ", ")
+    }
+
+    private var formattedMessages: String {
+        let visibleMessages = license.messages.filter { message in
+            let normalizedMessage = message.lowercased()
+            return !normalizedMessage.contains("local mock account")
+        }
+        return visibleMessages.isEmpty ? "No account messages." : visibleMessages.joined(separator: "\n")
+    }
+
+    private func accountRow(title: String, value: String, valueColor: Color = .primary) -> some View {
+        accountRowContent(title: title, value: value, valueColor: valueColor, accessory: nil)
+    }
+
+    private func accountRowContent(
+        title: String,
+        value: String,
+        valueColor: Color,
+        accessory: Image?
+    ) -> some View {
+        HStack(spacing: 18) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.white)
+            Spacer(minLength: 24)
+            HStack(spacing: 8) {
+                Text(value)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(valueColor)
+                    .multilineTextAlignment(.trailing)
+                    .textSelection(.enabled)
+                accessory
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 16)
+        .contentShape(Rectangle())
+    }
+
+    private func detailTile(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func standingDefinition(_ title: String, _ description: String, color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(title)
+                .fontWeight(.semibold)
+            Text(description)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+struct BourbonBuildInfo: Decodable {
+    let gitCommit: String?
+    let gitBranch: String?
+    let gitRef: String?
+    let gitTag: String?
+    let marketingVersion: String?
+    let buildNumber: String?
+    let buildDateUTC: String?
+}
+
+struct BourbonBuildDiagnosticsCard: View {
+    private let diagnostics = BourbonBuildDiagnostics.current
+
+    var body: some View {
+        BourbonGlassCard(maxWidth: 900, cornerRadius: 20) {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("About Bourbon", systemImage: "info.circle")
+                    .font(.headline)
+                    .foregroundStyle(BourbonStyle.amber)
+
+                VStack(spacing: 0) {
+                    diagnosticRow(title: "Version", value: diagnostics.version)
+                    divider
+                    diagnosticRow(title: "Build number", value: diagnostics.buildNumber)
+                    divider
+                    diagnosticRow(title: "Git commit", value: diagnostics.gitCommitShort)
+                    divider
+                    diagnosticRow(title: "Build date", value: diagnostics.buildDateUTC)
+                    divider
+                    diagnosticRow(title: "Update feed", value: diagnostics.updateFeedURL)
+                }
+            }
+        }
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(.white.opacity(0.08))
+            .frame(height: 1)
+    }
+
+    private func diagnosticRow(title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 18) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 24)
+            Text(value)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+        }
+        .padding(.vertical, 12)
+    }
+}
+
+struct BourbonBuildDiagnostics {
+    let version: String
+    let buildNumber: String
+    let gitCommitShort: String
+    let buildDateUTC: String
+    let updateFeedURL: String
+
+    static var current: BourbonBuildDiagnostics {
+        let infoDictionary = Bundle.main.infoDictionary ?? [:]
+        let buildInfo = loadBuildInfo()
+        let version = buildInfo?.marketingVersion ??
+        infoDictionary["CFBundleShortVersionString"] as? String ??
+        "Unknown"
+        let buildNumber = buildInfo?.buildNumber ??
+        infoDictionary["CFBundleVersion"] as? String ??
+        "Unknown"
+        let commit = buildInfo?.gitCommit ?? "Local build"
+        let shortCommit = commit == "Local build" ? commit : String(commit.prefix(12))
+        let buildDate = buildInfo?.buildDateUTC ?? "Unavailable"
+        let feedURL = infoDictionary["SUFeedURL"] as? String ?? "Unavailable"
+
+        return BourbonBuildDiagnostics(
+            version: version,
+            buildNumber: buildNumber,
+            gitCommitShort: shortCommit,
+            buildDateUTC: buildDate,
+            updateFeedURL: feedURL
+        )
+    }
+
+    private static func loadBuildInfo() -> BourbonBuildInfo? {
+        guard let url = Bundle.main.url(forResource: "BuildInfo", withExtension: "json"),
+              let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+
+        return try? JSONDecoder().decode(BourbonBuildInfo.self, from: data)
     }
 }

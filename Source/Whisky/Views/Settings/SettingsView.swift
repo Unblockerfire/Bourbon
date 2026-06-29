@@ -23,6 +23,7 @@ struct SettingsView: View {
     @AppStorage("SUEnableAutomaticChecks") var whiskyUpdate = true
     @AppStorage("killOnTerminate") var killOnTerminate = true
     @AppStorage("checkWhiskyWineUpdates") var checkWhiskyWineUpdates = true
+    @AppStorage(BourbonUpdatePolicy.preReleaseUpdatesEnabledKey) var preReleaseUpdatesEnabled = false
     @AppStorage("defaultBottleLocation") var defaultBottleLocation = BottleData.defaultBottleDir
 
     var body: some View {
@@ -49,6 +50,8 @@ struct SettingsView: View {
             }
             Section("settings.updates") {
                 Toggle("Check for Bourbon updates", isOn: $whiskyUpdate)
+                Toggle("Include beta and pre-release Bourbon updates", isOn: $preReleaseUpdatesEnabled)
+                    .help("Pre-release updates may be unstable and are never enabled automatically.")
                 Toggle("Check for BourbonWine updates", isOn: $checkWhiskyWineUpdates)
             }
         }

@@ -26,18 +26,21 @@ struct WhiskyApp: App {
     @AppStorage("hasCompletedFirstRunOnboarding") private var hasCompletedFirstRunOnboarding = false
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openURL) var openURL
+    private let updatePolicyDelegate: BourbonUpdatePolicyDelegate
     private let updaterController: SPUStandardUpdaterController
 
     init() {
         Wine.logCustomWineStartupEnvironment()
+        let updatePolicyDelegate = BourbonUpdatePolicyDelegate()
+        self.updatePolicyDelegate = updatePolicyDelegate
         updaterController = SPUStandardUpdaterController(startingUpdater: true,
-                                                         updaterDelegate: nil,
+                                                         updaterDelegate: updatePolicyDelegate,
                                                          userDriverDelegate: nil)
     }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(showSetup: $showSetup)
+            ContentView(showSetup: $showSetup, updater: updaterController.updater)
                 .frame(minWidth: ViewWidth.large, minHeight: 316)
                 .environmentObject(BottleVM.shared)
                 .onAppear {

@@ -22,6 +22,20 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Print checkout revision
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "GitHub ref: ${GITHUB_REF}"
+          echo "GitHub ref name: ${GITHUB_REF_NAME}"
+          echo "GitHub ref type: ${GITHUB_REF_TYPE}"
+          echo "GitHub SHA: ${GITHUB_SHA}"
+          echo "Checked out commit: $(git rev-parse HEAD)"
+          git status --short
 
       - name: Configure release paths
         id: paths
@@ -69,9 +83,60 @@ jobs:
             VERSION="$(awk -F ' = |;' '/MARKETING_VERSION = / { print $2; exit }' "$PROJECT_PATH/project.pbxproj")"
           fi
 
+          CORE_VERSION="$(printf '%s' "$VERSION" | sed -E 's/[-+_ ].*$//')"
+          MAJOR="$(printf '%s' "$CORE_VERSION" | awk -F. '{ print $1 + 0 }')"
+          MINOR="$(printf '%s' "$CORE_VERSION" | awk -F. '{ print $2 + 0 }')"
+          PATCH="$(printf '%s' "$CORE_VERSION" | awk -F. '{ print $3 + 0 }')"
+          NORMAL_MINOR="$MINOR"
+          EMERGENCY_LEVEL="0"
+          LOWER_VERSION="$(printf '%s' "$VERSION" | tr '[:upper:]' '[:lower:]')"
+          CHANNEL=""
+
+          if [ "$MINOR" -ge 10 ] && [ "$MINOR" -le 99 ]; then
+            NORMAL_MINOR="$((MINOR / 10))"
+            EMERGENCY_LEVEL="$((MINOR % 10))"
+          fi
+
+          if [[ "$LOWER_VERSION" == *beta* ]] ||
+             [[ "$LOWER_VERSION" == *prerelease* ]] ||
+             [[ "$LOWER_VERSION" == *pre-release* ]] ||
+             [[ "$LOWER_VERSION" == *rc* ]]; then
+            CHANNEL="beta"
+          fi
+
+          if [ "$EMERGENCY_LEVEL" -gt 0 ]; then
+            RELEASE_KIND="emergency"
+          elif [ "$PATCH" -gt 0 ]; then
+            RELEASE_KIND="patch"
+          elif [ "$NORMAL_MINOR" -gt 0 ]; then
+            RELEASE_KIND="minor"
+          else
+            RELEASE_KIND="major"
+          fi
+
+          # Bourbon versions use MAJOR.MINOR.PATCH. Emergency updates are
+          # encoded inside a two-digit minor number: in X.13.X, 1 is the normal
+          # minor version and 3 is the emergency marker/level. Sparkle treats an
+          # update as manual-confirm when the installed version is lower than
+          # sparkle:minimumAutoupdateVersion. Setting this to the new major
+          # baseline keeps cross-major upgrades out of automatic installs while
+          # minor, emergency-marker, and patch updates remain eligible.
+          MINIMUM_AUTOUPDATE_VERSION="${MAJOR}.0.0"
+
+          # Sparkle compares CFBundleVersion, not just the user-facing
+          # MARKETING_VERSION. Local/dev builds have already reached numbers
+          # like 43, so release builds must use a higher namespace than the raw
+          # GitHub run number. Keep MARKETING_VERSION unchanged for users, but
+          # publish releases as build 100000+run_number so Sparkle sees CI
+          # releases as newer than local development builds.
+          RELEASE_BUILD_NUMBER="$((100000 + GITHUB_RUN_NUMBER))"
+
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "build=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "build=${RELEASE_BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "release_kind=${RELEASE_KIND}" >> "$GITHUB_OUTPUT"
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+          echo "minimum_autoupdate_version=${MINIMUM_AUTOUPDATE_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Install SwiftLint
         run: brew install swiftlint
@@ -93,6 +158,58 @@ jobs:
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}" \
             INFOPLIST_KEY_SUFeedURL="https://github.com/Unblockerfire/Bourbon/releases/latest/download/appcast.xml" \
             build
+
+      - name: Write build metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/Bourbon.app"
+          BUILD_INFO_PATH="$APP_PATH/Contents/Resources/BuildInfo.json"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Bourbon.app was not found at $APP_PATH"
+            find "$DERIVED_DATA/Build/Products" -maxdepth 3 -name 'Bourbon.app' -print || true
+            exit 1
+          fi
+
+          MARKETING_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+          BUILD_NUMBER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist")"
+          GIT_COMMIT="$(git rev-parse HEAD)"
+          GIT_BRANCH=""
+          GIT_TAG=""
+
+          if [ "${GITHUB_REF_TYPE:-}" = "branch" ]; then
+            GIT_BRANCH="$GITHUB_REF_NAME"
+          elif [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            GIT_TAG="$GITHUB_REF_NAME"
+          fi
+
+          export MARKETING_VERSION BUILD_NUMBER GIT_COMMIT GIT_BRANCH GIT_TAG
+
+          mkdir -p "$(dirname "$BUILD_INFO_PATH")"
+          python3 - "$BUILD_INFO_PATH" <<PY
+          import json
+          import os
+          import sys
+          from datetime import datetime, timezone
+
+          path = sys.argv[1]
+          payload = {
+              "gitCommit": os.environ["GIT_COMMIT"],
+              "gitBranch": os.environ["GIT_BRANCH"],
+              "gitRef": os.environ["GITHUB_REF"],
+              "gitTag": os.environ["GIT_TAG"],
+              "marketingVersion": os.environ["MARKETING_VERSION"],
+              "buildNumber": os.environ["BUILD_NUMBER"],
+              "buildDateUTC": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+          }
+          with open(path, "w", encoding="utf-8") as build_info:
+              json.dump(payload, build_info, indent=2, sort_keys=True)
+              build_info.write("\\n")
+          PY
+
+          cat "$BUILD_INFO_PATH"
 
       - name: Prepare application bundle
         shell: bash
@@ -116,6 +233,33 @@ jobs:
           # signing and notarization secrets are configured in GitHub Actions.
           /usr/bin/codesign --force --deep --sign - "$RELEASE_APP"
 
+      - name: Validate release bundle metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RELEASE_APP="$BUILD_ROOT/dmg-root/Bourbon.app"
+          BUILD_INFO_PATH="$RELEASE_APP/Contents/Resources/BuildInfo.json"
+
+          if [ ! -f "$BUILD_INFO_PATH" ]; then
+            echo "BuildInfo.json is missing from $BUILD_INFO_PATH"
+            exit 1
+          fi
+
+          echo "Release bundle version:"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RELEASE_APP/Contents/Info.plist"
+          echo "Release bundle build:"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$RELEASE_APP/Contents/Info.plist"
+          echo "Release bundle feed URL:"
+          /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$RELEASE_APP/Contents/Info.plist"
+          echo "BuildInfo.json:"
+          cat "$BUILD_INFO_PATH"
+
+          if ! /usr/bin/grep -R "Distillery" "$RELEASE_APP/Contents/Resources" >/dev/null 2>&1 &&
+             ! /usr/bin/strings "$RELEASE_APP/Contents/MacOS/Bourbon" | /usr/bin/grep -q "Distillery"; then
+            echo "::warning::Could not find Distillery text in app resources or executable strings."
+          fi
+
       - name: Create DMG
         shell: bash
         run: |
@@ -138,8 +282,14 @@ jobs:
           APPCAST_DIR="$BUILD_ROOT/appcast"
           APPCAST_PATH="$BUILD_ROOT/appcast.xml"
           DMG_PATH="$BUILD_ROOT/Bourbon.dmg"
+          RELEASE_APP="$BUILD_ROOT/dmg-root/Bourbon.app"
           DMG_LENGTH="$(stat -f%z "$DMG_PATH")"
           PUB_DATE="$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')"
+          APP_BUILD_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$RELEASE_APP/Contents/Info.plist")"
+          APP_SHORT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RELEASE_APP/Contents/Info.plist")"
+          RELEASE_KIND="${{ steps.version.outputs.release_kind }}"
+          RELEASE_CHANNEL="${{ steps.version.outputs.channel }}"
+          MINIMUM_AUTOUPDATE_VERSION="${{ steps.version.outputs.minimum_autoupdate_version }}"
 
           mkdir -p "$APPCAST_DIR"
           cp "$DMG_PATH" "$APPCAST_DIR/Bourbon.dmg"
@@ -182,11 +332,13 @@ jobs:
               <link>https://github.com/Unblockerfire/Bourbon/releases</link>
               <description>Bourbon release feed.</description>
               <item>
-                <title>Bourbon ${{ steps.version.outputs.version }}</title>
+                <title>Bourbon $APP_SHORT_VERSION</title>
                 <pubDate>$PUB_DATE</pubDate>
-                <sparkle:version>${{ steps.version.outputs.build }}</sparkle:version>
-                <sparkle:shortVersionString>${{ steps.version.outputs.version }}</sparkle:shortVersionString>
+                <description><![CDATA[Release notes are available on the GitHub release for ${{ steps.version.outputs.tag }}.]]></description>
+                <sparkle:version>$APP_BUILD_VERSION</sparkle:version>
+                <sparkle:shortVersionString>$APP_SHORT_VERSION</sparkle:shortVersionString>
                 <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+                <sparkle:minimumAutoupdateVersion>$MINIMUM_AUTOUPDATE_VERSION</sparkle:minimumAutoupdateVersion>
                 <enclosure
                   url="https://github.com/Unblockerfire/Bourbon/releases/download/${{ steps.version.outputs.tag }}/Bourbon.dmg"
                   length="$DMG_LENGTH"
@@ -196,6 +348,52 @@ jobs:
           </rss>
           XML
           fi
+
+          python3 - "$APPCAST_PATH" "$RELEASE_KIND" "$RELEASE_CHANNEL" "$MINIMUM_AUTOUPDATE_VERSION" "$APP_BUILD_VERSION" "$APP_SHORT_VERSION" "${{ steps.version.outputs.tag }}" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          (
+              path,
+              release_kind,
+              release_channel,
+              minimum_autoupdate_version,
+              app_build_version,
+              app_short_version,
+              release_tag,
+          ) = sys.argv[1:]
+          sparkle_namespace = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+          bourbon_namespace = "https://getbourbon.app/appcast"
+          ET.register_namespace("sparkle", sparkle_namespace)
+          ET.register_namespace("bourbon", bourbon_namespace)
+
+          tree = ET.parse(path)
+          root = tree.getroot()
+          sparkle = f"{{{sparkle_namespace}}}"
+          bourbon = f"{{{bourbon_namespace}}}"
+
+          def ensure_text(parent, tag, text):
+              child = parent.find(tag)
+              if child is None:
+                  child = ET.SubElement(parent, tag)
+              child.text = text
+              return child
+
+          for item in root.findall("./channel/item"):
+              ensure_text(item, f"{sparkle}version", app_build_version)
+              ensure_text(item, f"{sparkle}shortVersionString", app_short_version)
+              ensure_text(item, f"{sparkle}minimumAutoupdateVersion", minimum_autoupdate_version)
+              ensure_text(item, f"{bourbon}releaseType", release_kind)
+              ensure_text(item, "description", f"Release notes are available on the GitHub release for {release_tag}.")
+
+              if release_channel:
+                  ensure_text(item, f"{sparkle}channel", release_channel)
+
+              if release_kind == "emergency" and item.find(f"{sparkle}criticalUpdate") is None:
+                  ET.SubElement(item, f"{sparkle}criticalUpdate")
+
+          tree.write(path, encoding="utf-8", xml_declaration=True)
+          PY
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

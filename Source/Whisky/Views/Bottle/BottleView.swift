@@ -175,7 +175,7 @@ struct BottleView: View {
     private var browseLibrarySection: some View {
         VStack(spacing: 10) {
             NavigationLink(value: BottleStage.programs) {
-                Label("Browse your library", systemImage: "square.grid.2x2")
+                Label("Browse installed apps", systemImage: "square.grid.2x2")
                     .frame(maxWidth: 360)
             }
             .buttonStyle(BourbonSecondaryButtonStyle())
