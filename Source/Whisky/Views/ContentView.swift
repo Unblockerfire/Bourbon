@@ -208,67 +208,73 @@ struct ContentView: View {
     }
 
     var sidebar: some View {
-        ScrollViewReader { proxy in
-            List(selection: $selected) {
-                Section {
-                    SidebarPageButton(
-                        title: "Home",
-                        systemImage: "house",
-                        isActive: activePage == .home
-                    ) {
-                        selected = nil
-                        activePage = .home
-                    }
-                    .help("Go to Bourbon Home.")
-
-                    SidebarPageButton(
-                        title: "🥃 Distillery",
-                        systemImage: "books.vertical",
-                        isActive: activePage == .library
-                    ) {
-                        selected = nil
-                        activePage = .library
-                    }
-                    .help("Browse games and apps.")
+        VStack(spacing: 0) {
+            VStack(spacing: 4) {
+                SidebarPageButton(
+                    title: "Home",
+                    systemImage: "house",
+                    isActive: activePage == .home
+                ) {
+                    selected = nil
+                    activePage = .home
                 }
+                .help("Go to Bourbon Home.")
 
-                Section {
-                    ForEach(filteredBottles) { bottle in
-                        Group {
-                            if bottle.inFlight {
-                                HStack {
-                                    Text(bottle.settings.name)
-                                    Spacer()
-                                    ProgressView().controlSize(.small)
+                SidebarPageButton(
+                    title: "🥃 Distillery",
+                    systemImage: "books.vertical",
+                    isActive: activePage == .library
+                ) {
+                    selected = nil
+                    activePage = .library
+                }
+                .help("Browse games and apps.")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            ScrollViewReader { proxy in
+                List(selection: $selected) {
+                    Section {
+                        ForEach(filteredBottles) { bottle in
+                            Group {
+                                if bottle.inFlight {
+                                    HStack {
+                                        Text(bottle.settings.name)
+                                        Spacer()
+                                        ProgressView().controlSize(.small)
+                                    }
+                                    .opacity(0.5)
+                                } else {
+                                    BottleListEntry(bottle: bottle, selected: $selected, refresh: $triggerRefresh)
+                                        .selectionDisabled(!bottle.isAvailable)
                                 }
-                                .opacity(0.5)
-                            } else {
-                                BottleListEntry(bottle: bottle, selected: $selected, refresh: $triggerRefresh)
-                                    .selectionDisabled(!bottle.isAvailable)
                             }
+                            .id(bottle.url)
                         }
-                        .id(bottle.url)
                     }
                 }
-            }
-            .animation(.default, value: bottleVM.bottles)
-            .animation(.default, value: bottleFilter)
-            .listStyle(.sidebar)
-            .searchable(text: $bottleFilter, placement: .sidebar)
-            .onChange(of: selected) {
-                if selected != nil {
-                    activePage = nil
-                }
-            }
-            .onChange(of: newlyCreatedBottleURL) { _, url in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    selected = url
-                    firstInstallBottleURL = url
-                    if url != nil {
-                        hasCompletedFirstRunOnboarding = true
+                .animation(.default, value: bottleVM.bottles)
+                .animation(.default, value: bottleFilter)
+                .listStyle(.sidebar)
+                .searchable(text: $bottleFilter, placement: .sidebar)
+                .onChange(of: selected) {
+                    if selected != nil {
+                        activePage = nil
                     }
-                    withAnimation {
-                        proxy.scrollTo(url, anchor: .center)
+                }
+                .onChange(of: newlyCreatedBottleURL) { _, url in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        selected = url
+                        firstInstallBottleURL = url
+                        if url != nil {
+                            hasCompletedFirstRunOnboarding = true
+                        }
+                        withAnimation {
+                            proxy.scrollTo(url, anchor: .center)
+                        }
                     }
                 }
             }
