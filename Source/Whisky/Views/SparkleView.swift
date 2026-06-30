@@ -291,8 +291,10 @@ final class BourbonUpdatePolicyDelegate: NSObject, SPUUpdaterDelegate {
     }
 }
 
-@MainActor
-final class BourbonPendingUpdateManager: ObservableObject {
+// Revisit if Sparkle exposes an actor-isolated pending install API. This shared
+// UI coordinator is intentionally process-wide so the install prompt can survive
+// navigation changes.
+final class BourbonPendingUpdateManager: ObservableObject, @unchecked Sendable {
     static let shared = BourbonPendingUpdateManager()
 
     @Published var isPending = false
@@ -345,7 +347,7 @@ final class BourbonPendingUpdateManager: ObservableObject {
     }
 }
 
-final class BourbonPendingUpdateUserDriver: NSObject, @MainActor SPUUserDriver {
+final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
     private let standardUserDriver: SPUStandardUserDriver
     private let pendingUpdateManager: BourbonPendingUpdateManager
 
@@ -366,7 +368,6 @@ final class BourbonPendingUpdateUserDriver: NSObject, @MainActor SPUUserDriver {
         standardUserDriver.showUserInitiatedUpdateCheck(cancellation: cancellation)
     }
 
-    @MainActor
     func showUpdateFound(
         with appcastItem: SUAppcastItem,
         state: SPUUserUpdateState,
@@ -395,7 +396,6 @@ final class BourbonPendingUpdateUserDriver: NSObject, @MainActor SPUUserDriver {
         standardUserDriver.showUpdateNotFoundWithError(error, acknowledgement: acknowledgement)
     }
 
-    @MainActor
     func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
         pendingUpdateManager.clearPendingInstall()
         standardUserDriver.showUpdaterError(error, acknowledgement: acknowledgement)
@@ -421,12 +421,10 @@ final class BourbonPendingUpdateUserDriver: NSObject, @MainActor SPUUserDriver {
         standardUserDriver.showExtractionReceivedProgress(progress)
     }
 
-    @MainActor
     func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
         pendingUpdateManager.presentPendingInstall(version: nil, reply: reply)
     }
 
-    @MainActor
     func showInstallingUpdate(
         withApplicationTerminated applicationTerminated: Bool,
         retryTerminatingApplication: @escaping () -> Void
@@ -438,7 +436,6 @@ final class BourbonPendingUpdateUserDriver: NSObject, @MainActor SPUUserDriver {
         )
     }
 
-    @MainActor
     func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) {
         pendingUpdateManager.clearPendingInstall()
         standardUserDriver.showUpdateInstalledAndRelaunched(relaunched, acknowledgement: acknowledgement)
