@@ -44,6 +44,7 @@ struct ContentView: View {
     @State private var firstInstallBottleURL: URL?
     @State private var firstInstallerURL: URL?
     @State private var activePage: MainContentPage? = .home
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var openedFileURL: URL?
     @State private var triggerRefresh: Bool = false
     @State private var refreshAnimation: Angle = .degrees(0)
@@ -52,11 +53,13 @@ struct ContentView: View {
     @State private var bottleFilter = ""
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
         } detail: {
             detail
         }
+        .navigationSplitViewStyle(.balanced)
         .overlay(alignment: .bottomTrailing) {
             GlobalInstallStatusBanner(manager: installManager)
                 .padding()
@@ -84,6 +87,7 @@ struct ContentView: View {
                 Button {
                     selected = nil
                     activePage = .account
+                    columnVisibility = .all
                 } label: {
                     Label("Account", systemImage: "person.crop.circle")
                 }
@@ -152,6 +156,12 @@ struct ContentView: View {
         }
         .onChange(of: selected) {
             selectedBottleURL = selected
+        }
+        .onChange(of: activePage) {
+            columnVisibility = .all
+        }
+        .onAppear {
+            columnVisibility = .all
         }
         .handlesExternalEvents(preferring: [], allowing: ["*"])
         .onOpenURL { url in
@@ -228,6 +238,7 @@ struct ContentView: View {
                 ) {
                     selected = nil
                     activePage = .home
+                    columnVisibility = .all
                 }
                 .help("Go to Bourbon Home.")
 
@@ -238,11 +249,13 @@ struct ContentView: View {
                 ) {
                     selected = nil
                     activePage = .library
+                    columnVisibility = .all
                 }
                 .help("Browse games and apps.")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
+            .padding(.top, sidebarTitlebarInset)
 
             Divider()
 
@@ -274,11 +287,13 @@ struct ContentView: View {
                 .onChange(of: selected) {
                     if selected != nil {
                         activePage = nil
+                        columnVisibility = .all
                     }
                 }
                 .onChange(of: newlyCreatedBottleURL) { _, url in
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                         selected = url
+                        columnVisibility = .all
                         firstInstallBottleURL = url
                         if url != nil {
                             hasCompletedFirstRunOnboarding = true
@@ -344,6 +359,10 @@ struct ContentView: View {
                 .filter { $0.settings.name.localizedCaseInsensitiveContains(bottleFilter) }
                 .sorted()
         }
+    }
+
+    private var sidebarTitlebarInset: CGFloat {
+        48
     }
 
     private var resolvedDisplayName: String {

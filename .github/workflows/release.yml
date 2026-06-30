@@ -157,7 +157,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION="${{ steps.version.outputs.version }}" \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}" \
-            INFOPLIST_KEY_SUFeedURL="https://github.com/Unblockerfire/Bourbon/releases/latest/download/appcast.xml" \
+            INFOPLIST_KEY_SUFeedURL="https://bourbonruntimeapi.fly.dev/updates/pre/appcast.xml" \
             build
 
       - name: Write build metadata
