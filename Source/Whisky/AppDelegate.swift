@@ -20,8 +20,6 @@ import Foundation
 import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    @AppStorage("hasShownMoveToApplicationsAlert") private var hasShownMoveToApplicationsAlert = false
-
     func application(_ application: NSApplication, open urls: [URL]) {
         // Test if automatic window tabbing is enabled
         // as it is disabled when ContentView appears
@@ -33,12 +31,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if !hasShownMoveToApplicationsAlert && !AppDelegate.insideAppsFolder {
-            DispatchQueue.main.asyncAfter(deadline: .now()) {
-                NSApp.activate(ignoringOtherApps: true)
-                self.showAlertOnFirstLaunch()
-                self.hasShownMoveToApplicationsAlert = true
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            BourbonInstallationGuard.runLaunchChecks()
         }
     }
 
@@ -52,38 +46,313 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    private static var appUrl: URL? {
-        Bundle.main.resourceURL?.deletingLastPathComponent().deletingLastPathComponent()
+}
+
+private enum BourbonInstallationGuard {
+    private static let appName = "Bourbon.app"
+    private static let maxDisplayedPaths = 8
+
+    @MainActor
+    static func runLaunchChecks() {
+        guard !isRunningFromDevelopmentBuild else { return }
+
+        if isRunningFromMountedInstaller {
+            showMountedInstallerAlert()
+        }
+
+        let copies = findInstalledCopies()
+        guard copies.count > 1,
+              let currentCopy = copies.first(where: { isCurrentApp($0.url) }) else {
+            return
+        }
+
+        let newestCopy = copies.max { lhs, rhs in
+            lhs.version < rhs.version
+        }
+
+        if let newestCopy, !isCurrentApp(newestCopy.url), newestCopy.version > currentCopy.version {
+            showCurrentAppIsOlderAlert(newestCopy: newestCopy, copies: copies)
+            return
+        }
+
+        let oldCopies = copies
+            .filter { !isCurrentApp($0.url) }
+            .filter { $0.version < currentCopy.version || $0.version == currentCopy.version }
+
+        if !oldCopies.isEmpty {
+            showDuplicateCopiesAlert(oldCopies: oldCopies)
+        }
     }
 
-    private static let expectedUrl = URL(fileURLWithPath: "/Applications/Whisky.app")
+    private static var currentAppURL: URL {
+        Bundle.main.bundleURL.resolvingSymlinksInPath().standardizedFileURL
+    }
 
-    private static var insideAppsFolder: Bool {
-        if let url = appUrl {
-            return url.path.contains("Xcode") || url.path.contains(expectedUrl.path)
-        }
-        return false
+    private static var isRunningFromDevelopmentBuild: Bool {
+        let path = currentAppURL.path
+        return path.contains("/DerivedData/") || path.contains("/Build/Products/")
+    }
+
+    private static var isRunningFromMountedInstaller: Bool {
+        currentAppURL.path.hasPrefix("/Volumes/")
+    }
+
+    private static func isCurrentApp(_ url: URL) -> Bool {
+        url.resolvingSymlinksInPath().standardizedFileURL.path == currentAppURL.path
     }
 
     @MainActor
-    private func showAlertOnFirstLaunch() {
+    private static func showMountedInstallerAlert() {
         let alert = NSAlert()
-        alert.messageText = String(localized: "showAlertOnFirstLaunch.messageText")
-        alert.informativeText = String(localized: "showAlertOnFirstLaunch.informativeText")
-        alert.addButton(withTitle: String(localized: "showAlertOnFirstLaunch.button.moveToApplications"))
-        alert.addButton(withTitle: String(localized: "showAlertOnFirstLaunch.button.dontMove"))
+        alert.messageText = "Bourbon is currently running from the installer."
+        alert.informativeText = """
+        To receive automatic updates and the best experience, drag Bourbon into your Applications folder before
+        using it.
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Open Applications")
+        alert.addButton(withTitle: "Reveal Installer")
+        alert.addButton(withTitle: "Continue Anyway")
 
-        let response = alert.runModal()
+        NSApp.activate(ignoringOtherApps: true)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications"))
+        case .alertSecondButtonReturn:
+            NSWorkspace.shared.activateFileViewerSelecting([currentAppURL])
+        default:
+            break
+        }
+    }
 
-        if response == .alertFirstButtonReturn {
-            let appURL = Bundle.main.bundleURL
+    @MainActor
+    private static func showCurrentAppIsOlderAlert(newestCopy: BourbonAppCopy, copies: [BourbonAppCopy]) {
+        let alert = NSAlert()
+        alert.messageText = "A newer copy of Bourbon is installed."
+        alert.informativeText = """
+        You are running an older copy of Bourbon. Opening older copies can make Bourbon look outdated or broken.
+
+        Newest copy:
+        \(newestCopy.url.path)
+
+        Other detected copies:
+        \(pathsText(for: copies.filter { !isCurrentApp($0.url) }))
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open Newest Bourbon")
+        alert.addButton(withTitle: "Reveal in Finder")
+        alert.addButton(withTitle: "Later")
+
+        NSApp.activate(ignoringOtherApps: true)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            NSWorkspace.shared.open(newestCopy.url)
+            NSApp.terminate(nil)
+        case .alertSecondButtonReturn:
+            NSWorkspace.shared.activateFileViewerSelecting([newestCopy.url])
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    private static func showDuplicateCopiesAlert(oldCopies: [BourbonAppCopy]) {
+        let alert = NSAlert()
+        alert.messageText = "We found older copies of Bourbon that could cause confusion."
+        alert.informativeText = """
+        Opening an older copy can make Bourbon look outdated or broken.
+
+        Detected older copies:
+        \(pathsText(for: oldCopies))
+
+        Bourbon will only move old Bourbon.app copies to Trash. Your bottles, licenses, settings, and app data
+        are not touched.
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Remove Old Copies")
+        alert.addButton(withTitle: "Reveal in Finder")
+        alert.addButton(withTitle: "Later")
+
+        NSApp.activate(ignoringOtherApps: true)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            moveOldCopiesToTrash(oldCopies)
+        case .alertSecondButtonReturn:
+            NSWorkspace.shared.activateFileViewerSelecting(oldCopies.map(\.url))
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    private static func moveOldCopiesToTrash(_ copies: [BourbonAppCopy]) {
+        let failedCopies = copies.compactMap { copy -> URL? in
+            guard !isCurrentApp(copy.url) else { return nil }
 
             do {
-                _ = try FileManager.default.replaceItemAt(AppDelegate.expectedUrl, withItemAt: appURL)
-                NSWorkspace.shared.open(AppDelegate.expectedUrl)
+                var trashedURL: NSURL?
+                try FileManager.default.trashItem(at: copy.url, resultingItemURL: &trashedURL)
+                return nil
             } catch {
-                print("Failed to move the app: \(error)")
+                print("Failed to move old Bourbon copy to Trash: \(copy.url.path)")
+                return copy.url
             }
         }
+
+        if failedCopies.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "Old copies moved to Trash."
+            alert.informativeText = "Bourbon kept the app you are currently using and did not touch your data."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        } else {
+            let alert = NSAlert()
+            alert.messageText = "Some old copies could not be removed."
+            alert.informativeText = """
+            macOS would not allow Bourbon to move these copies to Trash:
+
+            \(failedCopies.map(\.path).joined(separator: "\n"))
+            """
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Reveal in Finder")
+            alert.addButton(withTitle: "Later")
+
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.activateFileViewerSelecting(failedCopies)
+            }
+        }
+    }
+
+    private static func pathsText(for copies: [BourbonAppCopy]) -> String {
+        let visiblePaths = copies.prefix(maxDisplayedPaths).map { $0.url.path }
+        let extraCount = max(0, copies.count - maxDisplayedPaths)
+        let extraText = extraCount > 0 ? "\n...and \(extraCount) more." : ""
+        return visiblePaths.joined(separator: "\n") + extraText
+    }
+
+    private static func findInstalledCopies() -> [BourbonAppCopy] {
+        let roots = scanRoots()
+        var copies: [String: BourbonAppCopy] = [:]
+
+        for root in roots where FileManager.default.fileExists(atPath: root.path) {
+            for url in findBourbonApps(under: root) {
+                guard let copy = BourbonAppCopy(url: url) else { continue }
+                copies[url.resolvingSymlinksInPath().standardizedFileURL.path] = copy
+            }
+        }
+
+        if let currentCopy = BourbonAppCopy(url: currentAppURL) {
+            copies[currentAppURL.path] = currentCopy
+        }
+
+        return Array(copies.values).sorted { $0.url.path < $1.url.path }
+    }
+
+    private static func scanRoots() -> [URL] {
+        var roots = [
+            URL(fileURLWithPath: "/Applications"),
+            URL(fileURLWithPath: "/Volumes"),
+            URL(fileURLWithPath: "/private/tmp"),
+            URL(fileURLWithPath: NSTemporaryDirectory())
+        ]
+
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+        roots.append(home.appendingPathComponent("Applications"))
+        roots.append(home.appendingPathComponent("Downloads"))
+        roots.append(home.appendingPathComponent("Library").appendingPathComponent("Caches"))
+
+        return roots
+    }
+
+    private static func findBourbonApps(under root: URL) -> [URL] {
+        if root.lastPathComponent == appName {
+            return [root]
+        }
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsPackageDescendants, .skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        var matches: [URL] = []
+
+        for case let url as URL in enumerator {
+            let depth = url.pathComponents.count - root.pathComponents.count
+            if depth > maxScanDepth(for: root) {
+                enumerator.skipDescendants()
+                continue
+            }
+
+            if url.lastPathComponent == appName {
+                matches.append(url)
+                enumerator.skipDescendants()
+            }
+        }
+
+        return matches
+    }
+
+    private static func maxScanDepth(for root: URL) -> Int {
+        switch root.path {
+        case "/Applications", "/Volumes":
+            return 3
+        case "/private/tmp":
+            return 4
+        default:
+            return 3
+        }
+    }
+}
+
+private struct BourbonAppCopy {
+    let url: URL
+    let version: BourbonAppVersion
+
+    init?(url: URL) {
+        let infoURL = url.appendingPathComponent("Contents/Info.plist")
+        guard let info = NSDictionary(contentsOf: infoURL) as? [String: Any],
+              let bundleIdentifier = info["CFBundleIdentifier"] as? String,
+              bundleIdentifier == "com.unblockerfire.Bourbon" else {
+            return nil
+        }
+
+        let shortVersion = info["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        let build = info["CFBundleVersion"] as? String ?? "0"
+
+        self.url = url
+        self.version = BourbonAppVersion(shortVersion: shortVersion, build: build)
+    }
+}
+
+private struct BourbonAppVersion: Comparable {
+    let major: Int
+    let minor: Int
+    let patch: Int
+    let isPreRelease: Bool
+    let build: Int
+
+    init(shortVersion: String, build: String) {
+        let lowercasedVersion = shortVersion.lowercased()
+        let coreVersion = lowercasedVersion.split(separator: "-").first.map(String.init) ?? shortVersion
+        let parts = coreVersion.split(separator: ".").map { Int($0) ?? 0 }
+
+        self.major = parts.indices.contains(0) ? parts[0] : 0
+        self.minor = parts.indices.contains(1) ? parts[1] : 0
+        self.patch = parts.indices.contains(2) ? parts[2] : 0
+        self.isPreRelease = lowercasedVersion.contains("pre") ||
+            lowercasedVersion.contains("beta") ||
+            lowercasedVersion.contains("rc")
+        self.build = Int(build) ?? 0
+    }
+
+    static func < (lhs: BourbonAppVersion, rhs: BourbonAppVersion) -> Bool {
+        if lhs.major != rhs.major { return lhs.major < rhs.major }
+        if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
+        if lhs.patch != rhs.patch { return lhs.patch < rhs.patch }
+        if lhs.isPreRelease != rhs.isPreRelease { return lhs.isPreRelease && !rhs.isPreRelease }
+        return lhs.build < rhs.build
     }
 }
