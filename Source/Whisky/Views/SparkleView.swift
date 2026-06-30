@@ -400,11 +400,13 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
     }
 
     func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
-        let alert = NSAlert()
-        alert.messageText = "You're running the latest version of Bourbon."
-        alert.informativeText = "No update is available right now."
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        MainActor.assumeIsolated {
+            let alert = NSAlert()
+            alert.messageText = "You're running the latest version of Bourbon."
+            alert.informativeText = "No update is available right now."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
         acknowledgement()
     }
 
