@@ -32,6 +32,7 @@ struct ContentView: View {
     @AppStorage("displayName") private var displayName = ""
     @EnvironmentObject var bottleVM: BottleVM
     @ObservedObject private var installManager = InstallManager.shared
+    @ObservedObject private var pendingUpdateManager = BourbonPendingUpdateManager.shared
     @Binding var showSetup: Bool
     let updater: SPUUpdater
 
@@ -59,6 +60,16 @@ struct ContentView: View {
         .overlay(alignment: .bottomTrailing) {
             GlobalInstallStatusBanner(manager: installManager)
                 .padding()
+        }
+        .overlay(alignment: .top) {
+            if pendingUpdateManager.isPending && !pendingUpdateManager.isPromptPresented {
+                BourbonPendingUpdatePill(manager: pendingUpdateManager)
+                    .padding(.top, 10)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .sheet(isPresented: $pendingUpdateManager.isPromptPresented) {
+            BourbonPendingUpdatePrompt(manager: pendingUpdateManager, updater: updater)
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

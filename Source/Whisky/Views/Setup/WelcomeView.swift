@@ -709,6 +709,45 @@ struct BourbonLicenseRecord: Codable {
     let strikes: Int
 }
 
+enum LicenseValidationStatus: String, Codable {
+    case valid
+    case paused
+    case deleted
+    case banned
+    case expired
+    case scheduledForDeletion
+    case unknown
+}
+
+struct LicenseValidationResult: Codable {
+    let licenseId: String
+    let status: LicenseValidationStatus
+    let isValid: Bool
+    let reason: String?
+    let appealAllowed: Bool
+    let deletionScheduledAt: Date?
+    let checkedAt: Date
+
+    var title: String {
+        switch status {
+        case .valid:
+            return "License active"
+        case .paused:
+            return "License paused"
+        case .deleted:
+            return "License unavailable"
+        case .banned:
+            return "Account action required"
+        case .expired:
+            return "License expired"
+        case .scheduledForDeletion:
+            return "License scheduled for deletion"
+        case .unknown:
+            return "License unavailable"
+        }
+    }
+}
+
 enum BourbonLicenseAPI {
     private static let acceptedLegalVersion = "2026-06-27"
 
@@ -778,6 +817,94 @@ enum BourbonLicenseAPI {
         )
     }
 
+    static func validateCurrentLicense() async throws -> LicenseValidationResult? {
+        guard let license = LicenseKeychainStore.currentLicense(),
+              !license.publicLicenseId.isEmpty else {
+            return nil
+        }
+
+        guard let token = LicenseKeychainStore.readLicenseToken() else {
+            return LicenseValidationResult(
+                licenseId: license.publicLicenseId,
+                status: .unknown,
+                isValid: false,
+                reason: "Bourbon could not find the private license token for this installation.",
+                appealAllowed: false,
+                deletionScheduledAt: nil,
+                checkedAt: Date()
+            )
+        }
+
+        if !BourbonAPIConfiguration.hasConfiguredBackend {
+            return mockValidateLicense(licenseId: license.publicLicenseId)
+        }
+
+        var request = URLRequest(url: BourbonAPIConfiguration.licenseValidationURL)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(LicenseValidationRequest(
+            licenseId: license.publicLicenseId,
+            licenseToken: token
+        ))
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 12
+        let (data, response) = try await URLSession(configuration: configuration).data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              200..<300 ~= httpResponse.statusCode else {
+            throw LicenseActivationError.invalidResponse
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(LicenseValidationResult.self, from: data)
+    }
+
+    static func submitAppeal(for result: LicenseValidationResult) async throws {
+        guard let token = LicenseKeychainStore.readLicenseToken() else {
+            throw LicenseActivationError.invalidResponse
+        }
+
+        if !BourbonAPIConfiguration.hasConfiguredBackend {
+            print("License appeal captured locally for development")
+            return
+        }
+
+        var request = URLRequest(url: BourbonAPIConfiguration.licenseAppealURL)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(LicenseAppealRequest(
+            licenseId: result.licenseId,
+            licenseToken: token,
+            status: result.status.rawValue,
+            reason: result.reason
+        ))
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 20
+        let (_, response) = try await URLSession(configuration: configuration).data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              200..<300 ~= httpResponse.statusCode else {
+            throw LicenseActivationError.invalidResponse
+        }
+    }
+
+    private static func mockValidateLicense(licenseId: String) -> LicenseValidationResult {
+        // Future backend: replace this local development result with
+        // POST /license/validate once the license service is available.
+        LicenseValidationResult(
+            licenseId: licenseId,
+            status: .valid,
+            isValid: true,
+            reason: nil,
+            appealAllowed: false,
+            deletionScheduledAt: nil,
+            checkedAt: Date()
+        )
+    }
+
     private static var appVersion: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
@@ -805,6 +932,18 @@ private struct LicenseActivationRequest: Encodable {
     let acceptedLegalAt: Date
 }
 
+private struct LicenseValidationRequest: Encodable {
+    let licenseId: String
+    let licenseToken: String
+}
+
+private struct LicenseAppealRequest: Encodable {
+    let licenseId: String
+    let licenseToken: String
+    let status: String
+    let reason: String?
+}
+
 private struct LicenseActivationResponse: Decodable {
     let publicLicenseId: String
     let licenseToken: String
@@ -824,17 +963,35 @@ enum BourbonAPIConfiguration {
         baseURL.appending(path: "licenses/activate")
     }
 
+    static var licenseValidationURL: URL {
+        baseURL.appending(path: "license/validate")
+    }
+
+    static var licenseAppealURL: URL {
+        baseURL.appending(path: "license/appeal")
+    }
+
+    static var hasConfiguredBackend: Bool {
+        localConfigURL != nil || environmentBaseURL != nil
+    }
+
     private static var baseURL: URL {
         if let configuredURL = localConfigURL {
             return configuredURL
         }
 
-        if let environmentURL = ProcessInfo.processInfo.environment["BOURBON_API_BASE_URL"],
-           let url = URL(string: environmentURL) {
+        if let url = environmentBaseURL {
             return url
         }
 
         return URL(string: "https://api.bourbon.app")!
+    }
+
+    private static var environmentBaseURL: URL? {
+        guard let environmentURL = ProcessInfo.processInfo.environment["BOURBON_API_BASE_URL"] else {
+            return nil
+        }
+        return URL(string: environmentURL)
     }
 
     private static var localConfigURL: URL? {

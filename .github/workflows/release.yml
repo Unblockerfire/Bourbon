@@ -98,10 +98,11 @@ jobs:
           fi
 
           if [[ "$LOWER_VERSION" == *beta* ]] ||
+             [[ "$LOWER_VERSION" == *-pre* ]] ||
              [[ "$LOWER_VERSION" == *prerelease* ]] ||
              [[ "$LOWER_VERSION" == *pre-release* ]] ||
              [[ "$LOWER_VERSION" == *rc* ]]; then
-            CHANNEL="beta"
+            CHANNEL="pre"
           fi
 
           if [ "$EMERGENCY_LEVEL" -gt 0 ]; then

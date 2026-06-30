@@ -17,7 +17,9 @@
 //
 
 import SwiftUI
-import Sparkle
+@preconcurrency import Sparkle
+
+// swiftlint:disable file_length
 
 /// Bourbon app versions use `MAJOR.MINOR.PATCH`.
 ///
@@ -33,7 +35,7 @@ import Sparkle
 ///   automatic updates, but Bourbon identifies them separately for release
 ///   notes, reporting, and future policy decisions.
 ///
-/// Optional suffixes such as `beta`, `prerelease`, `pre-release`, and `rc`
+/// Optional suffixes such as `beta`, `pre`, `prerelease`, `pre-release`, and `rc`
 /// mark a build as pre-release. Pre-release builds are ignored unless the user
 /// explicitly opts in from Settings.
 struct BourbonUpdateVersion: Equatable {
@@ -90,6 +92,7 @@ struct BourbonUpdateVersion: Equatable {
 
         let normalizedSuffix = suffix.lowercased()
         return normalizedSuffix.contains("beta") ||
+        normalizedSuffix == "pre" ||
         normalizedSuffix.contains("prerelease") ||
         normalizedSuffix.contains("pre-release") ||
         normalizedSuffix.contains("rc")
@@ -113,7 +116,7 @@ struct BourbonReleaseMetadata {
 
 enum BourbonUpdatePolicy {
     static let preReleaseUpdatesEnabledKey = "bourbonEnablePrereleaseUpdates"
-    static let allowedPreReleaseChannels: Set<String> = ["beta", "prerelease", "pre-release", "rc"]
+    static let allowedPreReleaseChannels: Set<String> = ["beta", "pre", "prerelease", "pre-release", "rc"]
 
     static func releaseMetadata(currentVersion: String, newVersion: String) -> BourbonReleaseMetadata {
         BourbonReleaseMetadata(
@@ -285,6 +288,242 @@ final class BourbonUpdatePolicyDelegate: NSObject, SPUUpdaterDelegate {
                 ]
             )
         }
+    }
+}
+
+@MainActor
+final class BourbonPendingUpdateManager: ObservableObject {
+    static let shared = BourbonPendingUpdateManager()
+
+    @Published var isPending = false
+    @Published var isPromptPresented = false
+    @Published var pendingVersion: String?
+
+    private var installReply: ((SPUUserUpdateChoice) -> Void)?
+
+    private init() {}
+
+    func presentPendingInstall(version: String?, reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        pendingVersion = version
+        installReply = reply
+        isPending = true
+        isPromptPresented = true
+    }
+
+    func installNow(using updater: SPUUpdater) {
+        isPromptPresented = false
+        isPending = false
+
+        if let installReply {
+            self.installReply = nil
+            installReply(.install)
+        } else {
+            // Future Sparkle refinement: if Sparkle exposes a direct public
+            // install-postponed-update API, call it here. For now, checking for
+            // updates resumes Sparkle's downloaded-update flow.
+            updater.checkForUpdates()
+        }
+    }
+
+    func remindLater() {
+        isPromptPresented = false
+        installReply?(.dismiss)
+        installReply = nil
+        isPending = true
+    }
+
+    func showPrompt() {
+        guard isPending else { return }
+        isPromptPresented = true
+    }
+
+    func clearPendingInstall() {
+        isPending = false
+        isPromptPresented = false
+        pendingVersion = nil
+        installReply = nil
+    }
+}
+
+final class BourbonPendingUpdateUserDriver: NSObject, @MainActor SPUUserDriver {
+    private let standardUserDriver: SPUStandardUserDriver
+    private let pendingUpdateManager: BourbonPendingUpdateManager
+
+    init(hostBundle: Bundle, pendingUpdateManager: BourbonPendingUpdateManager) {
+        self.standardUserDriver = SPUStandardUserDriver(hostBundle: hostBundle, delegate: nil)
+        self.pendingUpdateManager = pendingUpdateManager
+        super.init()
+    }
+
+    func show(
+        _ request: SPUUpdatePermissionRequest,
+        reply: @escaping (SUUpdatePermissionResponse) -> Void
+    ) {
+        standardUserDriver.show(request, reply: reply)
+    }
+
+    func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
+        standardUserDriver.showUserInitiatedUpdateCheck(cancellation: cancellation)
+    }
+
+    @MainActor
+    func showUpdateFound(
+        with appcastItem: SUAppcastItem,
+        state: SPUUserUpdateState,
+        reply: @escaping (SPUUserUpdateChoice) -> Void
+    ) {
+        if state.stage == .downloaded && !appcastItem.isMajorUpgrade {
+            pendingUpdateManager.presentPendingInstall(
+                version: appcastItem.displayVersionString,
+                reply: reply
+            )
+            return
+        }
+
+        standardUserDriver.showUpdateFound(with: appcastItem, state: state, reply: reply)
+    }
+
+    func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {
+        standardUserDriver.showUpdateReleaseNotes(with: downloadData)
+    }
+
+    func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) {
+        standardUserDriver.showUpdateReleaseNotesFailedToDownloadWithError(error)
+    }
+
+    func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        standardUserDriver.showUpdateNotFoundWithError(error, acknowledgement: acknowledgement)
+    }
+
+    @MainActor
+    func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        pendingUpdateManager.clearPendingInstall()
+        standardUserDriver.showUpdaterError(error, acknowledgement: acknowledgement)
+    }
+
+    func showDownloadInitiated(cancellation: @escaping () -> Void) {
+        standardUserDriver.showDownloadInitiated(cancellation: cancellation)
+    }
+
+    func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
+        standardUserDriver.showDownloadDidReceiveExpectedContentLength(expectedContentLength)
+    }
+
+    func showDownloadDidReceiveData(ofLength length: UInt64) {
+        standardUserDriver.showDownloadDidReceiveData(ofLength: length)
+    }
+
+    func showDownloadDidStartExtractingUpdate() {
+        standardUserDriver.showDownloadDidStartExtractingUpdate()
+    }
+
+    func showExtractionReceivedProgress(_ progress: Double) {
+        standardUserDriver.showExtractionReceivedProgress(progress)
+    }
+
+    @MainActor
+    func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        pendingUpdateManager.presentPendingInstall(version: nil, reply: reply)
+    }
+
+    @MainActor
+    func showInstallingUpdate(
+        withApplicationTerminated applicationTerminated: Bool,
+        retryTerminatingApplication: @escaping () -> Void
+    ) {
+        pendingUpdateManager.clearPendingInstall()
+        standardUserDriver.showInstallingUpdate(
+            withApplicationTerminated: applicationTerminated,
+            retryTerminatingApplication: retryTerminatingApplication
+        )
+    }
+
+    @MainActor
+    func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) {
+        pendingUpdateManager.clearPendingInstall()
+        standardUserDriver.showUpdateInstalledAndRelaunched(relaunched, acknowledgement: acknowledgement)
+    }
+
+    func showUpdateInFocus() {
+        standardUserDriver.showUpdateInFocus()
+    }
+
+    func dismissUpdateInstallation() {
+        standardUserDriver.dismissUpdateInstallation()
+    }
+}
+
+struct BourbonPendingUpdatePrompt: View {
+    @ObservedObject var manager: BourbonPendingUpdateManager
+    let updater: SPUUpdater
+
+    var body: some View {
+        BourbonBackground {
+            BourbonGlassCard(maxWidth: 500) {
+                VStack(spacing: 18) {
+                    Image(systemName: "arrow.down.app.fill")
+                        .font(.system(size: 42, weight: .semibold))
+                        .foregroundStyle(BourbonStyle.amber)
+
+                    Text("Update Ready")
+                        .font(.largeTitle.bold())
+
+                    Text(message)
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack {
+                        Button("Later") {
+                            manager.remindLater()
+                        }
+                        .buttonStyle(BourbonSecondaryButtonStyle())
+                        .keyboardShortcut(.cancelAction)
+
+                        Button("Restart & Install") {
+                            manager.installNow(using: updater)
+                        }
+                        .buttonStyle(BourbonPrimaryButtonStyle())
+                        .keyboardShortcut(.defaultAction)
+                    }
+                }
+                .multilineTextAlignment(.center)
+            }
+        }
+        .frame(width: 560, height: 360)
+    }
+
+    private var message: String {
+        if let pendingVersion = manager.pendingVersion {
+            return "Bourbon \(pendingVersion) has been downloaded. Please restart to install the update."
+        }
+
+        return "A new version of Bourbon has been downloaded. Please restart to install the update."
+    }
+}
+
+struct BourbonPendingUpdatePill: View {
+    @ObservedObject var manager: BourbonPendingUpdateManager
+
+    var body: some View {
+        Button {
+            manager.showPrompt()
+        } label: {
+            Label("Install", systemImage: "arrow.down.app.fill")
+                .font(.headline)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(BourbonStyle.amber.opacity(0.55), lineWidth: 1)
+                }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(BourbonStyle.amber)
+        .shadow(color: .black.opacity(0.22), radius: 10, y: 4)
+        .help("Install the downloaded Bourbon update.")
     }
 }
 

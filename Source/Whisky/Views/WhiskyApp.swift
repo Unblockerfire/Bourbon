@@ -27,20 +27,35 @@ struct WhiskyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openURL) var openURL
     private let updatePolicyDelegate: BourbonUpdatePolicyDelegate
-    private let updaterController: SPUStandardUpdaterController
+    private let updateUserDriver: BourbonPendingUpdateUserDriver
+    private let updater: SPUUpdater
 
     init() {
         Wine.logCustomWineStartupEnvironment()
         let updatePolicyDelegate = BourbonUpdatePolicyDelegate()
+        let updateUserDriver = BourbonPendingUpdateUserDriver(
+            hostBundle: .main,
+            pendingUpdateManager: .shared
+        )
         self.updatePolicyDelegate = updatePolicyDelegate
-        updaterController = SPUStandardUpdaterController(startingUpdater: true,
-                                                         updaterDelegate: updatePolicyDelegate,
-                                                         userDriverDelegate: nil)
+        self.updateUserDriver = updateUserDriver
+        self.updater = SPUUpdater(
+            hostBundle: .main,
+            applicationBundle: .main,
+            userDriver: updateUserDriver,
+            delegate: updatePolicyDelegate
+        )
+
+        do {
+            try updater.start()
+        } catch {
+            print("Failed to start Bourbon updater: \(error.localizedDescription)")
+        }
     }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(showSetup: $showSetup, updater: updaterController.updater)
+            ContentView(showSetup: $showSetup, updater: updater)
                 .frame(minWidth: ViewWidth.large, minHeight: 316)
                 .environmentObject(BottleVM.shared)
                 .onAppear {
@@ -58,7 +73,7 @@ struct WhiskyApp: App {
         .handlesExternalEvents(matching: ["{same path of URL?}"])
         .commands {
             CommandGroup(after: .appInfo) {
-                SparkleView(updater: updaterController.updater)
+                SparkleView(updater: updater)
             }
             CommandGroup(before: .systemServices) {
                 Divider()
