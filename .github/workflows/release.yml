@@ -124,16 +124,7 @@ jobs:
           # minor, emergency-marker, and patch updates remain eligible.
           MINIMUM_AUTOUPDATE_VERSION="${MAJOR}.0.0"
 
-          # Sparkle compares CFBundleVersion, not just the user-facing
-          # MARKETING_VERSION. Local/dev builds have already reached numbers
-          # like 43, so release builds must use a higher namespace than the raw
-          # GitHub run number. Keep MARKETING_VERSION unchanged for users, but
-          # publish releases as build 100000+run_number so Sparkle sees CI
-          # releases as newer than local development builds.
-          RELEASE_BUILD_NUMBER="$((100000 + GITHUB_RUN_NUMBER))"
-
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "build=${RELEASE_BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "release_kind=${RELEASE_KIND}" >> "$GITHUB_OUTPUT"
           echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
@@ -156,7 +147,6 @@ jobs:
             -clonedSourcePackagesDirPath "$PACKAGE_CACHE" \
             CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION="${{ steps.version.outputs.version }}" \
-            CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}" \
             INFOPLIST_KEY_SUFeedURL="https://bourbonruntimeapi.fly.dev/updates/pre/appcast.xml" \
             build
 

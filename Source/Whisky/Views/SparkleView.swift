@@ -47,6 +47,7 @@ struct BourbonUpdateVersion: Equatable {
     init?(_ rawVersion: String) {
         let trimmedVersion = rawVersion
             .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s*\([^)]*\)\s*$"#, with: "", options: .regularExpression)
             .trimmingPrefix("v")
         let separators = CharacterSet(charactersIn: "-+_ ")
         let suffixStartIndex = trimmedVersion.firstIndex { character in
@@ -208,6 +209,12 @@ enum BourbonUpdatePolicy {
     static var currentAppVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
     }
+
+    static func publicVersionString(_ rawVersion: String) -> String {
+        rawVersion
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s*\([^)]*\)\s*$"#, with: "", options: .regularExpression)
+    }
 }
 
 final class BourbonSparkleVersionDisplayer: NSObject, SUVersionDisplay {
@@ -218,7 +225,7 @@ final class BourbonSparkleVersionDisplayer: NSObject, SUVersionDisplay {
     ) -> String {
         let publicBundleVersion = String(inOutBundleDisplayVersion.pointee)
         inOutBundleDisplayVersion.pointee = publicBundleVersion as NSString
-        return update.displayVersionString
+        return BourbonUpdatePolicy.publicVersionString(update.displayVersionString)
     }
 
     func formatBundleDisplayVersion(
@@ -244,7 +251,7 @@ final class BourbonUpdatePolicyDelegate: NSObject, SPUUpdaterDelegate {
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         let metadata = BourbonUpdatePolicy.releaseMetadata(
             currentVersion: BourbonUpdatePolicy.currentAppVersion,
-            newVersion: item.displayVersionString
+            newVersion: BourbonUpdatePolicy.publicVersionString(item.displayVersionString)
         )
         print(
             """
@@ -375,7 +382,7 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
     ) {
         if state.stage == .downloaded && !appcastItem.isMajorUpgrade {
             pendingUpdateManager.presentPendingInstall(
-                version: appcastItem.displayVersionString,
+                version: BourbonUpdatePolicy.publicVersionString(appcastItem.displayVersionString),
                 reply: reply
             )
             return
@@ -393,7 +400,12 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
     }
 
     func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
-        standardUserDriver.showUpdateNotFoundWithError(error, acknowledgement: acknowledgement)
+        let alert = NSAlert()
+        alert.messageText = "You're running the latest version of Bourbon."
+        alert.informativeText = "No update is available right now."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+        acknowledgement()
     }
 
     func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
