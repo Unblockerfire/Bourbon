@@ -1,12 +1,15 @@
+cat > README.md <<'EOF'
 <div align="center">
 
-Bourbon 🥃
+# Bourbon 🥃
 
-Whisky, but stronger.
+## Whisky, but stronger.
 
 </div>
 
-🎉 We’re Back!
+---
+
+## 🎉 We’re Back!
 
 Bourbon is the modern continuation of the Whisky experience.
 
@@ -14,70 +17,97 @@ It’s the same great Whisky you know and love, refreshed and updated for 2026 w
 
 We’re just getting started, and we’re not going anywhere.
 
-⸻
+---
 
-<img width="650" alt="Config" src="./images/config.png">
+<p align="center">
+  <img width="650" alt="Bourbon Welcome Back" src="./images/welcome-back.png">
+</p>
 
-A familiar interface that feels right at home on macOS.
+<p align="center">
+  <b>A refreshed Bourbon welcome experience.</b>
+</p>
 
-<div align="right">
-<img width="650" alt="Bottle Creation" src="./images/new-bottle.png">
+---
 
-Fast bottle creation and management.
+<p align="center">
+  <img width="650" alt="Welcome to Bourbon" src="./images/welcome-screen.png">
+</p>
 
-</div>
-<img width="650" alt="Programs" src="./images/programs.png">
+<p align="center">
+  <b>Create your first Bottle with a cleaner, friendlier onboarding flow.</b>
+</p>
 
-Install, launch, and manage Windows applications with ease.
+---
 
-⸻
+<p align="center">
+  <img width="650" alt="What is a Bottle" src="./images/what-is-bottle.png">
+</p>
 
-Features
+<p align="center">
+  <b>Simple explanations for users who are new to Wine environments.</b>
+</p>
 
-* Native SwiftUI interface
-* Modern Wine runtime
-* Automatic runtime installation
-* Bottle management
-* Winetricks integration
-* DXVK & Vulkan support
-* Apple Silicon optimized
-* Active development
+---
 
-⸻
+<p align="center">
+  <img width="750" alt="Create Bottle" src="./images/create-bottle.png">
+</p>
 
-System Requirements
+<p align="center">
+  <b>Fast bottle creation and installer setup in one place.</b>
+</p>
 
-* Apple Silicon (M-series)
-* macOS Sonoma 14 or newer
+---
 
-⸻
+## Features
 
-Installation
+- Native SwiftUI interface
+- Modern BourbonWine runtime
+- Automatic runtime installation
+- Bottle creation and management
+- Installer support for Windows apps and games
+- Distillery coming soon
+- Account standing and license identity
+- Pre-release update channel
+- Sparkle-powered updates
+- Winetricks integration
+- DXVK and Vulkan support
+- Apple Silicon optimized
+- Active development
 
-Homebrew
+---
 
+## Distillery
+
+Distillery is Bourbon’s upcoming app and game hub.
+
+The goal is to make supported Windows applications easier to discover, request, and install without hunting around the web.
+
+Distillery is still in development, but the foundation is already being built.
+
+---
+
+## Bourbon Board
+
+Bourbon Board Members are planned as a future supporter group for people who want to help fund development, test pre-release builds, and help shape the project roadmap.
+
+Core Bourbon functionality will remain focused on being free and accessible.
+
+---
+
+## System Requirements
+
+- Apple Silicon Mac
+- macOS Sonoma 14 or newer
+
+---
+
+## Installation
+
+### Homebrew
+
+Homebrew support is planned, but still in progress while Bourbon is being tested and polished.
+
+```bash
 brew tap Unblockerfire/bourbon
 brew install --cask bourbon
-
-Or download the latest release from the Releases page.
-
-⸻
-
-Source Code
-
-The application source code is located in:
-
-Source/
-
-Runtime binaries are distributed separately and are not stored in this repository.
-
-⸻
-
-License
-
-Bourbon is based on Whisky and continues to comply with the applicable open-source licenses of the original project and its dependencies.
-
-See the LICENSE file for details.
-
-⸻
-
