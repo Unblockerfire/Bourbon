@@ -37,23 +37,6 @@ jobs:
           echo "Checked out commit: $(git rev-parse HEAD)"
           git status --short
 
-      - name: Configure release paths
-        id: paths
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          DERIVED_DATA="$RUNNER_TEMP/BourbonDerivedData"
-          PACKAGE_CACHE="$RUNNER_TEMP/BourbonSourcePackages"
-          BUILD_ROOT="$RUNNER_TEMP/BourbonRelease"
-
-          echo "DERIVED_DATA=$DERIVED_DATA" >> "$GITHUB_ENV"
-          echo "PACKAGE_CACHE=$PACKAGE_CACHE" >> "$GITHUB_ENV"
-          echo "BUILD_ROOT=$BUILD_ROOT" >> "$GITHUB_ENV"
-          echo "dmg=$BUILD_ROOT/Bourbon.dmg" >> "$GITHUB_OUTPUT"
-          echo "sha256=$BUILD_ROOT/Bourbon.dmg.sha256" >> "$GITHUB_OUTPUT"
-          echo "appcast=$BUILD_ROOT/appcast.xml" >> "$GITHUB_OUTPUT"
-
       - name: Select Xcode
         shell: bash
         run: |
@@ -126,9 +109,28 @@ jobs:
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "dmg_name=Bourbon${VERSION}.dmg" >> "$GITHUB_OUTPUT"
           echo "release_kind=${RELEASE_KIND}" >> "$GITHUB_OUTPUT"
           echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
           echo "minimum_autoupdate_version=${MINIMUM_AUTOUPDATE_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure release paths
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DERIVED_DATA="$RUNNER_TEMP/BourbonDerivedData"
+          PACKAGE_CACHE="$RUNNER_TEMP/BourbonSourcePackages"
+          BUILD_ROOT="$RUNNER_TEMP/BourbonRelease"
+          DMG_NAME="${{ steps.version.outputs.dmg_name }}"
+
+          echo "DERIVED_DATA=$DERIVED_DATA" >> "$GITHUB_ENV"
+          echo "PACKAGE_CACHE=$PACKAGE_CACHE" >> "$GITHUB_ENV"
+          echo "BUILD_ROOT=$BUILD_ROOT" >> "$GITHUB_ENV"
+          echo "dmg=$BUILD_ROOT/$DMG_NAME" >> "$GITHUB_OUTPUT"
+          echo "sha256=$BUILD_ROOT/$DMG_NAME.sha256" >> "$GITHUB_OUTPUT"
+          echo "appcast=$BUILD_ROOT/appcast.xml" >> "$GITHUB_OUTPUT"
 
       - name: Install SwiftLint
         run: brew install swiftlint
@@ -337,8 +339,9 @@ jobs:
 
           RW_DMG="$BUILD_ROOT/Bourbon-rw.dmg"
           MOUNT_DIR="$BUILD_ROOT/dmg-mount"
+          FINAL_DMG="${{ steps.paths.outputs.dmg }}"
 
-          rm -f "$RW_DMG" "$BUILD_ROOT/Bourbon.dmg"
+          rm -f "$RW_DMG" "$FINAL_DMG"
           rm -rf "$MOUNT_DIR"
           mkdir -p "$MOUNT_DIR"
 
@@ -389,9 +392,9 @@ jobs:
             -ov \
             -format UDZO \
             -imagekey zlib-level=9 \
-            -o "$BUILD_ROOT/Bourbon.dmg"
+            -o "$FINAL_DMG"
 
-          shasum -a 256 "$BUILD_ROOT/Bourbon.dmg" > "$BUILD_ROOT/Bourbon.dmg.sha256"
+          shasum -a 256 "$FINAL_DMG" > "${{ steps.paths.outputs.sha256 }}"
 
       - name: Generate Sparkle appcast
         shell: bash
@@ -401,7 +404,8 @@ jobs:
           set -euo pipefail
 
           APPCAST_PATH="$BUILD_ROOT/appcast.xml"
-          DMG_PATH="$BUILD_ROOT/Bourbon.dmg"
+          DMG_PATH="${{ steps.paths.outputs.dmg }}"
+          DMG_NAME="${{ steps.version.outputs.dmg_name }}"
           RELEASE_APP="$BUILD_ROOT/dmg-root/Bourbon.app"
           DMG_LENGTH="$(stat -f%z "$DMG_PATH")"
           PUB_DATE="$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')"
@@ -509,7 +513,7 @@ jobs:
                 <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
                 <sparkle:minimumAutoupdateVersion>$MINIMUM_AUTOUPDATE_VERSION</sparkle:minimumAutoupdateVersion>
                 <enclosure
-                  url="https://github.com/Unblockerfire/Bourbon/releases/download/${{ steps.version.outputs.tag }}/Bourbon.dmg"
+                  url="https://github.com/Unblockerfire/Bourbon/releases/download/${{ steps.version.outputs.tag }}/$DMG_NAME"
                   sparkle:edSignature="$ED_SIGNATURE"
                   length="$DMG_LENGTH"
                   type="application/x-apple-diskimage" />

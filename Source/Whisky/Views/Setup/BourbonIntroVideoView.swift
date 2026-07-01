@@ -10,8 +10,6 @@ struct BourbonIntroVideoView: View {
 
     @State private var player: AVPlayer?
     @State private var showButton = false
-    @State private var showAdminUnlock = false
-    @State private var adminUnlockTriggered = false
     @State private var playbackObserver: NSObjectProtocol?
     @State private var licenseGate: IntroLicenseGate = .idle
     @State private var finishPendingAfterValidation = false
@@ -26,10 +24,6 @@ struct BourbonIntroVideoView: View {
             }
 
             Button(buttonTitle) {
-                if adminUnlockTriggered {
-                    adminUnlockTriggered = false
-                    return
-                }
                 finishIntro()
             }
             .buttonStyle(.plain)
@@ -47,15 +41,8 @@ struct BourbonIntroVideoView: View {
             .opacity(showButton ? 1 : 0)
             .allowsHitTesting(showButton)
             .animation(.easeOut(duration: 0.6), value: showButton)
-            .onLongPressGesture(minimumDuration: 5) {
-                adminUnlockTriggered = true
-                showAdminUnlock = true
-            }
 
             licenseGateOverlay
-        }
-        .sheet(isPresented: $showAdminUnlock) {
-            AdminUnlockView()
         }
         .onAppear {
             startLicenseValidation()

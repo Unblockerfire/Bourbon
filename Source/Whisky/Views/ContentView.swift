@@ -48,6 +48,7 @@ struct ContentView: View {
     @State private var triggerRefresh: Bool = false
     @State private var refreshAnimation: Angle = .degrees(0)
     @State private var homeSubtitle = BourbonHomeCopy.randomSubtitle()
+    @State private var showAdminUnlock = false
 
     @State private var bottleFilter = ""
 
@@ -75,8 +76,16 @@ struct ContentView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .overlay(alignment: .topLeading) {
+            if activePage == .home {
+                homeTitleAdminHotspot
+            }
+        }
         .sheet(isPresented: $pendingUpdateManager.isPromptPresented) {
             BourbonPendingUpdatePrompt(manager: pendingUpdateManager, updater: updater)
+        }
+        .sheet(isPresented: $showAdminUnlock) {
+            AdminUnlockView()
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -383,6 +392,19 @@ struct ContentView: View {
 
     private var homeTitle: String {
         "Welcome, \(resolvedDisplayName)"
+    }
+
+    private var homeTitleAdminHotspot: some View {
+        Color.clear
+            .frame(width: 150, height: 72)
+            .contentShape(Rectangle())
+            .offset(x: 150, y: 12)
+            .gesture(
+                LongPressGesture(minimumDuration: 7)
+                    .onEnded { _ in
+                        showAdminUnlock = true
+                    }
+            )
     }
 
     private var accountLicense: BourbonLicenseRecord {
