@@ -1,3 +1,5 @@
+cd ~/Documents/Whisky-REBOOT
+
 cat > README.md <<'EOF'
 <div align="center">
 
@@ -23,9 +25,7 @@ We’re just getting started, and we’re not going anywhere.
   <img width="650" alt="Bourbon Welcome Back" src="./images/welcome-back.png">
 </p>
 
-<p align="center">
-  <b>A refreshed Bourbon welcome experience.</b>
-</p>
+<p align="center"><b>A refreshed Bourbon welcome experience.</b></p>
 
 ---
 
@@ -33,9 +33,7 @@ We’re just getting started, and we’re not going anywhere.
   <img width="650" alt="Welcome to Bourbon" src="./images/welcome-screen.png">
 </p>
 
-<p align="center">
-  <b>Create your first Bottle with a cleaner, friendlier onboarding flow.</b>
-</p>
+<p align="center"><b>Create your first Bottle with a cleaner, friendlier onboarding flow.</b></p>
 
 ---
 
@@ -43,9 +41,7 @@ We’re just getting started, and we’re not going anywhere.
   <img width="650" alt="What is a Bottle" src="./images/what-is-bottle.png">
 </p>
 
-<p align="center">
-  <b>Simple explanations for users who are new to Wine environments.</b>
-</p>
+<p align="center"><b>Simple explanations for users who are new to Wine environments.</b></p>
 
 ---
 
@@ -53,9 +49,7 @@ We’re just getting started, and we’re not going anywhere.
   <img width="750" alt="Create Bottle" src="./images/create-bottle.png">
 </p>
 
-<p align="center">
-  <b>Fast bottle creation and installer setup in one place.</b>
-</p>
+<p align="center"><b>Fast bottle creation and installer setup in one place.</b></p>
 
 ---
 
@@ -100,14 +94,3 @@ Core Bourbon functionality will remain focused on being free and accessible.
 - Apple Silicon Mac
 - macOS Sonoma 14 or newer
 
----
-
-## Installation
-
-### Homebrew
-
-Homebrew support is planned, but still in progress while Bourbon is being tested and polished.
-
-```bash
-brew tap Unblockerfire/bourbon
-brew install --cask bourbon
