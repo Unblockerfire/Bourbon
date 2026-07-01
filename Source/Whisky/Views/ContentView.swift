@@ -227,7 +227,25 @@ struct ContentView: View {
 
     var sidebar: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 4) {
+            VStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                    TextField("Search bottles", text: $bottleFilter)
+                        .textFieldStyle(.plain)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(.white.opacity(0.09), lineWidth: 1)
+                }
+                .help("Search your bottles.")
+
+                VStack(spacing: 4) {
                 SidebarPageButton(
                     title: "Home",
                     systemImage: "house",
@@ -247,6 +265,7 @@ struct ContentView: View {
                     activePage = .library
                 }
                 .help("Browse games and apps.")
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -278,7 +297,6 @@ struct ContentView: View {
                 .animation(.default, value: bottleVM.bottles)
                 .animation(.default, value: bottleFilter)
                 .listStyle(.sidebar)
-                .searchable(text: $bottleFilter, placement: .sidebar)
                 .onChange(of: selected) {
                     if selected != nil {
                         activePage = nil

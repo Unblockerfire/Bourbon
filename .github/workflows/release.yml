@@ -216,88 +216,88 @@ jobs:
             exit 1
           fi
 
-          mkdir -p "$BUILD_ROOT/dmg-root"
+          mkdir -p "$BUILD_ROOT/dmg-root/.background"
           ditto "$APP_PATH" "$RELEASE_APP"
           ln -s /Applications "$BUILD_ROOT/dmg-root/Applications"
-          cp "Source/Whisky/Assets.xcassets/AppIcon.appiconset/512.png" "$BUILD_ROOT/dmg-root/Bourbon.png"
-          cat > "$BUILD_ROOT/dmg-root/Welcome to Bourbon.html" <<'HTML'
-          <!doctype html>
-          <html lang="en">
-          <head>
-            <meta charset="utf-8">
-            <title>Welcome to Bourbon</title>
-            <style>
-              :root { color-scheme: dark; }
-              body {
-                margin: 0;
-                font: 18px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-                background: #120906;
-                color: #fff7ec;
-              }
-              main {
-                width: 720px;
-                margin: 0 auto;
-                padding: 46px;
-              }
-              img {
-                width: 112px;
-                height: 112px;
-                border-radius: 24px;
-                box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
-              }
-              h1 {
-                margin: 22px 0 6px;
-                font-size: 46px;
-                letter-spacing: 0;
-              }
-              .subtitle {
-                margin: 0 0 34px;
-                color: #f2c276;
-                font-size: 23px;
-                font-weight: 600;
-              }
-              .steps {
-                display: grid;
-                gap: 14px;
-              }
-              .step {
-                padding: 18px 20px;
-                border: 1px solid rgba(255, 255, 255, 0.14);
-                border-radius: 14px;
-                background: rgba(255, 255, 255, 0.08);
-              }
-              .step strong {
-                display: block;
-                color: #f6b94a;
-                margin-bottom: 4px;
-              }
-              .drag {
-                margin-top: 30px;
-                padding: 20px;
-                border-radius: 18px;
-                background: #2b1b12;
-                text-align: center;
-                font-size: 24px;
-                font-weight: 700;
-              }
-            </style>
-          </head>
-          <body>
-            <main>
-              <img src="Bourbon.png" alt="Bourbon">
-              <h1>Welcome to Bourbon</h1>
-              <p class="subtitle">Whisky, but a bit stronger.</p>
-              <section class="steps">
-                <div class="step"><strong>Step 1</strong>Drag Bourbon into the Applications folder.</div>
-                <div class="step"><strong>Step 2</strong>Open Bourbon from Applications.</div>
-                <div class="step"><strong>Step 3</strong>Eject the installer DMG.</div>
-                <div class="step"><strong>Step 4</strong>Delete the downloaded DMG if desired.</div>
-              </section>
-              <div class="drag">Bourbon.app -&gt; Applications</div>
-            </main>
-          </body>
-          </html>
-          HTML
+
+          swift - "$BUILD_ROOT/dmg-root/.background/BourbonDMGBackground.png" <<'SWIFT'
+          import AppKit
+          import Foundation
+
+          let outputPath = CommandLine.arguments[1]
+          let size = NSSize(width: 640, height: 360)
+          let image = NSImage(size: size)
+
+          image.lockFocus()
+
+          NSColor(calibratedRed: 0.07, green: 0.04, blue: 0.03, alpha: 1).setFill()
+          NSRect(origin: .zero, size: size).fill()
+
+          let gradient = NSGradient(colors: [
+              NSColor(calibratedRed: 0.20, green: 0.12, blue: 0.07, alpha: 1),
+              NSColor(calibratedRed: 0.05, green: 0.025, blue: 0.02, alpha: 1)
+          ])
+          gradient?.draw(in: NSRect(origin: .zero, size: size), angle: 90)
+
+          let title = "Welcome to Bourbon"
+          let subtitle = "Whisky, but a bit stronger."
+          let instruction = "Drag Bourbon to Applications"
+
+          let paragraph = NSMutableParagraphStyle()
+          paragraph.alignment = .center
+
+          title.draw(
+              in: NSRect(x: 40, y: 258, width: 560, height: 44),
+              withAttributes: [
+                  .font: NSFont.systemFont(ofSize: 34, weight: .bold),
+                  .foregroundColor: NSColor(calibratedRed: 1, green: 0.95, blue: 0.86, alpha: 1),
+                  .paragraphStyle: paragraph
+              ]
+          )
+
+          subtitle.draw(
+              in: NSRect(x: 40, y: 228, width: 560, height: 28),
+              withAttributes: [
+                  .font: NSFont.systemFont(ofSize: 18, weight: .semibold),
+                  .foregroundColor: NSColor(calibratedRed: 0.96, green: 0.70, blue: 0.27, alpha: 1),
+                  .paragraphStyle: paragraph
+              ]
+          )
+
+          instruction.draw(
+              in: NSRect(x: 40, y: 42, width: 560, height: 34),
+              withAttributes: [
+                  .font: NSFont.systemFont(ofSize: 24, weight: .bold),
+                  .foregroundColor: NSColor(calibratedRed: 1, green: 0.88, blue: 0.65, alpha: 1),
+                  .paragraphStyle: paragraph
+              ]
+          )
+
+          let arrowPath = NSBezierPath()
+          arrowPath.move(to: NSPoint(x: 272, y: 161))
+          arrowPath.line(to: NSPoint(x: 368, y: 161))
+          arrowPath.move(to: NSPoint(x: 344, y: 185))
+          arrowPath.line(to: NSPoint(x: 368, y: 161))
+          arrowPath.line(to: NSPoint(x: 344, y: 137))
+          arrowPath.lineWidth = 7
+          arrowPath.lineCapStyle = .round
+          arrowPath.lineJoinStyle = .round
+          NSColor(calibratedRed: 0.98, green: 0.64, blue: 0.20, alpha: 1).setStroke()
+          arrowPath.stroke()
+
+          image.unlockFocus()
+
+          guard
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:])
+          else {
+              fputs("Unable to render DMG background image.\n", stderr)
+              exit(1)
+          }
+
+          try png.write(to: URL(fileURLWithPath: outputPath))
+          SWIFT
 
           # Temporary release pipeline: use ad-hoc signing until Developer ID
           # signing and notarization secrets are configured in GitHub Actions.
@@ -335,12 +335,59 @@ jobs:
         run: |
           set -euo pipefail
 
+          RW_DMG="$BUILD_ROOT/Bourbon-rw.dmg"
+          MOUNT_DIR="$BUILD_ROOT/dmg-mount"
+
+          rm -f "$RW_DMG" "$BUILD_ROOT/Bourbon.dmg"
+          rm -rf "$MOUNT_DIR"
+          mkdir -p "$MOUNT_DIR"
+
           hdiutil create \
             -volname "Bourbon" \
             -srcfolder "$BUILD_ROOT/dmg-root" \
             -ov \
+            -format UDRW \
+            "$RW_DMG"
+
+          hdiutil attach "$RW_DMG" \
+            -mountpoint "$MOUNT_DIR" \
+            -nobrowse \
+            -noverify \
+            -noautoopen
+
+          cleanup_dmg_mount() {
+            hdiutil detach "$MOUNT_DIR" -quiet || true
+          }
+          trap cleanup_dmg_mount EXIT
+
+          osascript <<APPLESCRIPT
+          tell application "Finder"
+            tell disk "Bourbon"
+              open
+              set current view of container window to icon view
+              set toolbar visible of container window to false
+              set statusbar visible of container window to false
+              set bounds of container window to {100, 100, 740, 460}
+              set theViewOptions to the icon view options of container window
+              set arrangement of theViewOptions to not arranged
+              set icon size of theViewOptions to 112
+              set background picture of theViewOptions to POSIX file "$MOUNT_DIR/.background/BourbonDMGBackground.png"
+              set position of item "Bourbon.app" of container window to {176, 184}
+              set position of item "Applications" of container window to {464, 184}
+              close
+            end tell
+          end tell
+          APPLESCRIPT
+
+          sync
+          hdiutil detach "$MOUNT_DIR"
+          trap - EXIT
+
+          hdiutil convert "$RW_DMG" \
+            -ov \
             -format UDZO \
-            "$BUILD_ROOT/Bourbon.dmg"
+            -imagekey zlib-level=9 \
+            -o "$BUILD_ROOT/Bourbon.dmg"
 
           shasum -a 256 "$BUILD_ROOT/Bourbon.dmg" > "$BUILD_ROOT/Bourbon.dmg.sha256"
 
