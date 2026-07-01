@@ -244,6 +244,7 @@ jobs:
           let title = "Welcome to Bourbon"
           let subtitle = "Whisky, but a bit stronger."
           let instruction = "Drag Bourbon to Applications"
+          let followUpInstruction = "Then double-click Applications and search Bourbon"
 
           let paragraph = NSMutableParagraphStyle()
           paragraph.alignment = .center
@@ -267,10 +268,19 @@ jobs:
           )
 
           instruction.draw(
-              in: NSRect(x: 40, y: 42, width: 560, height: 34),
+              in: NSRect(x: 40, y: 56, width: 560, height: 30),
               withAttributes: [
                   .font: NSFont.systemFont(ofSize: 24, weight: .bold),
                   .foregroundColor: NSColor(calibratedRed: 1, green: 0.88, blue: 0.65, alpha: 1),
+                  .paragraphStyle: paragraph
+              ]
+          )
+
+          followUpInstruction.draw(
+              in: NSRect(x: 40, y: 30, width: 560, height: 24),
+              withAttributes: [
+                  .font: NSFont.systemFont(ofSize: 17, weight: .semibold),
+                  .foregroundColor: NSColor(calibratedRed: 0.96, green: 0.70, blue: 0.27, alpha: 1),
                   .paragraphStyle: paragraph
               ]
           )
