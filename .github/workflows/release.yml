@@ -362,20 +362,22 @@ jobs:
 
           osascript <<APPLESCRIPT
           tell application "Finder"
-            tell disk "Bourbon"
-              open
-              set current view of container window to icon view
-              set toolbar visible of container window to false
-              set statusbar visible of container window to false
-              set bounds of container window to {100, 100, 740, 460}
-              set theViewOptions to the icon view options of container window
-              set arrangement of theViewOptions to not arranged
-              set icon size of theViewOptions to 112
-              set background picture of theViewOptions to POSIX file "$MOUNT_DIR/.background/BourbonDMGBackground.png"
-              set position of item "Bourbon.app" of container window to {176, 184}
-              set position of item "Applications" of container window to {464, 184}
-              close
+            set dmgFolder to POSIX file "$MOUNT_DIR" as alias
+            open dmgFolder
+            delay 1
+            set current view of container window of dmgFolder to icon view
+            set toolbar visible of container window of dmgFolder to false
+            set statusbar visible of container window of dmgFolder to false
+            set bounds of container window of dmgFolder to {100, 100, 740, 460}
+            set theViewOptions to the icon view options of container window of dmgFolder
+            tell theViewOptions
+              set arrangement to not arranged
+              set icon size to 112
+              set background picture to POSIX file "$MOUNT_DIR/.background/BourbonDMGBackground.png"
             end tell
+            set position of item "Bourbon.app" of dmgFolder to {176, 184}
+            set position of item "Applications" of dmgFolder to {464, 184}
+            close container window of dmgFolder
           end tell
           APPLESCRIPT
 
