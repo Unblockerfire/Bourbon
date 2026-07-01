@@ -81,18 +81,3 @@ See the LICENSE file for details.
 
 ⸻
 
-Credits
-
-Bourbon would not be possible without the incredible work of:
-
-* WineHQ
-* CodeWeavers
-* Apple
-* MoltenVK
-* DXVK-macOS
-* Sparkle
-* SemanticVersion
-* Swift Argument Parser
-* SwiftTextTable
-
-Special thanks to Isaac Marovitz for creating Whisky and to everyone who has contributed to the project over the years.
