@@ -403,14 +403,30 @@ struct SidebarPageButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .fontWeight(isActive ? .semibold : .regular)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: isActive ? .semibold : .regular))
+                    .frame(width: 20)
+
+                Text(title)
+                    .fontWeight(isActive ? .semibold : .regular)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+            .padding(.horizontal, 10)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(isActive ? BourbonStyle.amber : .primary)
+        .background {
+            if isActive {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(BourbonStyle.amber.opacity(0.14))
+            }
+        }
     }
 }
 
