@@ -1,6 +1,3 @@
-cd ~/Documents/Whisky-REBOOT
-
-cat > README.md <<'EOF'
 <div align="center">
 
 # Bourbon 🥃
