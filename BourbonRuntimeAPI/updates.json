@@ -9,12 +9,12 @@
     "edSignature": null
   },
   "pre": {
-    "version": "1.5.9-pre",
-    "build": "100022",
-    "dmgUrl": "https://github.com/Unblockerfire/Bourbon/releases/download/v1.5.9-pre/Bourbon.dmg",
-    "dmgLength": 11313145,
-    "pubDate": "2026-07-01T07:05:01Z",
+    "version": "1.6.11-pre",
+    "build": "100025",
+    "dmgUrl": "https://github.com/Unblockerfire/Bourbon/releases/download/v1.6.11-pre/Bourbon1.6.11-pre.dmg",
+    "dmgLength": 11383417,
+    "pubDate": "2026-07-02T04:35:39Z",
     "minimumSystemVersion": "14.0",
-    "edSignature": "clzFyeZIi9vgsMDeJ5enk7eioph07/FICuw+mItPDbUdHWKGhJYP8tDyilac5U2WZ9fbmZm/r9tPOVPPtFKZBA=="
+    "edSignature": "LtbhP1clHMDnpdBqpWgtEpyLrdmxbtpj4BPrxuKPw7eorToh/0l+qkPUiN9WpHzpKl1t9o8eqVfoiXOY6otNCQ=="
   }
 }
