@@ -412,7 +412,19 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
 
     func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
         pendingUpdateManager.clearPendingInstall()
-        standardUserDriver.showUpdaterError(error, acknowledgement: acknowledgement)
+        MainActor.assumeIsolated {
+            let alert = NSAlert()
+            alert.messageText = "Bourbon update failed."
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "Report")
+
+            if alert.runModal() == .alertSecondButtonReturn {
+                BourbonReportCenter.openUpdateReport(error)
+            }
+        }
+        acknowledgement()
     }
 
     func showDownloadInitiated(cancellation: @escaping () -> Void) {

@@ -79,6 +79,16 @@ extension Program {
         + message
         alert.alertStyle = .critical
         alert.addButton(withTitle: String(localized: "button.ok"))
-        alert.runModal()
+        alert.addButton(withTitle: "Report")
+        if alert.runModal() == .alertSecondButtonReturn {
+            NotificationCenter.default.post(
+                name: Notification.Name("BourbonOpenProblemReport"),
+                object: nil,
+                userInfo: [
+                    "title": "Failed to launch \(self.url.lastPathComponent)",
+                    "message": message
+                ]
+            )
+        }
     }
 }

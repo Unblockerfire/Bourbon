@@ -382,18 +382,11 @@ struct BottleView: View {
     }
 
     private func reportIssue(for error: InstallerErrorInfo) {
-        let payload = InstallerIssueReporter.reportPayload(
+        BourbonReportCenter.openInstallerReport(
             bottleName: error.bottleName,
             installerURL: error.installerURL,
             errorMessage: error.message
         )
-        print(payload)
-
-        guard InstallerIssueReporter.confirmBeforeOpeningReport() else { return }
-
-        if let url = URL(string: "https://github.com/Bourbon-App/Bourbon/issues/new") {
-            NSWorkspace.shared.open(url)
-        }
     }
 }
 
@@ -670,18 +663,11 @@ struct FirstInstallView: View {
     }
 
     private func reportIssue(for error: InstallerErrorInfo) {
-        let payload = InstallerIssueReporter.reportPayload(
+        BourbonReportCenter.openInstallerReport(
             bottleName: error.bottleName,
             installerURL: error.installerURL,
             errorMessage: error.message
         )
-        print(payload)
-
-        guard InstallerIssueReporter.confirmBeforeOpeningReport() else { return }
-
-        if let url = URL(string: "https://github.com/Bourbon-App/Bourbon/issues/new") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     private func startInstallerPipeline() {
@@ -930,7 +916,7 @@ struct InstallerErrorCard: View {
 
                     Button("Report Issue", action: reportIssue)
                         .buttonStyle(BourbonSecondaryButtonStyle())
-                        .help("Prepare a troubleshooting report. Bourbon asks before opening GitHub.")
+                        .help("Prepare a troubleshooting report.")
 
                     Button("Cancel", action: cancel)
                         .buttonStyle(BourbonSecondaryButtonStyle())
@@ -946,66 +932,4 @@ struct InstallerErrorInfo: Identifiable {
     let bottleName: String
     let installerURL: URL
     let message: String
-}
-
-enum InstallerIssueReporter {
-    @MainActor
-    static func confirmBeforeOpeningReport() -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "Report this issue?"
-        alert.informativeText = """
-        Bourbon will open GitHub Issues. The diagnostic payload was printed locally so you can review it before sharing.
-        Personal files are not uploaded.
-        """
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Open GitHub Issues")
-        alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn
-    }
-
-    static func reportPayload(bottleName: String, installerURL: URL, errorMessage: String) -> String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
-        let logs = recentLogs()
-
-        return """
-        Bourbon issue report
-        App version: \(version) (\(build))
-        macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)
-        Bottle: \(bottleName)
-        Installer: \(installerURL.lastPathComponent)
-        Error: \(errorMessage)
-
-        Recent logs:
-        \(logs)
-        """
-    }
-
-    private static func recentLogs() -> String {
-        guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: Wine.logsFolder,
-            includingPropertiesForKeys: [.contentModificationDateKey]
-        ) else {
-            return "No recent logs found."
-        }
-
-        return urls
-            .filter { $0.pathExtension == "log" }
-            .sorted { lhs, rhs in
-                let lhsDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate ?? .distantPast
-                let rhsDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate ?? .distantPast
-                return lhsDate > rhsDate
-            }
-            .prefix(3)
-            .map { url in
-                let contents = (try? String(contentsOf: url, encoding: .utf8)) ?? "Could not read log."
-                return """
-                --- \(url.lastPathComponent) ---
-                \(String(contents.suffix(4_000)))
-                """
-            }
-            .joined(separator: "\n\n")
-    }
 }

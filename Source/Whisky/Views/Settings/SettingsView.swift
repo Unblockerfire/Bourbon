@@ -54,6 +54,18 @@ struct SettingsView: View {
                     .help("Pre-release updates may be unstable and are never enabled automatically.")
                 Toggle("Check for BourbonWine updates", isOn: $checkWhiskyWineUpdates)
             }
+            Section("Reports") {
+                Button("Report a Problem") {
+                    BourbonReportCenter.openReport()
+                }
+                if BourbonReportStore.pendingCount > 0 {
+                    Button("Retry Pending Reports (\(BourbonReportStore.pendingCount))") {
+                        Task {
+                            _ = await BourbonReportStore.retryPending()
+                        }
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)

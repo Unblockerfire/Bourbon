@@ -60,6 +60,7 @@ struct WhiskyApp: App {
                 .environmentObject(BottleVM.shared)
                 .onAppear {
                     NSWindow.allowsAutomaticWindowTabbing = false
+                    BourbonReportCenter.startListeningForReportRequests()
                     if !hasCompletedFirstRunOnboarding {
                         showSetup = true
                     }
@@ -67,6 +68,8 @@ struct WhiskyApp: App {
                     Task.detached {
                         await WhiskyApp.deleteOldLogs()
                     }
+
+                    BourbonReportCenter.promptForRecentCrashIfNeeded()
                 }
         }
         // Don't ask me how this works, it just does
@@ -120,6 +123,9 @@ struct WhiskyApp: App {
                 }
             }
             CommandGroup(replacing: .help) {
+                Button("Report a Problem") {
+                    BourbonReportCenter.openReport()
+                }
                 Button("help.website") {
                     if let url = URL(string: "https://getbourbon.app/") {
                         openURL(url)

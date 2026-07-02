@@ -776,18 +776,11 @@ struct GlobalInstallStatusBanner: View {
     }
 
     private func reportIssue(_ error: InstallerErrorInfo) {
-        let payload = InstallerIssueReporter.reportPayload(
+        BourbonReportCenter.openInstallerReport(
             bottleName: error.bottleName,
             installerURL: error.installerURL,
             errorMessage: error.message
         )
-        print(payload)
-
-        guard InstallerIssueReporter.confirmBeforeOpeningReport() else { return }
-
-        if let url = URL(string: "https://github.com/Bourbon-App/Bourbon/issues/new") {
-            NSWorkspace.shared.open(url)
-        }
     }
 }
 

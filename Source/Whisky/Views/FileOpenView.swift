@@ -100,6 +100,12 @@ struct FileOpenView: View {
         alert.informativeText = String(localized: "alert.info") + " \(fileURL.lastPathComponent): " + message
         alert.alertStyle = .critical
         alert.addButton(withTitle: String(localized: "button.ok"))
-        alert.runModal()
+        alert.addButton(withTitle: "Report")
+        if alert.runModal() == .alertSecondButtonReturn {
+            BourbonReportCenter.openRuntimeReport(
+                title: "Failed to open \(fileURL.lastPathComponent)",
+                errorMessage: message
+            )
+        }
     }
 }

@@ -211,6 +211,12 @@ extension Bottle {
         + message
         alert.alertStyle = .critical
         alert.addButton(withTitle: String(localized: "button.ok"))
-        alert.runModal()
+        alert.addButton(withTitle: "Report")
+        if alert.runModal() == .alertSecondButtonReturn {
+            BourbonReportCenter.openRuntimeReport(
+                title: "Failed to open \(settings.name)",
+                errorMessage: message
+            )
+        }
     }
 }
