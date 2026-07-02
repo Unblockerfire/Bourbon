@@ -64,17 +64,7 @@ struct SetupView: View {
                         }
                     }
                 }
-                .background {
-                    LinearGradient(
-                        colors: [BourbonStyle.backgroundTop, BourbonStyle.backgroundBottom],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    .ignoresSafeArea()
-                }
             }
         }
-        .frame(width: 960, height: 620)
-        .interactiveDismissDisabled()
     }
 }

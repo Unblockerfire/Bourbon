@@ -26,39 +26,36 @@ struct RosettaView: View {
     @Binding var showSetup: Bool
 
     var body: some View {
-        VStack {
-            Text("setup.rosetta")
-                .font(.title)
-                .fontWeight(.bold)
-            Text("setup.rosetta.subtitle")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Group {
-                if installing {
-                    ProgressView()
-                        .scaleEffect(2)
-                } else {
-                    if successful {
+        BourbonPage {
+            VStack(spacing: 22) {
+                Text("setup.rosetta")
+                    .font(.largeTitle.bold())
+                Text("setup.rosetta.subtitle")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+
+                Group {
+                    if installing {
+                        ProgressView()
+                            .scaleEffect(2)
+                    } else if successful {
                         Image(systemName: "checkmark.circle")
                             .resizable()
                             .foregroundStyle(.green)
                             .frame(width: 80, height: 80)
                     } else {
-                        VStack {
+                        VStack(spacing: 12) {
                             Image(systemName: "xmark.circle")
                                 .resizable()
                                 .foregroundStyle(.red)
                                 .frame(width: 80, height: 80)
-                                .padding(.bottom, 20)
                             Text("setup.rosetta.fail")
                                 .font(.subheadline)
                         }
                     }
                 }
-            }
-            Spacer()
-            HStack {
+
+                HStack {
                 if !successful {
                     Button("setup.quit") {
                         exit(0)
@@ -75,9 +72,13 @@ struct RosettaView: View {
                     }
                     .keyboardShortcut(.defaultAction)
                 }
+                }
             }
+            .padding(34)
+            .frame(maxWidth: 560)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 400, height: 200)
+        .navigationTitle("Rosetta")
         .onAppear {
             Task.detached {
                 await checkOrInstall()

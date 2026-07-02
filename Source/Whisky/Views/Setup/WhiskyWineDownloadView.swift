@@ -12,8 +12,10 @@ struct WhiskyWineDownloadView: View {
     @State private var localArchivePanel: NSOpenPanel?
 
     var body: some View {
-        BourbonBackground {
-            BourbonGlassCard(maxWidth: 460) {
+        BourbonPage {
+            VStack(spacing: 22) {
+                Spacer(minLength: 0)
+
                 VStack(spacing: 22) {
                     Text("Download BourbonWine")
                         .font(.largeTitle.bold())
@@ -50,8 +52,13 @@ struct WhiskyWineDownloadView: View {
                     .buttonStyle(BourbonSecondaryButtonStyle())
                     .help("Use a BourbonWine archive already saved on this Mac.")
                 }
+                .padding(34)
+                .frame(maxWidth: 560)
+
+                Spacer(minLength: 0)
             }
         }
+        .navigationTitle("Download BourbonWine")
         .navigationBarBackButtonHidden(true)
         .onAppear {
             download()

@@ -28,13 +28,15 @@ struct WhiskyWineInstallView: View {
     @AppStorage("hasInstalledDependencies") private var hasInstalledDependencies = false
 
     var body: some View {
-        BourbonBackground {
-            BourbonGlassCard(maxWidth: 420) {
+        BourbonPage {
+            VStack(spacing: 18) {
+                Spacer(minLength: 0)
+
                 VStack(spacing: 18) {
                     Text("Installing BourbonWine")
-                        .font(.title.bold())
+                        .font(.largeTitle.bold())
                     Text("Preparing the runtime Bourbon uses to open Windows apps.")
-                        .font(.subheadline)
+                        .font(.title3)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
 
@@ -65,8 +67,13 @@ struct WhiskyWineInstallView: View {
                             .foregroundStyle(.green)
                     }
                 }
+                .padding(34)
+                .frame(maxWidth: 560)
+
+                Spacer(minLength: 0)
             }
         }
+        .navigationTitle("Installing BourbonWine")
         .onAppear {
             let archiveURL = tarLocation
             Task {

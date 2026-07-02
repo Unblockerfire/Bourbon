@@ -23,6 +23,7 @@ import WhiskyKit
 struct BottleCreationView: View {
     @Binding var newlyCreatedBottleURL: URL?
     @Binding var selectedInstallerURL: URL?
+    var cancel: () -> Void = {}
 
     private let supportedWindowsVersions: [WinVersion] = [.win11, .win10, .win81, .win8, .win7, .winXP]
     private let deprecatedWindowsVersions: Set<WinVersion> = [.win7, .winXP]
@@ -33,36 +34,32 @@ struct BottleCreationView: View {
     @State private var newBottleURL: URL = UserDefaults.standard.url(forKey: "defaultBottleLocation")
                                            ?? BottleData.defaultBottleDir
 
-    @Environment(\.dismiss) private var dismiss
-
     var body: some View {
-        NavigationStack {
-            BourbonBackground {
-                VStack(spacing: 0) {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 22) {
-                            headerSection
-                            bottleDetailsSection
-                            installerSection
-                            storageSection
-                        }
-                        .frame(maxWidth: 820)
-                        .padding(.horizontal, 34)
-                        .padding(.top, 34)
-                        .padding(.bottom, 26)
-                        .frame(maxWidth: .infinity)
+        BourbonPage {
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        headerSection
+                        bottleDetailsSection
+                        installerSection
+                        storageSection
                     }
+                    .frame(maxWidth: 900, alignment: .leading)
+                    .padding(.horizontal, 34)
+                    .padding(.top, 34)
+                    .padding(.bottom, 26)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
 
-                    actionBar
-                }
-            }
-            .onSubmit {
-                if canCreate {
-                    submit()
-                }
+                actionBar
             }
         }
-        .frame(minWidth: 760, idealWidth: 880, minHeight: 720, idealHeight: 820)
+        .navigationTitle("Create Bottle")
+        .onSubmit {
+            if canCreate {
+                submit()
+            }
+        }
     }
 
     func submit() {
@@ -75,7 +72,7 @@ struct BottleCreationView: View {
             winVersion: newBottleVersion,
             bottleURL: newBottleURL
         )
-        dismiss()
+        cancel()
     }
 
     private var canCreate: Bool {
@@ -185,7 +182,7 @@ struct BottleCreationView: View {
     private var actionBar: some View {
         HStack(spacing: 12) {
             Button("Cancel") {
-                dismiss()
+                cancel()
             }
             .buttonStyle(BourbonSecondaryButtonStyle())
             .keyboardShortcut(.cancelAction)

@@ -592,9 +592,9 @@ struct FirstInstallView: View {
     @State private var lastInstallerURL: URL?
 
     var body: some View {
-        BourbonBackground {
+        BourbonPage {
             ZStack {
-                BourbonGlassCard(maxWidth: 560) {
+                ScrollView {
                     VStack(spacing: 18) {
                         Text("Install your first app")
                             .font(.largeTitle.bold())
@@ -617,6 +617,9 @@ struct FirstInstallView: View {
                         }
                         .buttonStyle(BourbonSecondaryButtonStyle())
                     }
+                    .padding(34)
+                    .frame(maxWidth: 620)
+                    .frame(maxWidth: .infinity, minHeight: 420)
                 }
 
                 if programLoading || installError != nil {
@@ -654,7 +657,7 @@ struct FirstInstallView: View {
                 runInstaller(initialInstallerURL)
             }
         }
-        .frame(width: 680, height: 460)
+        .navigationTitle("Install First App")
     }
 
     private func runInstaller(_ url: URL) {

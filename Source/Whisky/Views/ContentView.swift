@@ -49,6 +49,7 @@ struct ContentView: View {
     @State private var refreshAnimation: Angle = .degrees(0)
     @State private var homeSubtitle = BourbonHomeCopy.randomSubtitle()
     @State private var showAdminUnlock = false
+    @State private var previousPageBeforeCreation: MainContentPage? = .home
 
     @State private var bottleFilter = ""
 
@@ -74,11 +75,6 @@ struct ContentView: View {
                 BourbonPendingUpdatePill(manager: pendingUpdateManager)
                     .padding(.top, 10)
                     .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            if activePage == .home {
-                homeTitleAdminHotspot
             }
         }
         .sheet(isPresented: $pendingUpdateManager.isPromptPresented) {
@@ -107,7 +103,7 @@ struct ContentView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showBottleCreation.toggle()
+                    openBottleCreation()
                 } label: {
                     Image(systemName: "plus")
                         .help("button.createBottle")
@@ -132,35 +128,6 @@ struct ContentView: View {
                 }
             }
         }
-        .sheet(isPresented: $showBottleCreation) {
-            BottleCreationView(
-                newlyCreatedBottleURL: $newlyCreatedBottleURL,
-                selectedInstallerURL: $firstInstallerURL
-            )
-        }
-        .sheet(isPresented: Binding(
-            get: { firstInstallBottleURL != nil },
-            set: { isPresented in
-                if !isPresented {
-                    firstInstallBottleURL = nil
-                }
-            }
-        )) {
-            if let firstInstallBottleURL,
-               let bottle = bottleVM.bottles.first(where: { $0.url == firstInstallBottleURL }) {
-                FirstInstallView(bottle: bottle, initialInstallerURL: firstInstallerURL) {
-                    self.firstInstallerURL = nil
-                    self.firstInstallBottleURL = nil
-                }
-            }
-        }
-        .sheet(isPresented: $showSetup) {
-            SetupView(
-                showSetup: $showSetup,
-                showBottleCreation: $showBottleCreation,
-                firstTime: !hasCompletedFirstRunOnboarding
-            )
-        }
         .sheet(item: $openedFileURL) { url in
             FileOpenView(fileURL: url,
                          currentBottle: selected,
@@ -168,6 +135,25 @@ struct ContentView: View {
         }
         .onChange(of: selected) {
             selectedBottleURL = selected
+        }
+        .onChange(of: showSetup) { _, isPresented in
+            if isPresented {
+                selected = nil
+                showBottleCreation = false
+                activePage = .setup
+            } else if activePage == .setup {
+                activePage = .home
+            }
+        }
+        .onChange(of: showBottleCreation) { _, isPresented in
+            if isPresented {
+                previousPageBeforeCreation = activePage
+                selected = nil
+                showSetup = false
+                activePage = .createBottle
+            } else if activePage == .createBottle {
+                activePage = previousPageBeforeCreation ?? .home
+            }
         }
         .handlesExternalEvents(preferring: [], allowing: ["*"])
         .onOpenURL { url in
@@ -210,6 +196,35 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private func openBottleCreation() {
+        previousPageBeforeCreation = activePage
+        selected = nil
+        showSetup = false
+        showBottleCreation = true
+        activePage = .createBottle
+    }
+
+    private func openHome() {
+        selected = nil
+        showSetup = false
+        showBottleCreation = false
+        firstInstallBottleURL = nil
+        activePage = .home
+    }
+
+    private func openDistillery() {
+        selected = nil
+        showSetup = false
+        showBottleCreation = false
+        firstInstallBottleURL = nil
+        activePage = .library
+    }
+
+    private func openAdminLogin() {
+        print("Opening admin login")
+        showAdminUnlock = true
     }
 
     private func showLegacyRuntimeWarning(markerURL: URL) {
@@ -255,25 +270,33 @@ struct ContentView: View {
                 .help("Search your bottles.")
 
                 VStack(spacing: 4) {
-                SidebarPageButton(
-                    title: "Home",
-                    systemImage: "house",
-                    isActive: activePage == .home
-                ) {
-                    selected = nil
-                    activePage = .home
-                }
-                .help("Go to Bourbon Home.")
+                    SidebarPageButton(
+                        title: "Home",
+                        systemImage: "house",
+                        isActive: activePage == .home,
+                        longPressAction: {
+                            print("Admin long press completed")
+                            openAdminLogin()
+                        },
+                        longPressPressingChanged: { isPressing in
+                            if isPressing {
+                                print("Admin long press started")
+                            }
+                        },
+                        action: {
+                        openHome()
+                        }
+                    )
+                    .help("Go to Bourbon Home.")
 
-                SidebarPageButton(
-                    title: "🥃 Distillery",
-                    systemImage: "books.vertical",
-                    isActive: activePage == .library
-                ) {
-                    selected = nil
-                    activePage = .library
-                }
-                .help("Browse games and apps.")
+                    SidebarPageButton(
+                        title: "🥃 Distillery",
+                        systemImage: "books.vertical",
+                        isActive: activePage == .library
+                    ) {
+                        openDistillery()
+                    }
+                    .help("Browse games and apps.")
                 }
             }
             .padding(.horizontal, 10)
@@ -335,7 +358,7 @@ struct ContentView: View {
                 displayName: resolvedDisplayName,
                 subtitle: homeSubtitle,
                 createBottle: {
-                    showBottleCreation.toggle()
+                    openBottleCreation()
                 },
                 openBottle: { bottle in
                     selected = bottle.url
@@ -346,6 +369,27 @@ struct ContentView: View {
             DistilleryView()
         } else if activePage == .account {
             AccountPageView(displayName: resolvedDisplayName, license: accountLicense)
+        } else if activePage == .setup {
+            SetupView(
+                showSetup: $showSetup,
+                showBottleCreation: $showBottleCreation,
+                firstTime: !hasCompletedFirstRunOnboarding
+            )
+        } else if activePage == .createBottle {
+            BottleCreationView(
+                newlyCreatedBottleURL: $newlyCreatedBottleURL,
+                selectedInstallerURL: $firstInstallerURL,
+                cancel: {
+                    showBottleCreation = false
+                }
+            )
+        } else if let firstInstallBottleURL,
+                  let bottle = bottleVM.bottles.first(where: { $0.url == firstInstallBottleURL }) {
+            FirstInstallView(bottle: bottle, initialInstallerURL: firstInstallerURL) {
+                self.firstInstallerURL = nil
+                self.firstInstallBottleURL = nil
+                activePage = nil
+            }
         } else if let bottle = selected {
             if let bottle = bottleVM.bottles.first(where: { $0.url == bottle }) {
                 BottleView(bottle: bottle)
@@ -359,7 +403,7 @@ struct ContentView: View {
                     displayName: resolvedDisplayName,
                     subtitle: homeSubtitle,
                     createBottle: {
-                        showBottleCreation.toggle()
+                        openBottleCreation()
                     },
                     openBottle: { bottle in
                         selected = bottle.url
@@ -390,23 +434,6 @@ struct ContentView: View {
         return trimmedName.isEmpty ? "there" : trimmedName
     }
 
-    private var homeTitle: String {
-        "Welcome, \(resolvedDisplayName)"
-    }
-
-    private var homeTitleAdminHotspot: some View {
-        Color.clear
-            .frame(width: 150, height: 72)
-            .contentShape(Rectangle())
-            .offset(x: 150, y: 12)
-            .gesture(
-                LongPressGesture(minimumDuration: 7)
-                    .onEnded { _ in
-                        showAdminUnlock = true
-                    }
-            )
-    }
-
     private var accountLicense: BourbonLicenseRecord {
         LicenseKeychainStore.currentLicense() ?? BourbonLicenseRecord(
             publicLicenseId: "BRBN-00000001",
@@ -426,12 +453,16 @@ enum MainContentPage {
     case home
     case library
     case account
+    case setup
+    case createBottle
 }
 
 struct SidebarPageButton: View {
     let title: String
     let systemImage: String
     let isActive: Bool
+    var longPressAction: (() -> Void)?
+    var longPressPressingChanged: ((Bool) -> Void)?
     let action: () -> Void
 
     var body: some View {
@@ -453,6 +484,15 @@ struct SidebarPageButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onLongPressGesture(
+            minimumDuration: 7,
+            perform: {
+                longPressAction?()
+            },
+            onPressingChanged: { isPressing in
+                longPressPressingChanged?(isPressing)
+            }
+        )
         .foregroundStyle(isActive ? BourbonStyle.amber : .primary)
         .background {
             if isActive {
@@ -471,7 +511,7 @@ struct BourbonHomeView: View {
     let openBottle: (Bottle) -> Void
 
     var body: some View {
-        BourbonBackground {
+        BourbonPage {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header
@@ -821,21 +861,43 @@ struct BourbonBackground<Content: View>: View {
     }
 }
 
+struct BourbonPage<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                LinearGradient(
+                    colors: [BourbonStyle.backgroundTop, BourbonStyle.backgroundBottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .foregroundStyle(.white)
+    }
+}
+
 struct BourbonGlassCard<Content: View>: View {
     var maxWidth: CGFloat = 560
     var cornerRadius: CGFloat = 24
     @ViewBuilder let content: Content
 
     var body: some View {
+        let effectiveCornerRadius = min(cornerRadius, 8)
+
         content
             .padding(28)
             .frame(maxWidth: maxWidth)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(
+                .white.opacity(0.07),
+                in: RoundedRectangle(cornerRadius: effectiveCornerRadius, style: .continuous)
+            )
             .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: effectiveCornerRadius, style: .continuous)
                     .stroke(BourbonStyle.cardStroke, lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.35), radius: 28, y: 18)
+            .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
     }
 }
 
@@ -881,23 +943,34 @@ struct DistilleryView: View {
     @State private var requestSubmitted = false
 
     var body: some View {
-        BourbonBackground {
-            VStack {
-                Spacer(minLength: 48)
-                comingSoonCard
-                Spacer(minLength: 48)
+        Group {
+            if showRequestForm {
+                DistilleryRequestView(
+                    requestSubmitted: $requestSubmitted,
+                    cancel: {
+                        showRequestForm = false
+                    }
+                )
+            } else {
+                BourbonPage {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 24) {
+                            Text("Distillery")
+                                .font(.largeTitle.bold())
+                            comingSoonCard
+                        }
+                        .padding(32)
+                        .frame(maxWidth: 900, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                }
             }
-            .padding(32)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationTitle("🥃 Distillery")
-        .sheet(isPresented: $showRequestForm) {
-            DistilleryRequestView(requestSubmitted: $requestSubmitted)
-        }
+        .navigationTitle("Distillery")
     }
 
     private var comingSoonCard: some View {
-        BourbonGlassCard(maxWidth: 500, cornerRadius: 22) {
+        BourbonGlassCard(maxWidth: 900, cornerRadius: 16) {
             VStack(spacing: 18) {
                 Image(systemName: "sparkles.rectangle.stack")
                     .font(.system(size: 42, weight: .semibold))
@@ -998,6 +1071,7 @@ enum LibraryItemStatus: String, Codable {
 struct DistilleryRequestView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var requestSubmitted: Bool
+    var cancel: () -> Void = {}
     @State private var appName = ""
     @State private var officialWebsite = ""
     @State private var officialDownloadURL = ""
@@ -1008,8 +1082,8 @@ struct DistilleryRequestView: View {
     private let categories = ["Games", "Launchers", "Utilities", "Productivity", "Development", "Media", "Browsers"]
 
     var body: some View {
-        BourbonBackground {
-            BourbonGlassCard(maxWidth: 560) {
+        BourbonPage {
+            ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Request a Game or App")
                         .font(.largeTitle.bold())
@@ -1039,6 +1113,7 @@ struct DistilleryRequestView: View {
 
                     HStack {
                         Button("Cancel") {
+                            cancel()
                             dismiss()
                         }
                         .buttonStyle(BourbonSecondaryButtonStyle())
@@ -1058,15 +1133,19 @@ struct DistilleryRequestView: View {
                             // Approved server-side items should publish into Distillery data
                             // without requiring an app update.
                             print("Distillery request submitted: \(submission)")
+                            cancel()
                             dismiss()
                         }
                         .buttonStyle(BourbonPrimaryButtonStyle())
                         .disabled(!canSubmit)
                     }
                 }
+                .padding(32)
+                .frame(maxWidth: 720, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
-        .frame(width: 680, height: 620)
+        .navigationTitle("Request")
     }
 
     private var canSubmit: Bool {
@@ -1099,7 +1178,7 @@ struct AccountPageView: View {
     @AppStorage(BourbonUpdatePolicy.preReleaseUpdatesEnabledKey) private var preReleaseUpdatesEnabled = false
 
     var body: some View {
-        BourbonBackground {
+        BourbonPage {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header
