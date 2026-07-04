@@ -89,6 +89,11 @@ struct WhiskyApp: App {
                     }
                 }
             }
+            CommandMenu("ADLG") {
+                Button("Open Admin Login") {
+                    NotificationCenter.default.post(name: .bourbonOpenAdminLogin, object: nil)
+                }
+            }
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .newItem) {
                 Button("open.bottle") {

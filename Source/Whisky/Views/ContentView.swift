@@ -25,6 +25,10 @@ import Sparkle
 
 // swiftlint:disable file_length
 
+extension Notification.Name {
+    static let bourbonOpenAdminLogin = Notification.Name("BourbonOpenAdminLogin")
+}
+
 // swiftlint:disable:next type_body_length
 struct ContentView: View {
     @AppStorage("selectedBottleURL") private var selectedBottleURL: URL?
@@ -85,6 +89,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showAdminUnlock) {
             AdminUnlockView()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .bourbonOpenAdminLogin)) { _ in
+            openAdminLogin()
         }
         .toolbar {
             if !usesStandalonePresentation {
@@ -247,7 +254,6 @@ struct ContentView: View {
     }
 
     private func openAdminLogin() {
-        print("Opening Admin login")
         showAdminUnlock = true
     }
 
@@ -297,21 +303,10 @@ struct ContentView: View {
                     SidebarPageButton(
                         title: "Home",
                         systemImage: "house",
-                        isActive: activePage == .home,
-                        longPressAction: {
-                            print("Hold timer completed")
-                            openAdminLogin()
-                        },
-                        longPressPressingChanged: { isPressing in
-                            if isPressing {
-                                print("Home pressed")
-                                print("Hold timer started")
-                            }
-                        },
-                        action: {
+                        isActive: activePage == .home
+                    ) {
                             openHome()
-                        }
-                    )
+                    }
                     .help("Go to Bourbon Home.")
 
                     SidebarPageButton(
@@ -487,131 +482,33 @@ struct SidebarPageButton: View {
     let title: String
     let systemImage: String
     let isActive: Bool
-    var longPressAction: (() -> Void)?
-    var longPressPressingChanged: ((Bool) -> Void)?
     let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: isActive ? .semibold : .regular))
-                .frame(width: 20)
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: isActive ? .semibold : .regular))
+                    .frame(width: 20)
 
-            Text(title)
-                .fontWeight(isActive ? .semibold : .regular)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                Text(title)
+                    .fontWeight(isActive ? .semibold : .regular)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+            .padding(.horizontal, 10)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
-        .padding(.horizontal, 10)
-        .contentShape(Rectangle())
-        .overlay {
-            SidebarPressTrackingView(
-                action: action,
-                longPressAction: longPressAction,
-                pressingChanged: longPressPressingChanged
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        .buttonStyle(.plain)
         .foregroundStyle(isActive ? BourbonStyle.amber : .primary)
         .background {
             if isActive {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(BourbonStyle.amber.opacity(0.14))
             }
-        }
-    }
-}
-
-private struct SidebarPressTrackingView: NSViewRepresentable {
-    let action: () -> Void
-    let longPressAction: (() -> Void)?
-    let pressingChanged: ((Bool) -> Void)?
-
-    func makeNSView(context: Context) -> TrackingView {
-        let view = TrackingView()
-        view.coordinator = context.coordinator
-        return view
-    }
-
-    func updateNSView(_ nsView: TrackingView, context: Context) {
-        context.coordinator.action = action
-        context.coordinator.longPressAction = longPressAction
-        context.coordinator.pressingChanged = pressingChanged
-        nsView.coordinator = context.coordinator
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(
-            action: action,
-            longPressAction: longPressAction,
-            pressingChanged: pressingChanged
-        )
-    }
-
-    final class TrackingView: NSView {
-        var coordinator: Coordinator?
-
-        override func mouseDown(with event: NSEvent) {
-            coordinator?.mouseDown()
-        }
-
-        override func mouseUp(with event: NSEvent) {
-            coordinator?.mouseUp()
-        }
-
-        override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-            true
-        }
-    }
-
-    final class Coordinator {
-        var action: () -> Void
-        var longPressAction: (() -> Void)?
-        var pressingChanged: ((Bool) -> Void)?
-        private var isHolding = false
-        private var didCompleteLongPress = false
-        private var holdWorkItem: DispatchWorkItem?
-
-        init(
-            action: @escaping () -> Void,
-            longPressAction: (() -> Void)?,
-            pressingChanged: ((Bool) -> Void)?
-        ) {
-            self.action = action
-            self.longPressAction = longPressAction
-            self.pressingChanged = pressingChanged
-        }
-
-        func mouseDown() {
-            guard !isHolding else { return }
-            isHolding = true
-            didCompleteLongPress = false
-            pressingChanged?(true)
-
-            guard longPressAction != nil else { return }
-            let workItem = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                didCompleteLongPress = true
-                longPressAction?()
-            }
-            holdWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 7, execute: workItem)
-        }
-
-        func mouseUp() {
-            holdWorkItem?.cancel()
-            holdWorkItem = nil
-            pressingChanged?(false)
-
-            if !didCompleteLongPress {
-                action()
-            }
-
-            isHolding = false
-            didCompleteLongPress = false
         }
     }
 }
