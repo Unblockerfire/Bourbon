@@ -448,14 +448,14 @@ public class Wine {
     }
 
     public static func killBottle(bottle: Bottle) throws {
-        Task.detached(priority: .userInitiated) {
+        _ = Task.detached(priority: .userInitiated) {
             try await runWineserver(["-k"], bottle: bottle)
         }
     }
 
     public static func killProgram(program: Program, bottle: Bottle) throws {
         let executableName = program.url.lastPathComponent
-        Task.detached(priority: .userInitiated) {
+        _ = Task.detached(priority: .userInitiated) {
             try await runWine(["taskkill", "/F", "/IM", executableName], bottle: bottle)
         }
     }
