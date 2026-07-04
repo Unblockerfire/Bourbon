@@ -17,6 +17,7 @@
 //
 
 import SwiftUI
+@preconcurrency import Sparkle
 
 enum SetupStage {
     case rosetta
@@ -29,6 +30,7 @@ struct SetupView: View {
     @State var tarLocation: URL = URL(fileURLWithPath: "")
     @Binding var showSetup: Bool
     @Binding var showBottleCreation: Bool
+    let updater: SPUUpdater
     var firstTime: Bool = true
     @State private var showIntro = true
     @AppStorage("hasSeenIntroVideo") private var hasSeenIntroVideo = false
@@ -38,10 +40,12 @@ struct SetupView: View {
         ZStack {
             if showIntro {
                 BourbonIntroVideoView(
-                    buttonTitle: hasCompletedFirstRunOnboarding ? "Welcome Back!" : "Get Started"
+                    buttonTitle: hasCompletedFirstRunOnboarding ? "Welcome Back!" : "Get Started",
+                    startReturningUserUpdateCheck: startReturningUserUpdateCheck
                 ) {
                     hasSeenIntroVideo = true
                     showIntro = false
+                    BourbonPendingUpdateManager.shared.finishIntroUpdateDeferral()
                 }
                 .transition(.opacity)
             } else {
@@ -66,5 +70,15 @@ struct SetupView: View {
                 }
             }
         }
+    }
+
+    private func startReturningUserUpdateCheck() {
+        guard hasCompletedFirstRunOnboarding,
+              updater.canCheckForUpdates,
+              BourbonPendingUpdateManager.shared.beginIntroUpdateCheck() else {
+            return
+        }
+
+        updater.checkForUpdatesInBackground()
     }
 }

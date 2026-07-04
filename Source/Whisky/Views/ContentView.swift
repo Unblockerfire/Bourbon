@@ -398,6 +398,7 @@ struct ContentView: View {
             SetupView(
                 showSetup: $showSetup,
                 showBottleCreation: $showBottleCreation,
+                updater: updater,
                 firstTime: !hasCompletedFirstRunOnboarding
             )
         } else if activePage == .createBottle {

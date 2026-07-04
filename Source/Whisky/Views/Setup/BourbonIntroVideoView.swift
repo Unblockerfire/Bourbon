@@ -6,6 +6,7 @@ import SwiftUI
 
 struct BourbonIntroVideoView: View {
     let buttonTitle: String
+    let startReturningUserUpdateCheck: () -> Void
     let onFinished: () -> Void
 
     @State private var player: AVPlayer?
@@ -78,6 +79,7 @@ struct BourbonIntroVideoView: View {
             let player = AVPlayer(url: url)
             self.player = player
             player.play()
+            startReturningUserUpdateCheck()
 
             if let duration = player.currentItem?.asset.duration.seconds,
                duration.isFinite,
@@ -980,7 +982,10 @@ enum AdminAPIConfiguration {
             return url
         }
 
-        return URL(string: "https://api.bourbon.app")!
+        guard let url = URL(string: "https://api.bourbon.app") else {
+            preconditionFailure("Invalid default Bourbon API URL.")
+        }
+        return url
     }
 
     private static var environmentBaseURL: URL? {

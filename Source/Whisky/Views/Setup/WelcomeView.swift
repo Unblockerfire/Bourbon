@@ -990,7 +990,10 @@ enum BourbonAPIConfiguration {
             return url
         }
 
-        return URL(string: "https://api.bourbon.app")!
+        guard let url = URL(string: "https://api.bourbon.app") else {
+            preconditionFailure("Invalid default Bourbon API URL.")
+        }
+        return url
     }
 
     private static var environmentBaseURL: URL? {

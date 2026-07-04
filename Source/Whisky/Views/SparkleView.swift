@@ -309,10 +309,42 @@ final class BourbonPendingUpdateManager: ObservableObject, @unchecked Sendable {
     @Published var pendingVersion: String?
 
     private var installReply: ((SPUUserUpdateChoice) -> Void)?
+    private var hasStartedIntroUpdateCheck = false
+    private var isIntroUpdateCheckActive = false
+    private var isDeferringIntroUpdatePrompt = false
+    private var deferredIntroUpdatePrompt: (() -> Void)?
 
     private init() {}
 
+    func beginIntroUpdateCheck() -> Bool {
+        guard !hasStartedIntroUpdateCheck else { return false }
+        hasStartedIntroUpdateCheck = true
+        isIntroUpdateCheckActive = true
+        isDeferringIntroUpdatePrompt = true
+        return true
+    }
+
+    func finishIntroUpdateDeferral() {
+        isDeferringIntroUpdatePrompt = false
+        let deferredPrompt = deferredIntroUpdatePrompt
+        deferredIntroUpdatePrompt = nil
+        deferredPrompt?()
+    }
+
+    func deferIntroUpdatePrompt(_ prompt: @escaping () -> Void) -> Bool {
+        guard isDeferringIntroUpdatePrompt else { return false }
+        deferredIntroUpdatePrompt = prompt
+        return true
+    }
+
+    func completeIntroUpdateCheckSilently() -> Bool {
+        guard isIntroUpdateCheckActive else { return false }
+        isIntroUpdateCheckActive = false
+        return true
+    }
+
     func presentPendingInstall(version: String?, reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        isIntroUpdateCheckActive = false
         pendingVersion = version
         installReply = reply
         isPending = true
@@ -351,6 +383,9 @@ final class BourbonPendingUpdateManager: ObservableObject, @unchecked Sendable {
         isPromptPresented = false
         pendingVersion = nil
         installReply = nil
+        deferredIntroUpdatePrompt = nil
+        isIntroUpdateCheckActive = false
+        isDeferringIntroUpdatePrompt = false
     }
 }
 
@@ -380,6 +415,22 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
         state: SPUUserUpdateState,
         reply: @escaping (SPUUserUpdateChoice) -> Void
     ) {
+        if pendingUpdateManager.deferIntroUpdatePrompt({ [standardUserDriver, pendingUpdateManager] in
+            _ = pendingUpdateManager.completeIntroUpdateCheckSilently()
+            if state.stage == .downloaded && !appcastItem.isMajorUpgrade {
+                pendingUpdateManager.presentPendingInstall(
+                    version: BourbonUpdatePolicy.publicVersionString(appcastItem.displayVersionString),
+                    reply: reply
+                )
+            } else {
+                standardUserDriver.showUpdateFound(with: appcastItem, state: state, reply: reply)
+            }
+        }) {
+            return
+        }
+
+        _ = pendingUpdateManager.completeIntroUpdateCheckSilently()
+
         if state.stage == .downloaded && !appcastItem.isMajorUpgrade {
             pendingUpdateManager.presentPendingInstall(
                 version: BourbonUpdatePolicy.publicVersionString(appcastItem.displayVersionString),
@@ -400,6 +451,11 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
     }
 
     func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        if pendingUpdateManager.completeIntroUpdateCheckSilently() {
+            acknowledgement()
+            return
+        }
+
         MainActor.assumeIsolated {
             let alert = NSAlert()
             alert.messageText = "You're running the latest version of Bourbon."
@@ -411,6 +467,11 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
     }
 
     func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        if pendingUpdateManager.completeIntroUpdateCheckSilently() {
+            acknowledgement()
+            return
+        }
+
         pendingUpdateManager.clearPendingInstall()
         MainActor.assumeIsolated {
             let alert = NSAlert()
