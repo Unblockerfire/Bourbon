@@ -56,27 +56,28 @@ struct WelcomeView: View {
     var firstTime: Bool
 
     var body: some View {
-        BourbonPage {
+        BourbonPanelBackdrop {
             ScrollView {
-                Group {
-                    switch currentStep {
-                    case .welcome:
-                        firstWelcomeContent
-                    case .dependencies:
-                        setupCheckContent
-                    case .displayName:
-                        displayNameContent
-                    case .legal:
-                        legalAcceptanceContent
-                    case .license:
-                        licenseCreationContent
-                    case .welcomeHome:
-                        welcomeContent
+                BourbonFloatingPanel(maxWidth: 560) {
+                    Group {
+                        switch currentStep {
+                        case .welcome:
+                            firstWelcomeContent
+                        case .dependencies:
+                            setupCheckContent
+                        case .displayName:
+                            displayNameContent
+                        case .legal:
+                            legalAcceptanceContent
+                        case .license:
+                            licenseCreationContent
+                        case .welcomeHome:
+                            welcomeContent
+                        }
                     }
+                    .frame(maxWidth: .infinity, minHeight: 500)
                 }
-                .padding(34)
-                .frame(maxWidth: 720)
-                .frame(maxWidth: .infinity, minHeight: 520)
+                .frame(maxWidth: .infinity, minHeight: 620)
             }
         }
         .navigationTitle("Welcome")
@@ -195,14 +196,12 @@ struct WelcomeView: View {
             .foregroundStyle(BourbonStyle.amber)
             .help("Learn why Bourbon uses bottles.")
 
-            HStack {
+            HStack(spacing: 18) {
                 Button(firstTime ? "Skip for now" : "Close") {
                     showSetup = false
                 }
                 .buttonStyle(BourbonSecondaryButtonStyle())
                 .keyboardShortcut(.cancelAction)
-
-                Spacer()
 
                 Button("Create Bottle") {
                     finishOnboardingAndCreateBottle()
@@ -211,29 +210,33 @@ struct WelcomeView: View {
                 .keyboardShortcut(.defaultAction)
                 .help("Create your first bottle and continue to the installer picker.")
             }
+            .padding(.top, 8)
         }
         .sheet(isPresented: $showBottleExplanation) {
-            VStack(spacing: 14) {
-                Image(systemName: "shippingbox.fill")
-                    .font(.system(size: 36, weight: .semibold))
-                    .foregroundStyle(BourbonStyle.amber)
-                Text("What is a Bottle?")
-                    .font(.title2.bold())
-                Text(
-                    "A Bottle is an isolated Windows environment.\n\n" +
-                    "Each Bottle contains its own Windows files, settings, installed applications, " +
-                    "and configuration.\n\n" +
-                    "Think of it like giving every Windows application its own tiny Windows computer."
-                )
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            BourbonPanelBackdrop {
+                BourbonFloatingPanel(maxWidth: 420) {
+                    VStack(spacing: 14) {
+                        Image(systemName: "shippingbox.fill")
+                            .font(.system(size: 36, weight: .semibold))
+                            .foregroundStyle(BourbonStyle.amber)
+                        Text("What is a Bottle?")
+                            .font(.title2.bold())
+                        Text(
+                            "A Bottle is an isolated Windows environment.\n\n" +
+                            "Each Bottle contains its own Windows files, settings, installed applications, " +
+                            "and configuration.\n\n" +
+                            "Think of it like giving every Windows application its own tiny Windows computer."
+                        )
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
 
-                Button("Got it") {
-                    showBottleExplanation = false
+                        Button("Got it") {
+                            showBottleExplanation = false
+                        }
+                        .buttonStyle(BourbonPrimaryButtonStyle())
+                    }
                 }
-                .buttonStyle(BourbonPrimaryButtonStyle())
             }
-            .padding(28)
             .frame(width: 520, height: 420)
         }
     }

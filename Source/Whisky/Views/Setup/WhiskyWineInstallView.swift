@@ -28,47 +28,47 @@ struct WhiskyWineInstallView: View {
     @AppStorage("hasInstalledDependencies") private var hasInstalledDependencies = false
 
     var body: some View {
-        BourbonPage {
+        BourbonPanelBackdrop {
             VStack(spacing: 18) {
                 Spacer(minLength: 0)
 
-                VStack(spacing: 18) {
-                    Text("Installing BourbonWine")
-                        .font(.largeTitle.bold())
-                    Text("Preparing the runtime Bourbon uses to open Windows apps.")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                BourbonFloatingPanel(maxWidth: 560) {
+                    VStack(spacing: 18) {
+                        Text("Installing BourbonWine")
+                            .font(.largeTitle.bold())
+                        Text("Preparing the runtime Bourbon uses to open Windows apps.")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
 
-                    if installing {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                            .controlSize(.large)
-                    } else if let errorMessage {
-                        VStack(spacing: 10) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.largeTitle)
-                                .foregroundStyle(BourbonStyle.amber)
-                            Text(errorMessage)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                            Button("Retry") {
-                                if !path.isEmpty {
-                                    path.removeLast()
+                        if installing {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .controlSize(.large)
+                        } else if let errorMessage {
+                            VStack(spacing: 10) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.largeTitle)
+                                    .foregroundStyle(BourbonStyle.amber)
+                                Text(errorMessage)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                                Button("Retry") {
+                                    if !path.isEmpty {
+                                        path.removeLast()
+                                    }
                                 }
+                                .buttonStyle(BourbonPrimaryButtonStyle())
                             }
-                            .buttonStyle(BourbonPrimaryButtonStyle())
+                        } else {
+                            Image(systemName: "checkmark.circle.fill")
+                                .resizable()
+                                .frame(width: 76, height: 76)
+                                .foregroundStyle(.green)
                         }
-                    } else {
-                        Image(systemName: "checkmark.circle.fill")
-                            .resizable()
-                            .frame(width: 76, height: 76)
-                            .foregroundStyle(.green)
                     }
                 }
-                .padding(34)
-                .frame(maxWidth: 560)
 
                 Spacer(minLength: 0)
             }

@@ -17,6 +17,7 @@
 //
 
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 import WhiskyKit
 import SemanticVersion
@@ -54,24 +55,26 @@ struct ContentView: View {
     @State private var bottleFilter = ""
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-                .frame(width: 260)
-                .background(.regularMaterial)
-
-            Divider()
-
-            NavigationStack {
-                detail
+        Group {
+            if usesStandalonePresentation {
+                NavigationStack {
+                    detail
+                }
+            } else {
+                appSidebarShell
             }
         }
         .frame(minWidth: 860, minHeight: 560)
         .overlay(alignment: .bottomTrailing) {
-            GlobalInstallStatusBanner(manager: installManager)
-                .padding()
+            if !usesStandalonePresentation {
+                GlobalInstallStatusBanner(manager: installManager)
+                    .padding()
+            }
         }
         .overlay(alignment: .top) {
-            if pendingUpdateManager.isPending && !pendingUpdateManager.isPromptPresented {
+            if pendingUpdateManager.isPending &&
+                !pendingUpdateManager.isPromptPresented &&
+                !usesStandalonePresentation {
                 BourbonPendingUpdatePill(manager: pendingUpdateManager)
                     .padding(.top, 10)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -84,47 +87,49 @@ struct ContentView: View {
             AdminUnlockView()
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    updater.checkForUpdates()
-                } label: {
-                    Label("Check for Updates", systemImage: "arrow.down.circle")
-                }
-                .help("Check for Bourbon updates.")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    selected = nil
-                    activePage = .account
-                } label: {
-                    Label("Account", systemImage: "person.crop.circle")
-                }
-                .help("View your Bourbon account.")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    openBottleCreation()
-                } label: {
-                    Image(systemName: "plus")
-                        .help("button.createBottle")
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    bottleVM.loadBottles()
-                    if let bottle = bottleVM.bottles.first(where: { $0.url == selected }) {
-                        bottle.updateInstalledPrograms()
+            if !usesStandalonePresentation {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        updater.checkForUpdates()
+                    } label: {
+                        Label("Check for Updates", systemImage: "arrow.down.circle")
                     }
-                    triggerRefresh.toggle()
-                    withAnimation(.default) {
-                        refreshAnimation = .degrees(360)
-                    } completion: {
-                        refreshAnimation = .degrees(0)
+                    .help("Check for Bourbon updates.")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        selected = nil
+                        activePage = .account
+                    } label: {
+                        Label("Account", systemImage: "person.crop.circle")
                     }
-                } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .help("button.refresh")
-                        .rotationEffect(refreshAnimation)
+                    .help("View your Bourbon account.")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        openBottleCreation()
+                    } label: {
+                        Image(systemName: "plus")
+                            .help("button.createBottle")
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        bottleVM.loadBottles()
+                        if let bottle = bottleVM.bottles.first(where: { $0.url == selected }) {
+                            bottle.updateInstalledPrograms()
+                        }
+                        triggerRefresh.toggle()
+                        withAnimation(.default) {
+                            refreshAnimation = .degrees(360)
+                        } completion: {
+                            refreshAnimation = .degrees(0)
+                        }
+                    } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .help("button.refresh")
+                            .rotationEffect(refreshAnimation)
+                    }
                 }
             }
         }
@@ -198,6 +203,25 @@ struct ContentView: View {
         }
     }
 
+    private var usesStandalonePresentation: Bool {
+        activePage == .setup || activePage == .createBottle || firstInstallBottleURL != nil
+    }
+
+    @ViewBuilder
+    private var appSidebarShell: some View {
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 260)
+                .background(.regularMaterial)
+
+            Divider()
+
+            NavigationStack {
+                detail
+            }
+        }
+    }
+
     private func openBottleCreation() {
         previousPageBeforeCreation = activePage
         selected = nil
@@ -223,7 +247,7 @@ struct ContentView: View {
     }
 
     private func openAdminLogin() {
-        print("Opening admin login")
+        print("Opening Admin login")
         showAdminUnlock = true
     }
 
@@ -275,16 +299,17 @@ struct ContentView: View {
                         systemImage: "house",
                         isActive: activePage == .home,
                         longPressAction: {
-                            print("Admin long press completed")
+                            print("Hold timer completed")
                             openAdminLogin()
                         },
                         longPressPressingChanged: { isPressing in
                             if isPressing {
-                                print("Admin long press started")
+                                print("Home pressed")
+                                print("Hold timer started")
                             }
                         },
                         action: {
-                        openHome()
+                            openHome()
                         }
                     )
                     .help("Go to Bourbon Home.")
@@ -466,39 +491,126 @@ struct SidebarPageButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: isActive ? .semibold : .regular))
-                    .frame(width: 20)
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: isActive ? .semibold : .regular))
+                .frame(width: 20)
 
-                Text(title)
-                    .fontWeight(isActive ? .semibold : .regular)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            Text(title)
+                .fontWeight(isActive ? .semibold : .regular)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
-            .padding(.horizontal, 10)
-            .contentShape(Rectangle())
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
-        .onLongPressGesture(
-            minimumDuration: 7,
-            perform: {
-                longPressAction?()
-            },
-            onPressingChanged: { isPressing in
-                longPressPressingChanged?(isPressing)
-            }
-        )
+        .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+        .padding(.horizontal, 10)
+        .contentShape(Rectangle())
+        .overlay {
+            SidebarPressTrackingView(
+                action: action,
+                longPressAction: longPressAction,
+                pressingChanged: longPressPressingChanged
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
         .foregroundStyle(isActive ? BourbonStyle.amber : .primary)
         .background {
             if isActive {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(BourbonStyle.amber.opacity(0.14))
             }
+        }
+    }
+}
+
+private struct SidebarPressTrackingView: NSViewRepresentable {
+    let action: () -> Void
+    let longPressAction: (() -> Void)?
+    let pressingChanged: ((Bool) -> Void)?
+
+    func makeNSView(context: Context) -> TrackingView {
+        let view = TrackingView()
+        view.coordinator = context.coordinator
+        return view
+    }
+
+    func updateNSView(_ nsView: TrackingView, context: Context) {
+        context.coordinator.action = action
+        context.coordinator.longPressAction = longPressAction
+        context.coordinator.pressingChanged = pressingChanged
+        nsView.coordinator = context.coordinator
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            action: action,
+            longPressAction: longPressAction,
+            pressingChanged: pressingChanged
+        )
+    }
+
+    final class TrackingView: NSView {
+        var coordinator: Coordinator?
+
+        override func mouseDown(with event: NSEvent) {
+            coordinator?.mouseDown()
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            coordinator?.mouseUp()
+        }
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+            true
+        }
+    }
+
+    final class Coordinator {
+        var action: () -> Void
+        var longPressAction: (() -> Void)?
+        var pressingChanged: ((Bool) -> Void)?
+        private var isHolding = false
+        private var didCompleteLongPress = false
+        private var holdWorkItem: DispatchWorkItem?
+
+        init(
+            action: @escaping () -> Void,
+            longPressAction: (() -> Void)?,
+            pressingChanged: ((Bool) -> Void)?
+        ) {
+            self.action = action
+            self.longPressAction = longPressAction
+            self.pressingChanged = pressingChanged
+        }
+
+        func mouseDown() {
+            guard !isHolding else { return }
+            isHolding = true
+            didCompleteLongPress = false
+            pressingChanged?(true)
+
+            guard longPressAction != nil else { return }
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                didCompleteLongPress = true
+                longPressAction?()
+            }
+            holdWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7, execute: workItem)
+        }
+
+        func mouseUp() {
+            holdWorkItem?.cancel()
+            holdWorkItem = nil
+            pressingChanged?(false)
+
+            if !didCompleteLongPress {
+                action()
+            }
+
+            isHolding = false
+            didCompleteLongPress = false
         }
     }
 }
@@ -878,6 +990,56 @@ struct BourbonPage<Content: View>: View {
     }
 }
 
+struct BourbonPanelBackdrop<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
+
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.05),
+                    Color.black.opacity(0.2)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            content
+                .padding(34)
+        }
+        .foregroundStyle(.white)
+    }
+}
+
+struct BourbonFloatingPanel<Content: View>: View {
+    var maxWidth: CGFloat = 560
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(30)
+            .frame(maxWidth: maxWidth)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                    .fill(.white.opacity(0.16))
+                            }
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(.white.opacity(0.34), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.82), radius: 54, y: 38)
+            .shadow(color: .white.opacity(0.1), radius: 18, y: -10)
+    }
+}
+
 struct BourbonGlassCard<Content: View>: View {
     var maxWidth: CGFloat = 560
     var cornerRadius: CGFloat = 24
@@ -953,15 +1115,21 @@ struct DistilleryView: View {
                 )
             } else {
                 BourbonPage {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 24) {
-                            Text("Distillery")
-                                .font(.largeTitle.bold())
-                            comingSoonCard
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Distillery")
+                            .font(.largeTitle.bold())
+                            .padding(.horizontal, 32)
+                            .padding(.top, 32)
+
+                        GeometryReader { proxy in
+                            ScrollView {
+                                comingSoonCard
+                                    .padding(.horizontal, 32)
+                                    .padding(.bottom, 32)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(minHeight: proxy.size.height, alignment: .center)
+                            }
                         }
-                        .padding(32)
-                        .frame(maxWidth: 900, alignment: .leading)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                 }
             }
@@ -1082,66 +1250,69 @@ struct DistilleryRequestView: View {
     private let categories = ["Games", "Launchers", "Utilities", "Productivity", "Development", "Media", "Browsers"]
 
     var body: some View {
-        BourbonPage {
+        BourbonPanelBackdrop {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Request a Game or App")
-                        .font(.largeTitle.bold())
-                    Text("Requests are reviewed before appearing in the Bourbon Distillery. No binaries are uploaded.")
-                        .foregroundStyle(.secondary)
+                BourbonFloatingPanel(maxWidth: 680) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Request a Game or App")
+                            .font(.largeTitle.bold())
+                        Text(
+                            "Requests are reviewed before appearing in the Bourbon Distillery. " +
+                            "No binaries are uploaded."
+                        )
+                            .foregroundStyle(.secondary)
 
-                    TextField("Game or app name", text: $appName)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Official website", text: $officialWebsite)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Official download URL", text: $officialDownloadURL)
-                        .textFieldStyle(.roundedBorder)
-                    Picker("Category", selection: $category) {
-                        ForEach(categories, id: \.self) { category in
-                            Text(category).tag(category)
+                        TextField("Game or app name", text: $appName)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Official website", text: $officialWebsite)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Official download URL", text: $officialDownloadURL)
+                            .textFieldStyle(.roundedBorder)
+                        Picker("Category", selection: $category) {
+                            ForEach(categories, id: \.self) { category in
+                                Text(category).tag(category)
+                            }
                         }
-                    }
-                    TextField("Notes", text: $notes, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(3, reservesSpace: true)
+                        TextField("Notes", text: $notes, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(3, reservesSpace: true)
 
-                    Toggle(
-                        "I confirm this request does not include pirated, cracked, or unauthorized software.",
-                        isOn: $confirmsAuthorizedSoftware
-                    )
-                    .toggleStyle(.checkbox)
+                        Toggle(
+                            "I confirm this request does not include pirated, cracked, or unauthorized software.",
+                            isOn: $confirmsAuthorizedSoftware
+                        )
+                        .toggleStyle(.checkbox)
 
-                    HStack {
-                        Button("Cancel") {
-                            cancel()
-                            dismiss()
+                        HStack {
+                            Button("Cancel") {
+                                cancel()
+                                dismiss()
+                            }
+                            .buttonStyle(BourbonSecondaryButtonStyle())
+
+                            Spacer()
+
+                            Button("Submit Request") {
+                                requestSubmitted = true
+                                let submission = LibrarySubmission(
+                                    appName: appName,
+                                    officialWebsite: officialWebsite,
+                                    officialDownloadURL: officialDownloadURL,
+                                    category: category,
+                                    notes: notes
+                                )
+                                // Future endpoint: POST /library/submissions.
+                                // Approved server-side items should publish into Distillery data
+                                // without requiring an app update.
+                                print("Distillery request submitted: \(submission)")
+                                cancel()
+                                dismiss()
+                            }
+                            .buttonStyle(BourbonPrimaryButtonStyle())
+                            .disabled(!canSubmit)
                         }
-                        .buttonStyle(BourbonSecondaryButtonStyle())
-
-                        Spacer()
-
-                        Button("Submit Request") {
-                            requestSubmitted = true
-                            let submission = LibrarySubmission(
-                                appName: appName,
-                                officialWebsite: officialWebsite,
-                                officialDownloadURL: officialDownloadURL,
-                                category: category,
-                                notes: notes
-                            )
-                            // Future endpoint: POST /library/submissions.
-                            // Approved server-side items should publish into Distillery data
-                            // without requiring an app update.
-                            print("Distillery request submitted: \(submission)")
-                            cancel()
-                            dismiss()
-                        }
-                        .buttonStyle(BourbonPrimaryButtonStyle())
-                        .disabled(!canSubmit)
                     }
                 }
-                .padding(32)
-                .frame(maxWidth: 720, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }

@@ -592,33 +592,33 @@ struct FirstInstallView: View {
     @State private var lastInstallerURL: URL?
 
     var body: some View {
-        BourbonPage {
+        BourbonPanelBackdrop {
             ZStack {
                 ScrollView {
-                    VStack(spacing: 18) {
-                        Text("Install your first app")
-                            .font(.largeTitle.bold())
-                        Text("Choose a Windows installer to add to this bottle.")
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
+                    BourbonFloatingPanel(maxWidth: 580) {
+                        VStack(spacing: 18) {
+                            Text("Install your first app")
+                                .font(.largeTitle.bold())
+                            Text("Choose a Windows installer to add to this bottle.")
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
 
-                        InstallerPickerCard(
-                            title: "Choose File",
-                            subtitle: "Drag & Drop or choose a Windows installer.",
-                            supportedText: ".exe .msi .bat .zip .rar .7z .iso"
-                        ) {
-                            if let url = selectInstaller(startingDirectory: bottle.url.appending(path: "drive_c")) {
-                                runInstaller(url)
+                            InstallerPickerCard(
+                                title: "Choose File",
+                                subtitle: "Drag & Drop or choose a Windows installer.",
+                                supportedText: ".exe .msi .bat .zip .rar .7z .iso"
+                            ) {
+                                if let url = selectInstaller(startingDirectory: bottle.url.appending(path: "drive_c")) {
+                                    runInstaller(url)
+                                }
                             }
-                        }
 
-                        Button("Skip for now") {
-                            dismiss()
+                            Button("Skip for now") {
+                                dismiss()
+                            }
+                            .buttonStyle(BourbonSecondaryButtonStyle())
                         }
-                        .buttonStyle(BourbonSecondaryButtonStyle())
                     }
-                    .padding(34)
-                    .frame(maxWidth: 620)
                     .frame(maxWidth: .infinity, minHeight: 420)
                 }
 

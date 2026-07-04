@@ -26,57 +26,56 @@ struct RosettaView: View {
     @Binding var showSetup: Bool
 
     var body: some View {
-        BourbonPage {
-            VStack(spacing: 22) {
-                Text("setup.rosetta")
-                    .font(.largeTitle.bold())
-                Text("setup.rosetta.subtitle")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+        BourbonPanelBackdrop {
+            BourbonFloatingPanel(maxWidth: 560) {
+                VStack(spacing: 22) {
+                    Text("setup.rosetta")
+                        .font(.largeTitle.bold())
+                    Text("setup.rosetta.subtitle")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
 
-                Group {
-                    if installing {
-                        ProgressView()
-                            .scaleEffect(2)
-                    } else if successful {
-                        Image(systemName: "checkmark.circle")
-                            .resizable()
-                            .foregroundStyle(.green)
-                            .frame(width: 80, height: 80)
-                    } else {
-                        VStack(spacing: 12) {
-                            Image(systemName: "xmark.circle")
+                    Group {
+                        if installing {
+                            ProgressView()
+                                .scaleEffect(2)
+                        } else if successful {
+                            Image(systemName: "checkmark.circle")
                                 .resizable()
-                                .foregroundStyle(.red)
+                                .foregroundStyle(.green)
                                 .frame(width: 80, height: 80)
-                            Text("setup.rosetta.fail")
-                                .font(.subheadline)
+                        } else {
+                            VStack(spacing: 12) {
+                                Image(systemName: "xmark.circle")
+                                    .resizable()
+                                    .foregroundStyle(.red)
+                                    .frame(width: 80, height: 80)
+                                Text("setup.rosetta.fail")
+                                    .font(.subheadline)
+                            }
                         }
                     }
-                }
 
-                HStack {
-                if !successful {
-                    Button("setup.quit") {
-                        exit(0)
-                    }
-                    .keyboardShortcut(.cancelAction)
-                    Spacer()
-                    Button("setup.retry") {
-                        installing = true
-                        successful = true
+                    HStack {
+                        if !successful {
+                            Button("setup.quit") {
+                                exit(0)
+                            }
+                            .keyboardShortcut(.cancelAction)
+                            Spacer()
+                            Button("setup.retry") {
+                                installing = true
+                                successful = true
 
-                        Task.detached {
-                            await checkOrInstall()
+                                Task.detached {
+                                    await checkOrInstall()
+                                }
+                            }
+                            .keyboardShortcut(.defaultAction)
                         }
                     }
-                    .keyboardShortcut(.defaultAction)
-                }
                 }
             }
-            .padding(34)
-            .frame(maxWidth: 560)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle("Rosetta")
         .onAppear {

@@ -12,48 +12,48 @@ struct WhiskyWineDownloadView: View {
     @State private var localArchivePanel: NSOpenPanel?
 
     var body: some View {
-        BourbonPage {
+        BourbonPanelBackdrop {
             VStack(spacing: 22) {
                 Spacer(minLength: 0)
 
-                VStack(spacing: 22) {
-                    Text("Download BourbonWine")
-                        .font(.largeTitle.bold())
+                BourbonFloatingPanel(maxWidth: 560) {
+                    VStack(spacing: 22) {
+                        Text("Download BourbonWine")
+                            .font(.largeTitle.bold())
 
-                    Text("Bourbon is downloading the runtime it uses to open Windows apps.")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-
-                    if let downloadError {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 42))
-                            .foregroundStyle(BourbonStyle.amber)
-
-                        Text(downloadError)
+                        Text("Bourbon is downloading the runtime it uses to open Windows apps.")
+                            .font(.title3)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
 
-                        Button("Retry") {
-                            download()
+                        if let downloadError {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 42))
+                                .foregroundStyle(BourbonStyle.amber)
+
+                            Text(downloadError)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+
+                            Button("Retry") {
+                                download()
+                            }
+                            .buttonStyle(BourbonPrimaryButtonStyle())
+                        } else {
+                            ProgressView(value: downloadProgress)
+                                .frame(width: 320)
+
+                            Text("\(Int(downloadProgress * 100))%")
+                                .foregroundStyle(.secondary)
                         }
-                        .buttonStyle(BourbonPrimaryButtonStyle())
-                    } else {
-                        ProgressView(value: downloadProgress)
-                            .frame(width: 320)
 
-                        Text("\(Int(downloadProgress * 100))%")
-                            .foregroundStyle(.secondary)
+                        Button("Choose Local BourbonWine Archive...") {
+                            chooseLocalArchive()
+                        }
+                        .buttonStyle(BourbonSecondaryButtonStyle())
+                        .help("Use a BourbonWine archive already saved on this Mac.")
                     }
-
-                    Button("Choose Local BourbonWine Archive...") {
-                        chooseLocalArchive()
-                    }
-                    .buttonStyle(BourbonSecondaryButtonStyle())
-                    .help("Use a BourbonWine archive already saved on this Mac.")
                 }
-                .padding(34)
-                .frame(maxWidth: 560)
 
                 Spacer(minLength: 0)
             }

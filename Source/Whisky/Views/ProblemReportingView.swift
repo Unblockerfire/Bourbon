@@ -95,7 +95,7 @@ enum BourbonReportCenter {
         let window = NSWindow(contentViewController: controller)
         window.title = "Report a Problem"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(NSSize(width: 760, height: 720))
+        window.setContentSize(NSSize(width: 880, height: 780))
         window.center()
         window.isReleasedWhenClosed = false
         reportWindows.append(window)
@@ -197,18 +197,22 @@ struct BourbonReportView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
+        BourbonPanelBackdrop {
+            BourbonFloatingPanel(maxWidth: 760) {
+                VStack(spacing: 0) {
+                    header
 
-            Divider()
+                    Divider()
 
-            if let reviewPayload {
-                reviewView(report: reviewPayload)
-            } else {
-                formView
+                    if let reviewPayload {
+                        reviewView(report: reviewPayload)
+                    } else {
+                        formView
+                    }
+                }
+                .frame(minWidth: 640, minHeight: 580)
             }
         }
-        .frame(minWidth: 680, minHeight: 620)
     }
 
     private var header: some View {

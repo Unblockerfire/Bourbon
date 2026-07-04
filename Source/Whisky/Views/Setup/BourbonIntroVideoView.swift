@@ -15,34 +15,56 @@ struct BourbonIntroVideoView: View {
     @State private var finishPendingAfterValidation = false
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        GeometryReader { proxy in
+            ZStack {
             Color.black.ignoresSafeArea()
 
-            if let player {
-                PlayerContainerView(player: player)
-                    .ignoresSafeArea()
-            }
+                ZStack(alignment: .bottom) {
+                    if let player {
+                        PlayerContainerView(player: player)
+                            .frame(width: introPanelSide(proxy), height: introPanelSide(proxy))
+                            .clipped()
+                    }
 
-            Button(buttonTitle) {
-                finishIntro()
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 12)
-            .background(.white.opacity(0.28), in: Capsule())
-            .background(.ultraThinMaterial, in: Capsule())
-            .foregroundStyle(.white)
-            .overlay(
-                Capsule()
-                    .stroke(.white.opacity(0.35), lineWidth: 1)
-            )
-            .controlSize(.large)
-            .padding(.bottom, 0)
-            .opacity(showButton ? 1 : 0)
-            .allowsHitTesting(showButton)
-            .animation(.easeOut(duration: 0.6), value: showButton)
+                    Button(buttonTitle) {
+                        finishIntro()
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 12)
+                    .background(.white.opacity(0.32), in: Capsule())
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .foregroundStyle(.white)
+                    .overlay(
+                        Capsule()
+                            .stroke(.white.opacity(0.38), lineWidth: 1)
+                    )
+                    .controlSize(.large)
+                    .padding(.bottom, 8)
+                    .opacity(showButton ? 1 : 0)
+                    .allowsHitTesting(showButton)
+                    .animation(.easeOut(duration: 0.6), value: showButton)
+                }
+                .frame(width: introPanelSide(proxy), height: introPanelSide(proxy))
+                .background(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(.white.opacity(0.12))
+                        }
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(.white.opacity(0.32), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.82), radius: 54, y: 38)
+                .shadow(color: .white.opacity(0.08), radius: 18, y: -10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            licenseGateOverlay
+                licenseGateOverlay
+            }
         }
         .onAppear {
             startLicenseValidation()
@@ -78,6 +100,10 @@ struct BourbonIntroVideoView: View {
         .onDisappear {
             cleanupPlayer()
         }
+    }
+
+    private func introPanelSide(_ proxy: GeometryProxy) -> CGFloat {
+        min(proxy.size.width * 0.74, proxy.size.height * 0.74, 760)
     }
 
     @ViewBuilder
@@ -370,13 +396,15 @@ struct AdminUnlockView: View {
     @State private var adminSession = AdminSessionStore.currentSession()
 
     var body: some View {
-        BourbonBackground {
+        BourbonPanelBackdrop {
             if let adminSession {
-                AdminLicenseModerationView(session: adminSession) {
-                    dismiss()
+                BourbonFloatingPanel(maxWidth: 700) {
+                    AdminLicenseModerationView(session: adminSession) {
+                        dismiss()
+                    }
                 }
             } else {
-                BourbonGlassCard(maxWidth: 420) {
+                BourbonFloatingPanel(maxWidth: 420) {
                     unlockContent
                 }
             }
@@ -1053,7 +1081,7 @@ struct PlayerContainerView: NSViewRepresentable {
         let view = AVPlayerView()
         view.player = player
         view.controlsStyle = .none
-        view.videoGravity = .resize
+        view.videoGravity = .resizeAspectFill
         return view
     }
 

@@ -35,23 +35,23 @@ struct BottleCreationView: View {
                                            ?? BottleData.defaultBottleDir
 
     var body: some View {
-        BourbonPage {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
-                        headerSection
-                        bottleDetailsSection
-                        installerSection
-                        storageSection
+        BourbonPanelBackdrop {
+            BourbonFloatingPanel(maxWidth: 920) {
+                VStack(spacing: 0) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 22) {
+                            headerSection
+                            bottleDetailsSection
+                            installerSection
+                            storageSection
+                        }
+                        .frame(maxWidth: 860, alignment: .leading)
+                        .padding(.bottom, 22)
                     }
-                    .frame(maxWidth: 900, alignment: .leading)
-                    .padding(.horizontal, 34)
-                    .padding(.top, 34)
-                    .padding(.bottom, 26)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
 
-                actionBar
+                    actionBar
+                }
+                .frame(maxHeight: 760)
             }
         }
         .navigationTitle("Create Bottle")
@@ -198,9 +198,7 @@ struct BottleCreationView: View {
             .disabled(!canCreate)
             .help("Create a new Windows environment.")
         }
-        .padding(.horizontal, 34)
-        .padding(.vertical, 18)
-        .background(.ultraThinMaterial)
+        .padding(.top, 18)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(.white.opacity(0.08))
