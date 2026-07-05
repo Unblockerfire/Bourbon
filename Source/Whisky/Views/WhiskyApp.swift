@@ -17,6 +17,7 @@
 //
 
 import SwiftUI
+import AppKit
 import Sparkle
 import WhiskyKit
 
@@ -60,6 +61,9 @@ struct WhiskyApp: App {
                 .environmentObject(BottleVM.shared)
                 .onAppear {
                     NSWindow.allowsAutomaticWindowTabbing = false
+                    Task { @MainActor in
+                        BourbonAdminServicesMenuController.shared.installAdminLoginItem()
+                    }
                     BourbonReportCenter.startListeningForReportRequests()
                     if !hasCompletedFirstRunOnboarding {
                         showSetup = true
@@ -87,11 +91,6 @@ struct WhiskyApp: App {
                     Task {
                         await WhiskyCmd.install()
                     }
-                }
-            }
-            CommandMenu("ADLG") {
-                Button("Open Admin Login") {
-                    NotificationCenter.default.post(name: .bourbonOpenAdminLogin, object: nil)
                 }
             }
             CommandGroup(replacing: .newItem) {}
@@ -230,5 +229,48 @@ struct WhiskyApp: App {
         } catch {
             return
         }
+    }
+}
+
+@MainActor
+private final class BourbonAdminServicesMenuController: NSObject {
+    static let shared = BourbonAdminServicesMenuController()
+
+    private let menuMarker = "com.unblockerfire.Bourbon.admin-services-menu.adlg"
+
+    /// Supported admin entry point: Bourbon > Services > ADLG.
+    func installAdminLoginItem() {
+        configureServicesMenu()
+    }
+
+    private func configureServicesMenu() {
+        guard let servicesMenu = NSApp.servicesMenu ?? appServicesMenu() else { return }
+        guard !servicesMenu.items.contains(where: { $0.representedObject as? String == menuMarker }) else {
+            return
+        }
+
+        let item = NSMenuItem(
+            title: "ADLG",
+            action: #selector(openAdminLogin),
+            keyEquivalent: ""
+        )
+        item.target = self
+        item.representedObject = menuMarker
+        item.toolTip = "Open Admin Login"
+
+        servicesMenu.addItem(item)
+    }
+
+    private func appServicesMenu() -> NSMenu? {
+        NSApp.mainMenu?
+            .items
+            .first?
+            .submenu?
+            .item(withTitle: "Services")?
+            .submenu
+    }
+
+    @objc private func openAdminLogin() {
+        NotificationCenter.default.post(name: .bourbonOpenAdminLogin, object: nil)
     }
 }

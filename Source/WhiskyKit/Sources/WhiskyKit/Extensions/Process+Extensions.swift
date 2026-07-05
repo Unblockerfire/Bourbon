@@ -30,8 +30,10 @@ public extension Process {
     /// Run the process returning a stream output
     func runStream(name: String, fileHandle: FileHandle?) throws -> AsyncStream<ProcessOutput> {
         let stream = makeStream(name: name, fileHandle: fileHandle)
+        #if DEBUG
         self.logProcessInfo(name: name)
         fileHandle?.writeInfo(for: self)
+        #endif
         try run()
         return stream
     }
@@ -39,8 +41,10 @@ public extension Process {
     /// Run the process without piping stdout/stderr through Swift.
     func runUncaptured(name: String, fileHandle: FileHandle?) throws -> AsyncStream<ProcessOutput> {
         let stream = makeUncapturedStream(name: name, fileHandle: fileHandle)
+        #if DEBUG
         self.logProcessInfo(name: name)
         fileHandle?.writeInfo(for: self)
+        #endif
         try run()
         return stream
     }
@@ -70,27 +74,29 @@ public extension Process {
                 guard let line = pipe.nextLine() else { return }
                 continuation.yield(.message(line))
                 guard !line.isEmpty else { return }
-                // swiftlint:disable:next todo
-                // TODO: Remove temporary stdout prefix after custom Wine launch diagnostics are complete.
+                #if DEBUG
                 Logger.wineKit.info("[Whisky Wine Debug][stdout] \(line, privacy: .public)")
                 fileHandle?.write(line: "[Whisky Wine Debug][stdout] \(line)")
+                #endif
             }
 
             errorPipe.fileHandleForReading.readabilityHandler = { pipe in
                 guard let line = pipe.nextLine() else { return }
                 continuation.yield(.error(line))
                 guard !line.isEmpty else { return }
-                // swiftlint:disable:next todo
-                // TODO: Remove temporary stderr prefix after custom Wine launch diagnostics are complete.
+                #if DEBUG
                 Logger.wineKit.warning("[Whisky Wine Debug][stderr] \(line, privacy: .public)")
                 fileHandle?.write(line: "[Whisky Wine Debug][stderr] \(line)")
+                #endif
             }
 
             terminationHandler = { (process: Process) in
                 do {
                     _ = try pipe.fileHandleForReading.readToEnd()
                     _ = try errorPipe.fileHandleForReading.readToEnd()
+                    #if DEBUG
                     process.logTermination(name: name, fileHandle: fileHandle)
+                    #endif
                     try fileHandle?.close()
                 } catch {
                     Logger.wineKit.error("Error while clearing data: \(error)")
@@ -119,7 +125,9 @@ public extension Process {
             continuation.yield(.started(self))
 
             terminationHandler = { (process: Process) in
+                #if DEBUG
                 process.logTermination(name: name, fileHandle: fileHandle)
+                #endif
                 do {
                     try fileHandle?.close()
                 } catch {
@@ -131,6 +139,7 @@ public extension Process {
         }
     }
 
+    #if DEBUG
     private func logTermination(name: String, fileHandle: FileHandle?) {
         let reason: String
         switch terminationReason {
@@ -176,6 +185,7 @@ public extension Process {
             Logger.wineKit.info("Environment: \(environment)")
         }
     }
+    #endif
 }
 
 extension FileHandle {

@@ -56,6 +56,7 @@ extension FileHandle {
     // swiftlint:enable line_length
 
     func writeInfo(for process: Process) {
+        #if DEBUG
         var header = String()
 
         if let arguments = process.arguments {
@@ -67,6 +68,7 @@ extension FileHandle {
         }
 
         write(line: header)
+        #endif
     }
 
     func writeInfo(for bottle: Bottle) {

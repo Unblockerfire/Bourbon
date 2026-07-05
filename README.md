@@ -38,6 +38,10 @@ Translated on [Crowdin](https://crowdin.com/project/bourbon).
 Bourbon is on homebrew! Install with 
 `brew install --cask bourbon`.
 
+## Admin Access
+
+The supported Admin Login entry point is the macOS menu bar path `Bourbon > Services > ADLG`.
+
 ## My game isn't working!
 
 Some games need special steps to get working. Check out the [wiki](https://github.com/IsaacMarovitz/Bourbon/wiki/Game-Support).

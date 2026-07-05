@@ -803,7 +803,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 100029;
+				CURRENT_PROJECT_VERSION = 100030;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Whisky/Preview Content\"";
 				DEVELOPMENT_TEAM = RCADVCXMWS;
@@ -823,7 +823,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.0.3;
+				MARKETING_VERSION = 2.0.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.unblockerfire.Bourbon;
 				PRODUCT_NAME = Bourbon;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -845,7 +845,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 100029;
+				CURRENT_PROJECT_VERSION = 100030;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Whisky/Preview Content\"";
 				DEVELOPMENT_TEAM = RCADVCXMWS;
@@ -865,7 +865,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.0.3;
+				MARKETING_VERSION = 2.0.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.unblockerfire.Bourbon;
 				PRODUCT_NAME = Bourbon;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -936,7 +936,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 100029;
+				CURRENT_PROJECT_VERSION = 100030;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = RCADVCXMWS;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -952,7 +952,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 2.0.3;
+				MARKETING_VERSION = 2.0.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.unblockerfire.Bourbon.WhiskyThumbnail;
 				PRODUCT_NAME = WhiskyThumbnail;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -972,7 +972,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 100029;
+				CURRENT_PROJECT_VERSION = 100030;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = RCADVCXMWS;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -988,7 +988,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 2.0.3;
+				MARKETING_VERSION = 2.0.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.unblockerfire.Bourbon.WhiskyThumbnail;
 				PRODUCT_NAME = WhiskyThumbnail;
 				PROVISIONING_PROFILE_SPECIFIER = "";

@@ -170,9 +170,9 @@ public class Wine {
     }
 
     public static func logCustomWineStartupEnvironment() {
-        // swiftlint:disable:next todo
-        // TODO: Remove this temporary startup diagnostic after the custom Wine/Rosetta issue is resolved.
+        #if DEBUG
         Logger.wineKit.info("\(CustomWineSettings.startupDebugMessage, privacy: .public)")
+        #endif
     }
 
     /// Run a process on a executable file given by the `executableURL`
@@ -189,6 +189,7 @@ public class Wine {
         process.qualityOfService = .userInitiated
 
         let processName = name ?? args.joined(separator: " ")
+        #if DEBUG
         debugLogWineLaunch(
             name: processName,
             args: args,
@@ -197,6 +198,7 @@ public class Wine {
             workingDirectory: process.currentDirectoryURL,
             fileHandle: fileHandle
         )
+        #endif
 
         do {
             switch outputMode {
@@ -206,12 +208,14 @@ public class Wine {
                 return try process.runUncaptured(name: processName, fileHandle: fileHandle)
             }
         } catch {
+            #if DEBUG
             debugLogProcessLaunchError(
                 error,
                 name: processName,
                 executableURL: executableURL,
                 fileHandle: fileHandle
             )
+            #endif
             throw error
         }
     }
@@ -531,8 +535,7 @@ public class Wine {
 }
 
 private extension Wine {
-    // swiftlint:disable:next todo
-    // TODO: Remove this temporary launch diagnostics block after the custom Wine/Rosetta issue is resolved.
+    #if DEBUG
     // swiftlint:disable:next function_parameter_count
     static func debugLogWineLaunch(
         name: String,
@@ -584,8 +587,6 @@ private extension Wine {
         fileHandle?.write(line: message)
     }
 
-    // swiftlint:disable:next todo
-    // TODO: Remove this temporary launch diagnostics block after the custom Wine/Rosetta issue is resolved.
     static func debugLogProcessLaunchError(
         _ error: Error,
         name: String,
@@ -651,6 +652,7 @@ private extension Wine {
             return "file command failed: \(error.localizedDescription)"
         }
     }
+    #endif
 
     static func runProgramArguments(for url: URL, args: [String]) -> [String] {
         let path = url.path(percentEncoded: false)
@@ -780,6 +782,7 @@ private extension Wine {
     static func logProgramLaunchDiagnostics(
         url: URL, diagnostics: ProgramLaunchDiagnostics, fileHandle: FileHandle
     ) {
+        #if DEBUG
         guard diagnostics.isWindowsExecutable else { return }
         Logger.wineKit.info(
             """
@@ -795,9 +798,11 @@ private extension Wine {
 
             """
         )
+        #endif
     }
 
     static func logCompatibilityLaunchPlan(_ plan: CompatibilityLaunchPlan, fileHandle: FileHandle) {
+        #if DEBUG
         let technologies = plan.analysis.technologies
             .map(\.rawValue)
             .sorted()
@@ -830,6 +835,7 @@ private extension Wine {
 
             """
         )
+        #endif
     }
 
     static func logFinalLaunchDiagnostics(
@@ -838,12 +844,14 @@ private extension Wine {
         fileHandle: FileHandle
     ) -> ProgramLaunchDiagnostics {
         let diagnostics = ProgramLaunchDiagnostics.inspect(url: plan.executableURL)
+        #if DEBUG
         guard plan.executableURL != originalURL else { return diagnostics }
         logProgramLaunchDiagnostics(
             url: plan.executableURL,
             diagnostics: diagnostics,
             fileHandle: fileHandle
         )
+        #endif
         return diagnostics
     }
 
@@ -858,6 +866,7 @@ private extension Wine {
     }
 
     private static func logProgramOutputMode(_ mode: WineProcessOutputMode, fileHandle: FileHandle) {
+        #if DEBUG
         let description: String
         switch mode {
         case .captured:
@@ -874,6 +883,7 @@ private extension Wine {
 
             """
         )
+        #endif
     }
 }
 
