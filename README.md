@@ -1,81 +1,133 @@
 <div align="center">
 
-  # Bourbon 🥃 
-  *Wine but a bit stronger*
-  
-  ![](https://img.shields.io/github/actions/workflow/status/IsaacMarovitz/Bourbon/SwiftLint.yml?style=for-the-badge)
-  [![](https://img.shields.io/discord/1115955071549702235?style=for-the-badge)](https://discord.gg/CsqAfs9CnM)
+# 🥃 Bourbon
+
+### Modern Windows compatibility for macOS.
+
+Run Windows applications and games on macOS with a native SwiftUI experience.
+
+[![Release](https://img.shields.io/github/v/release/Unblockerfire/Bourbon?style=for-the-badge)](https://github.com/Unblockerfire/Bourbon/releases)
+![Build](https://img.shields.io/github/actions/workflow/status/Unblockerfire/Bourbon/release.yml?branch=Bourbon&style=for-the-badge)
+[![Discord](https://img.shields.io/discord/1523540282543575090?style=for-the-badge&logo=discord)](https://discord.gg/YOURINVITE)
+
 </div>
 
-<img width="650" alt="Config" src="https://github.com/Bourbon-App/Bourbon/assets/42140194/d0a405e8-76ee-48f0-92b5-165d184a576b">
+---
 
-Familiar UI that integrates seamlessly with macOS
+## Welcome to Bourbon
 
-<div align="right">
-  <img width="650" alt="New Bottle" src="https://github.com/Bourbon-App/Bourbon/assets/42140194/ed1a0d69-d8fb-442b-9330-6816ba8981ba">
+Bourbon is a modern Windows compatibility layer frontend for macOS built entirely in SwiftUI.
 
-  One-click bottle creation and management
-</div>
-
-<img width="650" alt="debug" src="https://user-images.githubusercontent.com/42140194/229176642-57b80801-d29b-4123-b1c2-f3b31408ffc6.png">
-
-Debug and profile with ease
+Originally inspired by Whisky, Bourbon has grown into its own actively maintained project with modern updates, improved onboarding, automatic updates, community-driven development, and a growing ecosystem.
 
 ---
 
-Bourbon provides a clean and easy to use graphical wrapper for Wine built in native SwiftUI. You can make and manage bottles, install and run Windows apps and games, and unlock the full potential of your Mac with no technical knowledge required. Bourbon is built on top of CrossOver 22.1.1, and Apple's own `Game Porting Toolkit`.
+## Features
 
-Translated on [Crowdin](https://crowdin.com/project/bourbon).
-
----
-
-## System Requirements
-- CPU: Apple Silicon (M-series chips)
-- OS: macOS Sonoma 14.0 or later
-
-## Homebrew
-
-Bourbon is on homebrew! Install with 
-`brew install --cask bourbon`.
-
-## Admin Access
-
-The supported Admin Login entry point is the macOS menu bar path `Bourbon > Services > ADLG`.
-
-## My game isn't working!
-
-Some games need special steps to get working. Check out the [wiki](https://github.com/IsaacMarovitz/Bourbon/wiki/Game-Support).
+- 🍾 One-click Bottle creation
+- 🖥 Native SwiftUI interface
+- ⚡ Automatic Sparkle updates
+- 📦 Distillery package manager
+- 🐞 Built-in bug reporting
+- 🔐 Secure licensing
+- 🛠 Runtime API
+- 🧪 Stable & Beta release channels
 
 ---
 
-## Credits & Acknowledgments
+## Screenshots
 
-Bourbon is possible thanks to the magic of several projects:
+### Welcome Experience
 
-- [msync](https://github.com/marzent/wine-msync) by marzent
-- [DXVK-macOS](https://github.com/Gcenx/DXVK-macOS) by Gcenx and doitsujin
-- [MoltenVK](https://github.com/KhronosGroup/MoltenVK) by KhronosGroup
-- [Sparkle](https://github.com/sparkle-project/Sparkle) by sparkle-project
-- [SemanticVersion](https://github.com/SwiftPackageIndex/SemanticVersion) by SwiftPackageIndex
-- [swift-argument-parser](https://github.com/apple/swift-argument-parser) by Apple
-- [SwiftTextTable](https://github.com/scottrhoyt/SwiftyTextTable) by scottrhoyt
-- [CrossOver 22.1.1](https://www.codeweavers.com/crossover) by CodeWeavers and WineHQ
-- D3DMetal by Apple
-
-Special thanks to Gcenx, ohaiibuzzle, and Nat Brown for their support and contributions!
+<p align="center">
+<img src="./images/welcome-screen.png" width="800">
+</p>
 
 ---
 
-<table>
-  <tr>
-    <td>
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="./images/cw-dark.png">
-          <img src="./images/cw-light.png" width="500">
-        </picture>
-    </td>
-    <td>
-        Bourbon doesn't exist without CrossOver. Support the work of CodeWeavers using our <a href="https://www.codeweavers.com/store?ad=1010">affiliate link</a>.
-    </td>
-  </tr>
-</table>
+### Welcome Back
+
+<p align="center">
+<img src="./images/welcome-back.png" width="800">
+</p>
+
+---
+
+### Create your first Bottle
+
+<p align="center">
+<img src="./images/create-bottle.png" width="800">
+</p>
+
+---
+
+### What is a Bottle?
+
+<p align="center">
+<img src="./images/what-is-bottle.png" width="800">
+</p>
+
+---
+
+## Requirements
+
+- Apple Silicon
+- macOS Sonoma 14+
+- Internet connection for downloads & updates
+
+---
+
+## Installation
+
+Download the latest release from the Releases page.
+
+Bourbon includes automatic updates through Sparkle, so once installed you'll always stay up to date.
+
+---
+
+## Community
+
+Join the official Discord.
+
+- Support
+- Bug reports
+- Beta testing
+- Feature requests
+- Bourbon Board
+
+---
+
+## Roadmap
+
+Current work includes:
+
+- Distillery expansion
+- Bourbon Board
+- Improved package management
+- More compatibility improvements
+- Better onboarding
+
+---
+
+## Credits
+
+Bourbon is built upon years of incredible work from the open-source community.
+
+Special thanks to:
+
+- Wine
+- CrossOver
+- Sparkle
+- MoltenVK
+- DXVK-macOS
+- Game Porting Toolkit
+- SemanticVersion
+- Swift Argument Parser
+
+And of course, thank you to Isaac Marovitz for creating Whisky, which inspired Bourbon.
+
+---
+
+## License
+
+See LICENSE for details.
