@@ -8,7 +8,7 @@ Run Windows applications and games on macOS with a native SwiftUI experience.
 
 [![Release](https://img.shields.io/github/v/release/Unblockerfire/Bourbon?style=for-the-badge)](https://github.com/Unblockerfire/Bourbon/releases)
 ![Build](https://img.shields.io/github/actions/workflow/status/Unblockerfire/Bourbon/release.yml?branch=Bourbon&style=for-the-badge)
-[![Discord](https://img.shields.io/discord/1523540282543575090?style=for-the-badge&logo=discord)](https://discord.gg/YOURINVITE)
+[![Discord](https://img.shields.io/discord/1523540282543575090?style=for-the-badge&logo=discord)](https://discord.gg/bpm6EGSVMR)
 
 </div>
 
