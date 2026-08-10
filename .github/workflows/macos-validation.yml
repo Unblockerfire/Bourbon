@@ -33,7 +33,7 @@ jobs:
           xcodebuild \
             -resolvePackageDependencies \
             -project Whisky.xcodeproj \
-            -scheme Whisky
+            -scheme Bourbon
 
       - name: Run SwiftLint
         working-directory: Source
@@ -46,7 +46,7 @@ jobs:
 
           xcodebuild \
             -project Whisky.xcodeproj \
-            -scheme Whisky \
+            -scheme Bourbon \
             -configuration Release \
             -destination 'generic/platform=macOS' \
             CODE_SIGNING_ALLOWED=NO \
