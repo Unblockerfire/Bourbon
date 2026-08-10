@@ -16,6 +16,29 @@ export const siteConfig = {
   runtimeApiUrl: "https://api.getbourbon.app/runtime/latest"
 } as const;
 
+export const featureCards = [
+  {
+    title: "Bottle setup without the terminal",
+    description:
+      "Create isolated Windows environments, choose a Windows version, and add installers from a guided SwiftUI flow.",
+    image: "/assets/bourbon-create-bottle.png",
+    alt: "Bourbon create bottle screen with bottle type, Windows version, installer, and storage controls"
+  },
+  {
+    title: "A native home for Windows apps",
+    description:
+      "Bourbon keeps apps, settings, registry data, dependencies, and shortcuts organized per bottle on macOS.",
+    image: "/assets/bourbon-welcome-screen.png",
+    alt: "Bourbon welcome screen inviting the user to create a first bottle"
+  },
+  {
+    title: "Compatibility checks before launch",
+    description:
+      "Imported installers pass through Bourbon's compatibility system before Wine runs them, including safer launch paths for supported embedded app payloads.",
+    image: "/assets/bourbon-bottle-explainer.png",
+    alt: "Bourbon bottle explanation dialog describing an isolated Windows environment"
+  }
+] as const;
 export const acknowledgments = [
   {
     name: "Bourbon Runtime API",

@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 import { DownloadButton, ReleasesLink } from "@/components/DownloadButton";
-import { siteConfig } from "@/lib/siteConfig";
+import { featureCards, siteConfig } from "@/lib/siteConfig";
 
 const facts = [
   `${siteConfig.productName} ${siteConfig.currentVersion}`,
@@ -106,17 +106,6 @@ export default function HomePage() {
             ))}
           </dl>
         </div>
-        <div className="heroMedia" aria-label="Bourbon app preview">
-          <div className="screenFrame heroFrame">
-            <Image
-              src="/assets/bourbon-create-bottle.png"
-              alt="Bourbon create bottle flow running in a macOS style window"
-              width={1478}
-              height={1628}
-              priority
-            />
-          </div>
-        </div>
       </section>
 
       <section className="statementBand" aria-labelledby="statement-title">
@@ -127,6 +116,27 @@ export default function HomePage() {
         </h2>
       </section>
 
+      <section className="featureGrid" aria-label="Bourbon feature previews">
+        {featureCards.map((card, index) => (
+          <article
+            className={`featureCard featureCard${index + 1}`}
+            key={card.title}
+          >
+            <div className="featureImage">
+              <Image
+                src={card.image}
+                alt={card.alt}
+                width={1478}
+                height={1628}
+              />
+            </div>
+            <div>
+              <h2>{card.title}</h2>
+              <p>{card.description}</p>
+            </div>
+          </article>
+        ))}
+      </section>
       <section className="capabilityBand" aria-labelledby="capability-title">
         <div>
           <p className="eyebrow">Bourbon in practice</p>
