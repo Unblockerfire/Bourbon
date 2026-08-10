@@ -880,11 +880,33 @@ enum BourbonLicenseAPI {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        request.httpBody = try encoder.encode(LicenseMigrationRequest(legacyLicenseId: license.publicLicenseId, legacyToken: token, displayName: license.displayName, appVersion: appVersion, macosVersion: ProcessInfo.processInfo.operatingSystemVersionString, architecture: currentArchitecture, installId: license.installId))
+        let payload = LicenseMigrationRequest(
+            legacyLicenseId: license.publicLicenseId,
+            legacyToken: token,
+            displayName: license.displayName,
+            appVersion: appVersion,
+            macosVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            architecture: currentArchitecture,
+            installId: license.installId
+        )
+        request.httpBody = try encoder.encode(payload)
         let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
-        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { throw LicenseActivationError.invalidResponse }
+        guard let http = response as? HTTPURLResponse,
+              200..<300 ~= http.statusCode else {
+            throw LicenseActivationError.invalidResponse
+        }
         let decoded = try JSONDecoder().decode(LicenseActivationResponse.self, from: data)
-        return BourbonLicenseRecord(publicLicenseId: decoded.publicLicenseId, licenseToken: decoded.licenseToken, installId: license.installId, displayName: decoded.displayName, status: decoded.status, messages: decoded.messages, permissions: decoded.permissions, warnings: license.warnings, strikes: license.strikes)
+        return BourbonLicenseRecord(
+            publicLicenseId: decoded.publicLicenseId,
+            licenseToken: decoded.licenseToken,
+            installId: license.installId,
+            displayName: decoded.displayName,
+            status: decoded.status,
+            messages: decoded.messages,
+            permissions: decoded.permissions,
+            warnings: license.warnings,
+            strikes: license.strikes
+        )
     }
     static func submitAppeal(for result: LicenseValidationResult) async throws {
         guard let token = LicenseKeychainStore.readLicenseToken() else {
