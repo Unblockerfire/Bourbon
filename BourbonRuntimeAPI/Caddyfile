@@ -16,7 +16,7 @@
 		reverse_proxy 127.0.0.1:3001
 	}
 
-	@runtimeApiPaths path /runtime/latest /updates/* /reports/* /admin/*
+	@runtimeApiPaths path /runtime/latest /updates/* /reports/*
 	handle @runtimeApiPaths {
 		reverse_proxy 127.0.0.1:3001
 	}

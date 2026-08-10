@@ -857,8 +857,15 @@ enum BourbonLicenseAPI {
         configuration.timeoutIntervalForRequest = 12
         let (data, response) = try await URLSession(configuration: configuration).data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse,
-              200..<300 ~= httpResponse.statusCode else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw LicenseActivationError.invalidResponse
+        }
+        if httpResponse.statusCode == 404 {
+            let migrated = try await migrateLegacyLicense(license: license, token: token)
+            try LicenseKeychainStore.save(migrated)
+            return try await validateCurrentLicense()
+        }
+        guard 200..<300 ~= httpResponse.statusCode else {
             throw LicenseActivationError.invalidResponse
         }
 
@@ -867,6 +874,18 @@ enum BourbonLicenseAPI {
         return try decoder.decode(LicenseValidationResult.self, from: data)
     }
 
+    private static func migrateLegacyLicense(license: BourbonLicenseRecord, token: String) async throws -> BourbonLicenseRecord {
+        var request = URLRequest(url: BourbonAPIConfiguration.licenseMigrationURL)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        request.httpBody = try encoder.encode(LicenseMigrationRequest(legacyLicenseId: license.publicLicenseId, legacyToken: token, displayName: license.displayName, appVersion: appVersion, macosVersion: ProcessInfo.processInfo.operatingSystemVersionString, architecture: currentArchitecture, installId: license.installId))
+        let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
+        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { throw LicenseActivationError.invalidResponse }
+        let decoded = try JSONDecoder().decode(LicenseActivationResponse.self, from: data)
+        return BourbonLicenseRecord(publicLicenseId: decoded.publicLicenseId, licenseToken: decoded.licenseToken, installId: license.installId, displayName: decoded.displayName, status: decoded.status, messages: decoded.messages, permissions: decoded.permissions, warnings: license.warnings, strikes: license.strikes)
+    }
     static func submitAppeal(for result: LicenseValidationResult) async throws {
         guard let token = LicenseKeychainStore.readLicenseToken() else {
             throw LicenseActivationError.invalidResponse
@@ -938,6 +957,16 @@ private struct LicenseActivationRequest: Encodable {
     let acceptedLegalAt: Date
 }
 
+private struct LicenseMigrationRequest: Encodable {
+    let legacyLicenseId: String
+    let legacyToken: String
+    let displayName: String
+    let appVersion: String
+    let macosVersion: String
+    let architecture: String
+    let installId: String
+}
+
 private struct LicenseValidationRequest: Encodable {
     let licenseId: String
     let licenseToken: String
@@ -973,13 +1002,15 @@ enum BourbonAPIConfiguration {
         baseURL.appending(path: "license/validate")
     }
 
+    static var licenseMigrationURL: URL {
+        baseURL.appending(path: "licenses/migrate")
+    }
+
     static var licenseAppealURL: URL {
         baseURL.appending(path: "license/appeal")
     }
 
-    static var hasConfiguredBackend: Bool {
-        localConfigURL != nil || environmentBaseURL != nil
-    }
+    static var hasConfiguredBackend: Bool { true }
 
     private static var baseURL: URL {
         if let configuredURL = localConfigURL {
@@ -990,7 +1021,7 @@ enum BourbonAPIConfiguration {
             return url
         }
 
-        guard let url = URL(string: "https://api.bourbon.app") else {
+        guard let url = URL(string: "https://api.getbourbon.app") else {
             preconditionFailure("Invalid default Bourbon API URL.")
         }
         return url

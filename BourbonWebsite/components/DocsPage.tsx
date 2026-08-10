@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowRight, ExternalLink, Info, TriangleAlert } from "lucide-react";
 
 import { siteConfig } from "@/lib/siteConfig";
+import { HiddenAdminFaqItem } from "@/components/HiddenAdminFaqItem";
 
 type DocSlug =
   | "home"
@@ -608,12 +609,20 @@ function FAQ() {
       <p className="eyebrow">FAQ</p>
       <h1>Quick answers about Bourbon.</h1>
       <div className="docsFaq">
-        {items.map(([question, answer]) => (
-          <section key={question}>
-            <h2>{question}</h2>
-            <p>{answer}</p>
-          </section>
-        ))}
+        {items.map(([question, answer]) =>
+          question === "Where do I get support?" ? (
+            <HiddenAdminFaqItem
+              key={question}
+              question={question}
+              answer={answer}
+            />
+          ) : (
+            <section key={question}>
+              <h2>{question}</h2>
+              <p>{answer}</p>
+            </section>
+          )
+        )}
       </div>
     </DocsLayout>
   );

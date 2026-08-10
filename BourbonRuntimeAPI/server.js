@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { FieldValue, licenseStore } from "./firebase-admin.js";
 
 const app = express();
 app.use(express.json({ limit: "256kb" }));
@@ -155,6 +157,209 @@ function adminAuthorized(req) {
   return Boolean(adminToken) && req.header("authorization") === `Bearer ${adminToken}`;
 }
 
+function licenseIdIsValid(value) {
+  return typeof value === "string" && /^BRBN-[A-Za-z0-9-]{8,64}$/.test(value);
+}
+
+function stringValue(value, maximum = 500) {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= maximum
+    ? value.trim()
+    : null;
+}
+
+function tokenHash(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function migrationToken(legacyToken) {
+  const key = process.env.ADMIN_UPDATE_TOKEN;
+  if (!key) throw new Error("Migration secret is not configured");
+  return createHash("sha256").update(`${key}:${legacyToken}`).digest("hex");
+}
+function hashesMatch(left, right) {
+  if (typeof left !== "string" || typeof right !== "string") return false;
+  const leftBytes = Buffer.from(left, "hex");
+  const rightBytes = Buffer.from(right, "hex");
+  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
+}
+
+function toIso(value) {
+  return value?.toDate instanceof Function ? value.toDate().toISOString() : null;
+}
+
+function licenseSummary(id, data) {
+  return {
+    licenseId: id,
+    status: data.status || "unknown",
+    reason: data.reason || null,
+    appealAllowed: Boolean(data.appealAllowed),
+    deletionScheduledAt: toIso(data.deletionScheduledAt),
+    lastValidationAt: toIso(data.lastValidationAt),
+    macosVersion: data.macosVersion || "unknown",
+    appVersion: data.appVersion || "unknown",
+    architecture: data.architecture || "unknown",
+    updatedAt: toIso(data.updatedAt)
+  };
+}
+
+function licenseBackend(res) {
+  try {
+    return licenseStore();
+  } catch (error) {
+    console.error("License Firestore initialization failed", { name: error?.name, code: error?.code, message: error?.message });
+    res.status(503).json({ ok: false, error: "License service is unavailable" });
+    return null;
+  }
+}
+
+function adminOnly(req, res) {
+  if (!adminAuthorized(req)) {
+    res.status(401).json({ ok: false, error: "Unauthorized" });
+    return false;
+  }
+  return true;
+}
+
+app.post("/licenses/activate", async (req, res) => {
+  const displayName = stringValue(req.body?.displayName, 120);
+  const appVersion = stringValue(req.body?.appVersion, 120);
+  const macosVersion = stringValue(req.body?.macosVersion, 160);
+  const architecture = stringValue(req.body?.architecture, 16);
+  const installId = stringValue(req.body?.installId, 160);
+  if (!displayName || !appVersion || !macosVersion || !installId || !["arm64", "x86_64"].includes(architecture)) {
+    res.status(400).json({ ok: false, error: "Invalid license activation request" });
+    return;
+  }
+  const db = licenseBackend(res);
+  if (!db) return;
+  const licenseId = `BRBN-${randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`;
+  const licenseToken = randomUUID() + randomUUID().replaceAll("-", "");
+  await db.collection("licenses").doc(licenseId).set({
+    status: "valid",
+    reason: null,
+    appealAllowed: false,
+    deletionScheduledAt: null,
+    tokenHash: tokenHash(licenseToken),
+    displayName,
+    installId,
+    appVersion,
+    macosVersion,
+    architecture,
+    lastValidationAt: FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  });
+  res.status(201).json({ publicLicenseId: licenseId, licenseToken, displayName, status: "Free", messages: [], permissions: ["distillery", "local-installs"] });
+});
+
+app.post("/licenses/migrate", async (req, res) => {
+  const legacyLicenseId = req.body?.legacyLicenseId;
+  const legacyToken = stringValue(req.body?.legacyToken, 256);
+  const displayName = stringValue(req.body?.displayName, 120) || "Legacy Bourbon user";
+  const appVersion = stringValue(req.body?.appVersion, 120);
+  const macosVersion = stringValue(req.body?.macosVersion, 160);
+  const architecture = stringValue(req.body?.architecture, 16);
+  const installId = stringValue(req.body?.installId, 160);
+  if (!licenseIdIsValid(legacyLicenseId) || !legacyToken || !appVersion || !macosVersion || !installId || !["arm64", "x86_64"].includes(architecture)) {
+    res.status(400).json({ ok: false, error: "Invalid license migration request" }); return;
+  }
+  const db = licenseBackend(res); if (!db) return;
+  const legacyHash = tokenHash(legacyToken);
+  let licenseId;
+  await db.runTransaction(async (transaction) => {
+    const migration = db.collection("legacyLicenseMigrations").doc(legacyHash);
+    const existing = await transaction.get(migration);
+    if (existing.exists) { licenseId = existing.data().licenseId; return; }
+    licenseId = `BRBN-${randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`;
+    const newToken = migrationToken(legacyToken);
+    transaction.set(db.collection("licenses").doc(licenseId), { status: "valid", reason: null, appealAllowed: false, deletionScheduledAt: null, tokenHash: tokenHash(newToken), displayName, installId, appVersion, macosVersion, architecture, legacyLicenseId, warningHistory: [], strikeHistory: [], lastValidationAt: FieldValue.serverTimestamp(), createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+    transaction.set(migration, { licenseId, migratedAt: FieldValue.serverTimestamp() });
+  });
+  const migration = await db.collection("legacyLicenseMigrations").doc(legacyHash).get();
+  const data = migration.data();
+  res.json({ publicLicenseId: data.licenseId, licenseToken: migrationToken(legacyToken), displayName, status: "Free", messages: ["Your Bourbon license was migrated securely."], permissions: ["distillery", "local-installs"] });
+});
+app.post("/license/validate", async (req, res) => {
+  const licenseId = req.body?.licenseId;
+  const licenseToken = req.body?.licenseToken;
+  if (!licenseIdIsValid(licenseId) || !stringValue(licenseToken, 256)) {
+    res.status(400).json({ ok: false, error: "Invalid license validation request" });
+    return;
+  }
+  const db = licenseBackend(res);
+  if (!db) return;
+  const reference = db.collection("licenses").doc(licenseId);
+  const snapshot = await reference.get();
+  if (!snapshot.exists || !hashesMatch(snapshot.data().tokenHash, tokenHash(licenseToken))) {
+    res.status(401).json({ ok: false, error: "Invalid license" });
+    return;
+  }
+  const data = snapshot.data();
+  await reference.update({ lastValidationAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+  const status = data.status || "unknown";
+  res.json({ licenseId, status, isValid: status === "valid", reason: data.reason || null, appealAllowed: Boolean(data.appealAllowed), deletionScheduledAt: toIso(data.deletionScheduledAt), checkedAt: new Date().toISOString() });
+});
+
+app.post("/license/appeal", async (req, res) => {
+  const licenseId = req.body?.licenseId;
+  const licenseToken = req.body?.licenseToken;
+  if (!licenseIdIsValid(licenseId) || !stringValue(licenseToken, 256)) {
+    res.status(400).json({ ok: false, error: "Invalid license appeal request" });
+    return;
+  }
+  const db = licenseBackend(res);
+  if (!db) return;
+  const reference = db.collection("licenses").doc(licenseId);
+  const snapshot = await reference.get();
+  if (!snapshot.exists || !hashesMatch(snapshot.data().tokenHash, tokenHash(licenseToken))) {
+    res.status(401).json({ ok: false, error: "Invalid license" });
+    return;
+  }
+  await reference.collection("appeals").add({ status: stringValue(req.body?.status, 40) || "unknown", reason: stringValue(req.body?.reason, 1000), submittedAt: FieldValue.serverTimestamp() });
+  res.json({ ok: true });
+});
+
+app.post("/admin/licenses/lookup", async (req, res) => {
+  if (!adminOnly(req, res)) return;
+  const licenseId = req.body?.licenseId;
+  if (!licenseIdIsValid(licenseId)) {
+    res.status(400).json({ ok: false, error: "Invalid license ID" });
+    return;
+  }
+  const db = licenseBackend(res);
+  if (!db) return;
+  const snapshot = await db.collection("licenses").doc(licenseId).get();
+  if (!snapshot.exists) {
+    res.status(404).json({ ok: false, error: "License not found" });
+    return;
+  }
+  res.json({ ok: true, license: licenseSummary(snapshot.id, snapshot.data()) });
+});
+
+app.post("/admin/licenses/moderate", async (req, res) => {
+  if (!adminOnly(req, res)) return;
+  const licenseId = req.body?.licenseId;
+  const action = req.body?.action;
+  const reason = stringValue(req.body?.reason, 1000);
+  if (!licenseIdIsValid(licenseId) || !["pause", "delete"].includes(action) || !reason || typeof req.body?.appealAllowed !== "boolean") {
+    res.status(400).json({ ok: false, error: "Invalid moderation request" });
+    return;
+  }
+  const db = licenseBackend(res);
+  if (!db) return;
+  const reference = db.collection("licenses").doc(licenseId);
+  const snapshot = await reference.get();
+  if (!snapshot.exists) {
+    res.status(404).json({ ok: false, error: "License not found" });
+    return;
+  }
+  const deletionScheduledAt = action === "delete" && !req.body.appealAllowed ? new Date(Date.now() + 72 * 60 * 60 * 1000) : null;
+  const status = action === "pause" ? "paused" : "scheduledForDeletion";
+  await reference.update({ status, reason, appealAllowed: req.body.appealAllowed, deletionScheduledAt, updatedAt: FieldValue.serverTimestamp() });
+  await reference.collection("audit").add({ action, reason, appealAllowed: req.body.appealAllowed, deletionScheduledAt, actor: "website-admin", createdAt: FieldValue.serverTimestamp() });
+  const updated = await reference.get();
+  res.json({ ok: true, license: licenseSummary(updated.id, updated.data()) });
+});
 app.post("/admin/updates/publish", (req, res) => {
   if (!process.env.ADMIN_UPDATE_TOKEN) {
     res.status(501).json({

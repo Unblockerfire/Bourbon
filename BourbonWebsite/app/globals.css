@@ -1258,3 +1258,393 @@ code {
 .docsCardGrid {
   margin-top: 1.5rem;
 }
+
+.formError {
+  margin-top: 1rem;
+  color: #ffb3b3;
+}
+
+.adminReportList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.adminReportList .infoCard {
+  min-height: 0;
+}
+
+.muted {
+  color: var(--dim);
+  font-size: 0.9rem;
+}
+
+/* App-like administration workspace. */
+body:has(.adminShell) .siteHeader,
+body:has(.adminShell) .siteFooter {
+  display: none;
+}
+
+.adminShell {
+  min-height: 100vh;
+  background: #090e18;
+}
+
+.adminWorkspace {
+  min-height: 100vh;
+  color: #edf4ff;
+  background:
+    radial-gradient(
+      circle at 84% -10%,
+      rgba(84, 174, 226, 0.16),
+      transparent 28rem
+    ),
+    #090e18;
+}
+
+.adminTopbar {
+  height: 64px;
+  padding: 0 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(150, 192, 221, 0.16);
+  background: rgba(10, 16, 28, 0.88);
+}
+
+.adminBrand,
+.adminBrandMark,
+.adminAccessBadge,
+.adminLiveBadge,
+.adminUnavailableBadge,
+.adminSidebarStatus,
+.adminNavItem {
+  display: flex;
+  align-items: center;
+}
+
+.adminBrand {
+  gap: 0.65rem;
+}
+.adminBrandMark {
+  width: 30px;
+  height: 30px;
+  justify-content: center;
+  color: #8cd4f8;
+  border: 1px solid rgba(126, 210, 249, 0.5);
+  border-radius: 9px;
+  background: rgba(91, 177, 220, 0.11);
+}
+.adminBrand span:last-child {
+  display: grid;
+  gap: 0.05rem;
+}
+.adminBrand strong {
+  font-size: 0.95rem;
+}
+.adminBrand small {
+  color: #7e90a7;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+.adminTopbar .button {
+  min-height: 34px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+}
+
+.adminFrame {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  min-height: calc(100vh - 64px);
+}
+.adminSidebar {
+  padding: 1.4rem 0.8rem;
+  border-right: 1px solid rgba(150, 192, 221, 0.14);
+  background: rgba(8, 14, 25, 0.68);
+}
+.adminSidebarLabel,
+.adminKicker {
+  margin: 0 0 0.65rem;
+  color: #77c9f1;
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.adminNavItem {
+  gap: 0.65rem;
+  padding: 0.65rem 0.7rem;
+  color: #92a2b7;
+  font-size: 0.84rem;
+  border-radius: 8px;
+}
+.adminNavItemActive {
+  color: #eff8ff;
+  background: rgba(99, 181, 224, 0.12);
+  box-shadow: inset 2px 0 #72c9f2;
+}
+.adminSidebarStatus {
+  gap: 0.45rem;
+  margin: 1.8rem 0.7rem;
+  color: #8293a7;
+  font-size: 0.72rem;
+}
+.adminSidebarStatus span,
+.adminLiveBadge > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #66d79e;
+  box-shadow: 0 0 10px rgba(102, 215, 158, 0.7);
+}
+
+.adminContent {
+  width: min(100%, 1020px);
+  padding: 3rem clamp(1.25rem, 4vw, 4rem) 4rem;
+}
+.adminTitleRow {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 1.7rem;
+}
+.adminTitleRow h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  letter-spacing: -0.045em;
+}
+.adminTitleRow p {
+  margin: 0.45rem 0 0;
+  max-width: 550px;
+  color: #8fa0b5;
+  font-size: 0.9rem;
+}
+.adminAccessBadge,
+.adminLiveBadge,
+.adminUnavailableBadge {
+  gap: 0.38rem;
+  white-space: nowrap;
+  border-radius: 999px;
+  font-size: 0.69rem;
+  font-weight: 750;
+}
+.adminAccessBadge {
+  padding: 0.38rem 0.6rem;
+  color: #a8dbf6;
+  background: rgba(82, 163, 204, 0.11);
+  border: 1px solid rgba(111, 196, 235, 0.23);
+}
+.adminLiveBadge {
+  padding: 0.35rem 0.55rem;
+  color: #9be6bb;
+  background: rgba(64, 171, 111, 0.1);
+}
+.adminUnavailableBadge {
+  padding: 0.35rem 0.55rem;
+  color: #f0bb73;
+  background: rgba(233, 158, 62, 0.1);
+}
+
+.adminPanel {
+  margin-top: 0.9rem;
+  padding: 1.15rem;
+  border: 1px solid rgba(151, 193, 222, 0.16);
+  border-radius: 13px;
+  background: linear-gradient(
+    135deg,
+    rgba(28, 42, 61, 0.86),
+    rgba(16, 25, 39, 0.92)
+  );
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.14);
+}
+.adminPanelHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.adminPanel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.adminPanelHeading p {
+  margin: 0.27rem 0 0;
+  color: #8b9bae;
+  font-size: 0.8rem;
+}
+.adminLookupRow {
+  display: flex;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+.adminLookupRow input,
+.adminControlGrid select,
+.adminControlGrid textarea {
+  width: 100%;
+  min-height: 36px;
+  color: #718198;
+  border: 1px solid rgba(145, 184, 211, 0.18);
+  border-radius: 7px;
+  background: rgba(4, 9, 16, 0.45);
+  padding: 0.55rem 0.65rem;
+  font: inherit;
+}
+.adminLookupRow button,
+.adminPanelFooter button {
+  border: 0;
+  border-radius: 7px;
+  padding: 0.5rem 0.8rem;
+  color: #6e7e90;
+  background: rgba(118, 148, 170, 0.13);
+  font: inherit;
+  font-weight: 750;
+}
+.adminNotice {
+  margin: 0.85rem 0 0;
+  color: #9baaba;
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+.adminActionPanel {
+  opacity: 0.86;
+}
+.adminControlGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.adminControlGrid label {
+  display: grid;
+  gap: 0.35rem;
+  color: #93a2b4;
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+.adminReasonField {
+  grid-column: 1 / -1;
+}
+.adminPanelFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.95rem;
+  color: #7f90a2;
+  font-size: 0.73rem;
+}
+.adminReportsPanel {
+  margin-top: 1.25rem;
+}
+.adminEmptyState {
+  margin: 1.25rem 0 0;
+  color: #8d9bad;
+  font-size: 0.84rem;
+}
+.adminReportTable {
+  margin-top: 1rem;
+  overflow: hidden;
+  border: 1px solid rgba(145, 188, 215, 0.13);
+  border-radius: 9px;
+}
+.adminReportHeader,
+.adminReportRow {
+  display: grid;
+  grid-template-columns: 0.75fr 1.4fr 1fr 1.1fr;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.7rem 0.8rem;
+}
+.adminReportHeader {
+  color: #7790a4;
+  background: rgba(6, 12, 22, 0.38);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.adminReportRow {
+  color: #c7d3e0;
+  border-top: 1px solid rgba(145, 188, 215, 0.1);
+  font-size: 0.78rem;
+}
+.adminReportRow strong {
+  color: #dff3ff;
+  font-size: 0.76rem;
+}
+.adminReportRow span {
+  display: grid;
+  gap: 0.15rem;
+}
+.adminReportRow small {
+  color: #8293a6;
+  font-size: 0.69rem;
+}
+.adminReportRow time {
+  color: #94a6b8;
+  font-size: 0.72rem;
+}
+
+@media (max-width: 700px) {
+  .adminFrame {
+    grid-template-columns: 1fr;
+  }
+  .adminSidebar {
+    display: none;
+  }
+  .adminTopbar {
+    padding: 0 1rem;
+  }
+  .adminContent {
+    padding: 2rem 1rem 3rem;
+  }
+  .adminTitleRow {
+    display: block;
+  }
+  .adminAccessBadge {
+    width: fit-content;
+    margin-top: 0.8rem;
+  }
+  .adminReportHeader {
+    display: none;
+  }
+  .adminReportRow {
+    grid-template-columns: 1fr 1fr;
+  }
+  .adminReportRow > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+.adminLicenseSummary dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem 1.2rem;
+  margin: 1rem 0 0;
+}
+.adminLicenseSummary dl > div {
+  display: grid;
+  gap: 0.15rem;
+}
+.adminLicenseSummary dt {
+  color: #7d91a7;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.adminLicenseSummary dd {
+  margin: 0;
+  color: #dfebf7;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 520px) {
+  .adminLicenseSummary dl {
+    grid-template-columns: 1fr;
+  }
+}

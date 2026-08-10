@@ -3,3 +3,15 @@ node_modules
 .npm-cache
 tsconfig.tsbuildinfo
 *.log
+
+# Environment files
+.env*
+.env.local
+!.env.example
+
+# Private credentials
+*.pem
+*.key
+*private-key*
+*service-account*.json
+*firebase-adminsdk-*.json
