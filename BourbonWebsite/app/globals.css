@@ -1233,3 +1233,28 @@ code {
     font-size: 2.65rem;
   }
 }
+
+/* Compact shared cards and make existing card links cover their card. */
+.capabilityItem,
+.infoGrid article,
+.ackRow,
+.docsCardGrid section,
+.docsFaq {
+  padding: 1rem;
+}
+.infoGrid article:has(a),
+.docsCardGrid section:has(a) {
+  position: relative;
+}
+.infoGrid article:has(a) > p > a::after,
+.docsCardGrid section:has(a) a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.infoGrid {
+  margin-bottom: 2.5rem;
+}
+.docsCardGrid {
+  margin-top: 1.5rem;
+}

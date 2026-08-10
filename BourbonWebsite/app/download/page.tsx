@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
-import { ExternalLink, Github, MonitorDown, ShieldCheck } from "lucide-react";
+import {
+  ExternalLink,
+  Github,
+  MonitorDown,
+  ShieldCheck,
+  Terminal
+} from "lucide-react";
 
 import { DownloadButton, ReleasesLink } from "@/components/DownloadButton";
 import { siteConfig } from "@/lib/siteConfig";
@@ -48,6 +54,13 @@ export default function DownloadPage() {
             <a href={siteConfig.releasesPageUrl}>
               GitHub releases <ExternalLink aria-hidden="true" size={14} />
             </a>
+          </p>
+        </article>
+        <article>
+          <Terminal aria-hidden="true" size={26} />
+          <h2>Homebrew</h2>
+          <p>
+            <code>brew install --cask Unblockerfire/Bourbon/bourbon</code>
           </p>
         </article>
       </section>
