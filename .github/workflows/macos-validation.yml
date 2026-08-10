@@ -1,0 +1,54 @@
+name: macOS Validation
+
+on:
+  push:
+    branches:
+      - Bourbon
+  pull_request:
+    branches:
+      - Bourbon
+  workflow_dispatch:
+
+jobs:
+  validate-macos:
+    name: Validate Bourbon on macOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Show environment
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Resolve Swift packages
+        working-directory: Source
+        run: |
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project Whisky.xcodeproj \
+            -scheme Whisky
+
+      - name: Run SwiftLint
+        working-directory: Source
+        run: swiftlint lint --strict
+
+      - name: Build Bourbon
+        working-directory: Source
+        run: |
+          set -o pipefail
+
+          xcodebuild \
+            -project Whisky.xcodeproj \
+            -scheme Whisky \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
