@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Bug, ExternalLink, Github, LifeBuoy, MessageCircle } from "lucide-react";
+import {
+  Bug,
+  ExternalLink,
+  Github,
+  LifeBuoy,
+  MessageCircle
+} from "lucide-react";
 
 import { siteConfig } from "@/lib/siteConfig";
 
