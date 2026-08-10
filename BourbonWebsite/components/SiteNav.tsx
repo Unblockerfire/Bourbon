@@ -1,12 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
-import {
-  Github,
-  HeartHandshake,
-  MessageCircle,
-  ShieldCheck
-} from "lucide-react";
+import { Github, HeartHandshake, ShieldCheck } from "lucide-react";
 
+import { DiscordIcon } from "@/components/DiscordIcon";
 import { siteConfig } from "@/lib/siteConfig";
 import { DownloadButton } from "./DownloadButton";
 
@@ -33,14 +29,12 @@ export function SiteNav() {
         </a>
       </nav>
       <div className="navActions">
-        `n{" "}
         <Link
-          className="iconLink"
+          className="iconLink discordLink"
           href="/discord"
           aria-label="Join Bourbon on Discord"
         >
-          `n <MessageCircle aria-hidden="true" size={19} />
-          `n{" "}
+          <DiscordIcon size={20} />
         </Link>
         <Link
           className="iconLink"

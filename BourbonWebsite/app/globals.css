@@ -185,6 +185,17 @@ video {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.discordLink {
+  border-color: rgba(134, 205, 234, 0.65);
+  background: rgba(134, 205, 234, 0.12);
+  color: var(--amber);
+  border-radius: 999px;
+}
+.discordLink:hover {
+  background: rgba(134, 205, 234, 0.22);
+  box-shadow: 0 0 22px rgba(134, 205, 234, 0.22);
+}
+
 .button {
   justify-content: center;
   gap: 0.55rem;
@@ -588,7 +599,18 @@ code {
   max-width: 760px;
 }
 
-.pageHero .button {
+.pageHero .discordLink {
+  border-color: rgba(134, 205, 234, 0.65);
+  background: rgba(134, 205, 234, 0.12);
+  color: var(--amber);
+  border-radius: 999px;
+}
+.discordLink:hover {
+  background: rgba(134, 205, 234, 0.22);
+  box-shadow: 0 0 22px rgba(134, 205, 234, 0.22);
+}
+
+.button {
   width: fit-content;
 }
 
@@ -628,7 +650,18 @@ code {
   line-height: 1.65;
 }
 
-.supportDiscordCta .button {
+.supportDiscordCta .discordLink {
+  border-color: rgba(134, 205, 234, 0.65);
+  background: rgba(134, 205, 234, 0.12);
+  color: var(--amber);
+  border-radius: 999px;
+}
+.discordLink:hover {
+  background: rgba(134, 205, 234, 0.22);
+  box-shadow: 0 0 22px rgba(134, 205, 234, 0.22);
+}
+
+.button {
   flex: 0 0 auto;
 }
 .smallPanel {

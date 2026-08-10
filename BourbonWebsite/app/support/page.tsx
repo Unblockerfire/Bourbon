@@ -1,23 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import {
-  Bug,
-  ExternalLink,
-  Github,
-  LifeBuoy,
-  MessageCircle
-} from "lucide-react";
-
+import { Bug, ExternalLink, Github, LifeBuoy } from "lucide-react";
+import { DiscordIcon } from "@/components/DiscordIcon";
 import { siteConfig } from "@/lib/siteConfig";
-
 export const metadata: Metadata = {
   title: "Support",
   description: `Support resources for ${siteConfig.productName} on macOS.`,
-  alternates: {
-    canonical: "/support"
-  }
+  alternates: { canonical: "/support" }
 };
-
 export default function SupportPage() {
   return (
     <main id="main" className="pageShell">
@@ -29,7 +19,6 @@ export default function SupportPage() {
           report flow when an installer or bottle needs closer attention.
         </p>
       </section>
-
       <section className="infoGrid">
         <article>
           <Github aria-hidden="true" size={26} />
@@ -60,6 +49,20 @@ export default function SupportPage() {
             storage.
           </p>
         </article>
+      </section>
+      <section className="supportDiscordCta" aria-labelledby="discord-title">
+        <div>
+          <p className="eyebrow">Community support</p>
+          <h2 id="discord-title">Need more help? Join the Discord!</h2>
+          <p>
+            Chat with other Bourbon users, share what you are trying to run, and
+            get help with bottles and installers.
+          </p>
+        </div>
+        <Link className="button buttonPrimary" href="/discord">
+          <DiscordIcon size={19} />
+          <span>Join Discord</span>
+        </Link>
       </section>
     </main>
   );
