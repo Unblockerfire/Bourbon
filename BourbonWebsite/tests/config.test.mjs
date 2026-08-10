@@ -20,7 +20,7 @@ test("public website config uses Bourbon production URLs", () => {
 test("download configuration is explicit and non-empty", () => {
   assert.match(
     config,
-    /directDownloadUrl:\s*\n\s*"https:\/\/github\.com\/Unblockerfire\/Bourbon\/releases\/download\/v2\.0\.6\/Bourbon2\.0\.6\.dmg"/
+    /directDownloadUrl:\s*\n\s*"https:\/\/github\.com\/Unblockerfire\/Bourbon\/releases\/download\/v2\.0\.7\/Bourbon2\.0\.7\.dmg"/
   );
   assert.match(config, /minimumMacOSVersion: "14\.0"/);
 });

@@ -30,6 +30,11 @@ export default function DownloadPage() {
           the newest DMG asset; otherwise it falls back to the configured
           release.
         </p>
+        <p>
+          Bourbon 2.0.7 is a manual transition release. Download and install it
+          directly; existing Bourbon installations will not receive it through
+          the in-app updater.
+        </p>
         <div className="buttonRow">
           <DownloadButton />
           <ReleasesLink />
