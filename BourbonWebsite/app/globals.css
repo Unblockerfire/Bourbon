@@ -1,18 +1,18 @@
 :root {
-  --bg: #101722;
-  --bg-deep: #050608;
-  --panel: #1b2431;
-  --panel-strong: #222d3c;
+  --bg: #0b1220;
+  --bg-deep: #02060c;
+  --panel: #111c2b;
+  --panel-strong: #17283c;
   --panel-soft: rgba(255, 255, 255, 0.055);
   --line: rgba(255, 255, 255, 0.14);
-  --line-strong: rgba(255, 188, 87, 0.5);
+  --line-strong: rgba(134, 205, 234, 0.55);
   --text: #f8fafc;
   --muted: #aab3c2;
   --dim: #7b8492;
-  --amber: #f7a52c;
-  --orange: #ee6b2d;
+  --amber: #86cdea;
+  --orange: #3e8db7;
   --rose: #f04d4d;
-  --focus: #ffd27a;
+  --focus: #c8efff;
   --max: 1280px;
   --radius: 8px;
   --shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
@@ -35,15 +35,15 @@ body {
   background:
     radial-gradient(
       circle at top right,
-      rgba(238, 107, 45, 0.18),
+      rgba(134, 205, 234, 0.2),
       transparent 28rem
     ),
     linear-gradient(
       180deg,
       var(--bg) 0%,
-      #101722 38%,
-      #030405 39%,
-      #030405 62%,
+      #0b1220 38%,
+      #02060c 39%,
+      #02060c 62%,
       var(--bg) 63%
     );
   color: var(--text);
@@ -62,7 +62,7 @@ a {
 }
 
 a:hover {
-  color: #fff2d7;
+  color: #e5f7ff;
 }
 
 img,
@@ -145,7 +145,7 @@ video {
 
 .brandMark img {
   border-radius: 8px;
-  box-shadow: 0 10px 28px rgba(238, 107, 45, 0.2);
+  box-shadow: 0 10px 28px rgba(134, 205, 234, 0.28);
 }
 
 .navLinks {
@@ -211,13 +211,13 @@ video {
 .buttonCompact {
   background: linear-gradient(135deg, var(--amber), var(--orange));
   color: #17100a;
-  box-shadow: 0 16px 40px rgba(238, 107, 45, 0.24);
+  box-shadow: 0 16px 40px rgba(134, 205, 234, 0.28);
 }
 
 .buttonPrimary:hover,
 .buttonCompact:hover {
   color: #0f0a06;
-  box-shadow: 0 18px 48px rgba(238, 107, 45, 0.34);
+  box-shadow: 0 18px 48px rgba(134, 205, 234, 0.4);
 }
 
 .buttonPrimary small {
@@ -536,7 +536,7 @@ h3 {
 code {
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.28);
-  color: #ffe1aa;
+  color: #d7f3ff;
   padding: 0.15rem 0.35rem;
 }
 
@@ -601,7 +601,7 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  color: #ffe1aa;
+  color: #d7f3ff;
   font-weight: 800;
 }
 
@@ -659,7 +659,7 @@ code {
 }
 
 .ackRow span {
-  color: #ffe1aa;
+  color: #d7f3ff;
   font-weight: 800;
 }
 
@@ -707,8 +707,8 @@ code {
 .docsSidebar a:hover,
 .docsSidebar a.active,
 .docsMobileNav a[aria-current="page"] {
-  background: rgba(247, 165, 44, 0.12);
-  color: #ffe1aa;
+  background: rgba(134, 205, 234, 0.14);
+  color: #d7f3ff;
 }
 
 .docsMobileNav {
@@ -821,7 +821,7 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  color: #ffe1aa;
+  color: #d7f3ff;
   font-weight: 850;
 }
 
@@ -952,15 +952,15 @@ code {
     background:
       radial-gradient(
         circle at top,
-        rgba(238, 107, 45, 0.2),
+        rgba(134, 205, 234, 0.28),
         transparent 24rem
       ),
       linear-gradient(
         180deg,
         var(--bg) 0%,
         var(--bg) 34%,
-        #030405 35%,
-        #030405 60%,
+        #02060c 35%,
+        #02060c 60%,
         var(--bg) 61%
       );
   }

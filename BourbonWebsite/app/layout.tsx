@@ -6,7 +6,7 @@ import { siteConfig } from "@/lib/siteConfig";
 import "./globals.css";
 
 export const viewport: Viewport = {
-  themeColor: "#111827",
+  themeColor: "#0b1220",
   colorScheme: "dark",
   width: "device-width",
   initialScale: 1
