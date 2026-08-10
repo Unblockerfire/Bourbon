@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Github, HeartHandshake, ShieldCheck } from "lucide-react";
+import { Github, HeartHandshake, MessageCircle, ShieldCheck } from "lucide-react";
 
 import { siteConfig } from "@/lib/siteConfig";
 import { DownloadButton } from "./DownloadButton";
@@ -27,7 +27,7 @@ export function SiteNav() {
           <Github aria-hidden="true" size={20} />
         </a>
       </nav>
-      <div className="navActions">
+      <div className="navActions">`n        <Link className="iconLink" href="/discord" aria-label="Join Bourbon on Discord">`n          <MessageCircle aria-hidden="true" size={19} />`n        </Link>
         <Link
           className="iconLink"
           href="/acknowledgments"

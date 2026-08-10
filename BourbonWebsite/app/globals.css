@@ -605,6 +605,32 @@ code {
   font-weight: 800;
 }
 
+.supportDiscordCta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-top: 1rem;
+  padding: 2rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.supportDiscordCta h2 {
+  margin-top: 0.55rem;
+  font-size: clamp(1.7rem, 3vw, 2.5rem);
+  line-height: 1.08;
+}
+
+.supportDiscordCta p:not(.eyebrow) {
+  max-width: 650px;
+  margin-top: 0.75rem;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.supportDiscordCta .button {
+  flex: 0 0 auto;
+}
 .smallPanel {
   margin-left: 0;
   margin-right: 0;
