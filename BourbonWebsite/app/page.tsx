@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 import { DownloadButton, ReleasesLink } from "@/components/DownloadButton";
-import { featureCards, siteConfig } from "@/lib/siteConfig";
+import { siteConfig } from "@/lib/siteConfig";
 
 const facts = [
   `${siteConfig.productName} ${siteConfig.currentVersion}`,
@@ -77,7 +77,7 @@ export default function HomePage() {
         <div className="heroCopy">
           <Image
             className="heroIcon"
-            src="/assets/bourbon-app-icon.png"
+            src="/assets/bourbon-app-icon-20260809.png"
             alt=""
             width={132}
             height={132}
@@ -127,28 +127,6 @@ export default function HomePage() {
         </h2>
       </section>
 
-      <section className="featureGrid" aria-label="Bourbon feature previews">
-        {featureCards.map((card, index) => (
-          <article
-            className={`featureCard featureCard${index + 1}`}
-            key={card.title}
-          >
-            <div className="featureImage">
-              <Image
-                src={card.image}
-                alt={card.alt}
-                width={1478}
-                height={1628}
-              />
-            </div>
-            <div>
-              <h2>{card.title}</h2>
-              <p>{card.description}</p>
-            </div>
-          </article>
-        ))}
-      </section>
-
       <section className="capabilityBand" aria-labelledby="capability-title">
         <div>
           <p className="eyebrow">Bourbon in practice</p>
@@ -188,7 +166,7 @@ export default function HomePage() {
       <footer className="siteFooter">
         <div>
           <Image
-            src="/assets/bourbon-app-icon.png"
+            src="/assets/bourbon-app-icon-20260809.png"
             alt=""
             width={36}
             height={36}

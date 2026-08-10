@@ -26,15 +26,15 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: "/assets/bourbon-app-icon.png?v=bourbon",
+        url: "/assets/bourbon-app-icon-20260809.png",
         sizes: "1024x1024",
         type: "image/png"
       }
     ],
-    shortcut: [{ url: "/assets/bourbon-app-icon.png?v=bourbon" }],
+    shortcut: [{ url: "/assets/bourbon-app-icon-20260809.png" }],
     apple: [
       {
-        url: "/assets/bourbon-app-icon.png?v=bourbon",
+        url: "/assets/bourbon-app-icon-20260809.png",
         sizes: "1024x1024",
         type: "image/png"
       }

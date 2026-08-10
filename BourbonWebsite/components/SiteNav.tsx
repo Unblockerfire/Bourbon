@@ -10,7 +10,7 @@ export function SiteNav() {
     <header className="siteHeader">
       <Link className="brandMark" href="/" aria-label="Bourbon home">
         <Image
-          src="/assets/bourbon-app-icon.png"
+          src="/assets/bourbon-app-icon-20260809.png"
           alt=""
           width={44}
           height={44}
