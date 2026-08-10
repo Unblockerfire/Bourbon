@@ -874,7 +874,10 @@ enum BourbonLicenseAPI {
         return try decoder.decode(LicenseValidationResult.self, from: data)
     }
 
-    private static func migrateLegacyLicense(license: BourbonLicenseRecord, token: String) async throws -> BourbonLicenseRecord {
+    private static func migrateLegacyLicense(
+        license: BourbonLicenseRecord,
+        token: String
+    ) async throws -> BourbonLicenseRecord {
         var request = URLRequest(url: BourbonAPIConfiguration.licenseMigrationURL)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
