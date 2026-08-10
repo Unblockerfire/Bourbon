@@ -87,6 +87,7 @@ function appcastForChannel(channel, release) {
   return `<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0"
   xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+  xmlns:bourbon="https://getbourbon.app/appcast"
   xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
     <title>${escapeXml(title)}</title>
@@ -98,10 +99,14 @@ function appcastForChannel(channel, release) {
       <sparkle:version>${escapeXml(release.build)}</sparkle:version>
       <sparkle:shortVersionString>${escapeXml(release.version)}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>${escapeXml(release.minimumSystemVersion)}</sparkle:minimumSystemVersion>
+      ${release.minimumAutoupdateVersion
+        ? `<sparkle:minimumAutoupdateVersion>${escapeXml(release.minimumAutoupdateVersion)}</sparkle:minimumAutoupdateVersion>`
+        : ""}
       <enclosure
         url="${escapeXml(release.dmgUrl)}"
         length="${escapeXml(release.dmgLength)}"
         type="application/x-apple-diskimage"${signatureAttribute} />
+      ${release.releaseType ? `<bourbon:releaseType>${escapeXml(release.releaseType)}</bourbon:releaseType>` : ""}
     </item>
   </channel>
 </rss>
@@ -138,6 +143,10 @@ function isValidPublishBody(body) {
     body.dmgLength > 0 &&
     typeof body.pubDate === "string" &&
     typeof body.minimumSystemVersion === "string" &&
+    (body.minimumAutoupdateVersion === null ||
+      body.minimumAutoupdateVersion === undefined ||
+      typeof body.minimumAutoupdateVersion === "string") &&
+    (body.releaseType === null || body.releaseType === undefined || typeof body.releaseType === "string") &&
     (body.edSignature === null || body.edSignature === undefined || typeof body.edSignature === "string");
 }
 
@@ -172,6 +181,8 @@ app.post("/admin/updates/publish", (req, res) => {
     dmgLength: req.body.dmgLength,
     pubDate: req.body.pubDate,
     minimumSystemVersion: req.body.minimumSystemVersion,
+    minimumAutoupdateVersion: req.body.minimumAutoupdateVersion ?? null,
+    releaseType: req.body.releaseType ?? null,
     edSignature: req.body.edSignature ?? null
   };
 

@@ -6,6 +6,8 @@
     "dmgLength": 11352511,
     "pubDate": "2026-07-06T03:50:20Z",
     "minimumSystemVersion": "14.0",
+    "minimumAutoupdateVersion": "2.0.0",
+    "releaseType": "patch",
     "edSignature": "01MrOsBh9kERl5ZMNGXOCpHi14t5WtQl7JK/LkawONwqfeNb0p3irdK6Sxzp6hVXdN9Ggft9ZrASmdmpUOCGCA=="
   },
   "pre": {
@@ -15,6 +17,8 @@
     "dmgLength": 11352511,
     "pubDate": "2026-07-06T03:50:20Z",
     "minimumSystemVersion": "14.0",
+    "minimumAutoupdateVersion": "2.0.0",
+    "releaseType": "patch",
     "edSignature": "01MrOsBh9kERl5ZMNGXOCpHi14t5WtQl7JK/LkawONwqfeNb0p3irdK6Sxzp6hVXdN9Ggft9ZrASmdmpUOCGCA=="
   }
 }

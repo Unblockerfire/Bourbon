@@ -1,0 +1,16 @@
+.git
+.github
+.DS_Store
+build
+*.log
+node_modules
+**/node_modules
+**/.next
+**/.env
+**/.env.*
+!**/.env.example
+Source
+Scripts
+*.xcodeproj
+.codex
+.agents

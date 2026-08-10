@@ -1,0 +1,27 @@
+:8080 {
+	encode zstd gzip
+
+	@health path /health
+	handle @health {
+		respond "ok" 200
+	}
+
+	@www host www.getbourbon.app
+	handle @www {
+		redir https://getbourbon.app{uri} permanent
+	}
+
+	@api host api.getbourbon.app bourbonruntimeapi.fly.dev
+	handle @api {
+		reverse_proxy 127.0.0.1:3001
+	}
+
+	@runtimeApiPaths path /runtime/latest /updates/* /reports/* /admin/*
+	handle @runtimeApiPaths {
+		reverse_proxy 127.0.0.1:3001
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}

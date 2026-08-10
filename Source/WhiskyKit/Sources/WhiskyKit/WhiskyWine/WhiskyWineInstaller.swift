@@ -36,7 +36,7 @@ public class WhiskyWineInstaller {
     ].joined(separator: "/")
 
     public static let runtimeAPIBaseURLDefaultsKey = "bourbonRuntimeAPIBaseURL"
-    public static let defaultRuntimeAPIBaseURLString = "https://bourbonruntimeapi.fly.dev"
+    public static let defaultRuntimeAPIBaseURLString = "https://api.getbourbon.app"
 
     public static var archiveURL: URL {
         configuredURL(forKey: archiveURLDefaultsKey, defaultValue: defaultArchiveURLString)
@@ -133,7 +133,7 @@ public class WhiskyWineInstaller {
             try writeInstalledVersionMarkerIfNeeded()
             try FileManager.default.removeItem(at: from)
         } catch {
-            Logger.wineKit.error("Failed to install WhiskyWine from `\(from.path)`: \(error)")
+            Logger.wineKit.error("Failed to install BourbonWine from `\(from.path)`: \(error)")
             throw error
         }
     }
@@ -144,7 +144,7 @@ public class WhiskyWineInstaller {
         sourceURL: URL
     ) throws -> URL {
         Logger.wineKit.info(
-            "Received WhiskyWine download from `\(sourceURL.absoluteString)` at `\(temporaryURL.path)`"
+            "Received BourbonWine download from `\(sourceURL.absoluteString)` at `\(temporaryURL.path)`"
         )
 
         try validateDownloadResponse(response, sourceURL: sourceURL)
@@ -160,7 +160,7 @@ public class WhiskyWineInstaller {
         try FileManager.default.moveItem(at: temporaryURL, to: savedURL)
 
         Logger.wineKit.info(
-            "Downloaded WhiskyWine from `\(sourceURL.absoluteString)` to `\(savedURL.path(percentEncoded: false))`"
+            "Downloaded BourbonWine from `\(sourceURL.absoluteString)` to `\(savedURL.path(percentEncoded: false))`"
         )
         return savedURL
     }
@@ -178,7 +178,7 @@ public class WhiskyWineInstaller {
         try FileManager.default.copyItem(at: url, to: savedURL)
 
         Logger.wineKit.info(
-            "Using local WhiskyWine archive `\(url.path(percentEncoded: false))` copied to `\(savedURL.path)`"
+            "Using local BourbonWine archive `\(url.path(percentEncoded: false))` copied to `\(savedURL.path)`"
         )
         return savedURL
     }
@@ -187,7 +187,7 @@ public class WhiskyWineInstaller {
         do {
             try FileManager.default.removeItem(at: libraryFolder)
         } catch {
-            print("Failed to uninstall WhiskyWine: \(error)")
+            print("Failed to uninstall BourbonWine: \(error)")
         }
     }
 
@@ -215,7 +215,7 @@ public class WhiskyWineInstaller {
             let info = try decoder.decode(WhiskyWineVersionInfo.self, from: data)
             return info.version
         } catch {
-            Logger.wineKit.error("Failed to read WhiskyWine version plist `\(versionPlist.path)`: \(error)")
+            Logger.wineKit.error("Failed to read BourbonWine version plist `\(versionPlist.path)`: \(error)")
             return nil
         }
     }
@@ -264,7 +264,7 @@ public class WhiskyWineInstaller {
             let remoteInfo = try decoder.decode(WhiskyWineVersionInfo.self, from: data)
             return remoteInfo.version
         } catch {
-            Logger.wineKit.warning("Failed to load remote WhiskyWine version from `\(versionURL)`: \(error)")
+            Logger.wineKit.warning("Failed to load remote BourbonWine version from `\(versionURL)`: \(error)")
             return nil
         }
     }
@@ -275,7 +275,7 @@ public class WhiskyWineInstaller {
             return url
         }
 
-        Logger.wineKit.error("Invalid WhiskyWine URL configured for `\(key)`: \(string)")
+        Logger.wineKit.error("Invalid BourbonWine URL configured for `\(key)`: \(string)")
         return URL(string: defaultValue) ?? URL(fileURLWithPath: "/")
     }
 
@@ -377,21 +377,21 @@ enum WhiskyWineInstallerError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingHTTPResponse(let url):
-            return "WhiskyWine download did not return an HTTP response: \(url.absoluteString)"
+            return "BourbonWine download did not return an HTTP response: \(url.absoluteString)"
         case .badHTTPStatus(let url, let statusCode):
-            return "WhiskyWine download failed with HTTP \(statusCode): \(url.absoluteString)"
+            return "BourbonWine download failed with HTTP \(statusCode): \(url.absoluteString)"
         case .invalidContentType(let url, let contentType):
-            return "WhiskyWine download returned \(contentType), not a tar.gz archive: \(url.absoluteString)"
+            return "BourbonWine download returned \(contentType), not a tar.gz archive: \(url.absoluteString)"
         case .invalidArchive(let sourceURL, let savedURL, let reason):
             let source = sourceURL?.absoluteString ?? "local file"
-            var message = "WhiskyWine download is not a valid tar.gz archive: \(source) saved at \(savedURL.path)"
+            var message = "BourbonWine download is not a valid tar.gz archive: \(source) saved at \(savedURL.path)"
             if let reason, !reason.isEmpty {
                 message += ". \(reason)"
             }
             return message
         case .invalidArchiveLayout(let sourceURL, let savedURL):
             let source = sourceURL?.absoluteString ?? "local file"
-            return "WhiskyWine archive does not contain a Libraries folder: \(source) saved at \(savedURL.path)"
+            return "BourbonWine archive does not contain a Libraries folder: \(source) saved at \(savedURL.path)"
         }
     }
 }

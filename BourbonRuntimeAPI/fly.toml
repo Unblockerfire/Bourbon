@@ -2,12 +2,19 @@ app = "bourbonruntimeapi"
 primary_region = "sjc"
 
 [http_service]
-  internal_port = 3000
+  internal_port = 8080
   force_https = true
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 0
   processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "15s"
+    interval = "15s"
+    method = "GET"
+    path = "/health"
+    timeout = "2s"
 
 [[vm]]
   memory = "1gb"

@@ -58,7 +58,6 @@
 		8C2AEFC82AED79B700CB568F /* WhiskyKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8C2AEFC72AED79B700CB568F /* WhiskyKit */; };
 		8C2AEFCA2AED79CD00CB568F /* WhiskyKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8C2AEFC92AED79CD00CB568F /* WhiskyKit */; };
 		8C73E1342AF472FC00B6FB45 /* ProgramMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C73E1332AF472FC00B6FB45 /* ProgramMenuView.swift */; };
-		8CB681E52AED7C6F0018D319 /* WhiskyKit in Resources */ = {isa = PBXBuildFile; fileRef = 8CB681E42AED7C6F0018D319 /* WhiskyKit */; };
 		8CB681E72AED7CD00018D319 /* WhiskyKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8CB681E62AED7CD00018D319 /* WhiskyKit */; };
 		AB0BCABD2B61036E00E21C31 /* RunningProcessesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0BCABC2B61036E00E21C31 /* RunningProcessesView.swift */; };
 		C0D3C0DE0000000000000002 /* ProblemReportingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3C0DE0000000000000001 /* ProblemReportingView.swift */; };
@@ -559,7 +558,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8CB681E52AED7C6F0018D319 /* WhiskyKit in Resources */,
 				6E40495D29CCA19C006E3F1B /* Preview Assets.xcassets in Resources */,
 				45DF7C9D2FEEE9E00001AFE8 /* BourbonIntro.mov in Resources */,
 				6EB58AC92AEACE5E00B1ED3F /* Localizable.xcstrings in Resources */,
@@ -817,7 +815,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "A Windows application is trying to access the camera.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © Bourbon ( Created from Whisky ©)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A Windows application is trying to access the microphone.";
-				INFOPLIST_KEY_SUFeedURL = "https://bourbonruntimeapi.fly.dev/updates/pre/appcast.xml";
+				INFOPLIST_KEY_SUFeedURL = "https://api.getbourbon.app/updates/pre/appcast.xml";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -859,7 +857,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "A Windows application is trying to access the camera.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © Bourbon ( Created from Whisky ©)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A Windows application is trying to access the microphone.";
-				INFOPLIST_KEY_SUFeedURL = "https://bourbonruntimeapi.fly.dev/updates/pre/appcast.xml";
+				INFOPLIST_KEY_SUFeedURL = "https://api.getbourbon.app/updates/pre/appcast.xml";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

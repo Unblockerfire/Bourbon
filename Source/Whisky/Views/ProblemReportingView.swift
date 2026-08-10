@@ -515,7 +515,7 @@ enum BourbonRedactor {
 
 enum BourbonReportClient {
     static func submit(_ report: BourbonSubmittedReport) async throws -> String {
-        guard let url = URL(string: "https://bourbonruntimeapi.fly.dev/reports/bug") else {
+        guard let url = URL(string: "https://api.getbourbon.app/reports/bug") else {
             throw URLError(.badURL)
         }
 

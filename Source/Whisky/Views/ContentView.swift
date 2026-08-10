@@ -261,7 +261,7 @@ struct ContentView: View {
         let alert = NSAlert()
         alert.messageText = "Older Wine Runner Detected"
         alert.informativeText = """
-        Bourbon found an older WhiskyWine runtime marker at:
+        Bourbon found an older BourbonWine runtime marker at:
         \(markerURL.lastPathComponent)
 
         For the best BourbonWine compatibility, remove the old runner and install BourbonWine again.

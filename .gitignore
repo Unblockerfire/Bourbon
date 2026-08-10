@@ -96,6 +96,7 @@ PROTECTRED/
 
 # Private runtime files
 PROTECTRED/
+/BourbonRuntimeAPI/node_modules/
 *.tar.gz
 *.tar.gz.*
 BourbonWine-package/

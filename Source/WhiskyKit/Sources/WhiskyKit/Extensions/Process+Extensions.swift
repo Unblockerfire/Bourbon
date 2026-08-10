@@ -75,8 +75,8 @@ public extension Process {
                 continuation.yield(.message(line))
                 guard !line.isEmpty else { return }
                 #if DEBUG
-                Logger.wineKit.info("[Whisky Wine Debug][stdout] \(line, privacy: .public)")
-                fileHandle?.write(line: "[Whisky Wine Debug][stdout] \(line)")
+                Logger.wineKit.info("[BourbonWine Debug][stdout] \(line, privacy: .public)")
+                fileHandle?.write(line: "[BourbonWine Debug][stdout] \(line)")
                 #endif
             }
 
@@ -85,8 +85,8 @@ public extension Process {
                 continuation.yield(.error(line))
                 guard !line.isEmpty else { return }
                 #if DEBUG
-                Logger.wineKit.warning("[Whisky Wine Debug][stderr] \(line, privacy: .public)")
-                fileHandle?.write(line: "[Whisky Wine Debug][stderr] \(line)")
+                Logger.wineKit.warning("[BourbonWine Debug][stderr] \(line, privacy: .public)")
+                fileHandle?.write(line: "[BourbonWine Debug][stderr] \(line)")
                 #endif
             }
 
@@ -151,7 +151,7 @@ public extension Process {
             reason = "unknown"
         }
         let message = """
-        [Whisky Wine Debug] Process terminated
+        [BourbonWine Debug] Process terminated
         Name: \(name)
         Termination status: \(terminationStatus)
         Termination reason: \(reason)

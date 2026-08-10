@@ -54,7 +54,7 @@
 		</dict>
 	</array>
 	<key>SUFeedURL</key>
-	<string>https://bourbonruntimeapi.fly.dev/updates/pre/appcast.xml</string>
+	<string>https://api.getbourbon.app/updates/pre/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>g6Kuq+d2xHZKiDPUJN6lfzV/podfSZu0SdCaXBt5JPM=</string>
 	<key>UTExportedTypeDeclarations</key>

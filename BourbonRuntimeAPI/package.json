@@ -2,6 +2,9 @@
   "name": "bourbon-runtime-api",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  },
   "scripts": {
     "start": "node server.js"
   },

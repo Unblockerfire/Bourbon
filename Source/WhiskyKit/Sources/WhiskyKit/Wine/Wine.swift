@@ -73,7 +73,7 @@ public class Wine {
 
             return """
 
-            [Whisky Wine Debug] App startup custom Wine configuration
+            [BourbonWine Debug] App startup custom Wine configuration
             Visible WHISKY_* process environment:
             \(format(values: whiskyEnvironment))
             Visible custom Wine UserDefaults:
@@ -560,7 +560,7 @@ private extension Wine {
 
         let message = """
 
-        [Whisky Wine Debug] Preparing Wine process launch
+        [BourbonWine Debug] Preparing Wine process launch
         Launch name: \(name)
         WHISKY_CUSTOM_WINE_ROOT detected: \(rootOverride != nil)
         WHISKY_CUSTOM_WINE_ROOT value: \(rootOverride ?? "<not set>")
@@ -579,7 +579,7 @@ private extension Wine {
         file output: \(fileOutput)
         Filtered child environment:
         \(filteredEnvironment)
-        Filtered Whisky app environment:
+        Filtered Bourbon app environment:
         \(filteredParentEnvironment)
 
         """
@@ -599,7 +599,7 @@ private extension Wine {
             || errorText.contains("Attachment of code signature supplement failed") {
             rosettaContext = """
             Rosetta/code-signature context: failure happened while calling Process.run, \
-            before Whisky received a running Wine process.
+            before Bourbon received a running Wine process.
             """
         } else {
             rosettaContext = "Rosetta/code-signature context: " +
@@ -608,7 +608,7 @@ private extension Wine {
 
         let message = """
 
-        [Whisky Wine Debug] Process launch error
+        [BourbonWine Debug] Process launch error
         Launch name: \(name)
         Process executable: \(executableURL.path(percentEncoded: false))
         Error localizedDescription: \(error.localizedDescription)

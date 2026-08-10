@@ -1,0 +1,17 @@
+{
+  "name": "Bourbon",
+  "short_name": "Bourbon",
+  "description": "Run Windows apps on your Mac with a native macOS feel.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "/assets/bourbon-app-icon.png?v=bourbon",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

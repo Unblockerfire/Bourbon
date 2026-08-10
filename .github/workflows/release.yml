@@ -149,7 +149,7 @@ jobs:
             -clonedSourcePackagesDirPath "$PACKAGE_CACHE" \
             CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION="${{ steps.version.outputs.version }}" \
-            INFOPLIST_KEY_SUFeedURL="https://bourbonruntimeapi.fly.dev/updates/pre/appcast.xml" \
+            INFOPLIST_KEY_SUFeedURL="https://api.getbourbon.app/updates/pre/appcast.xml" \
             build
 
       - name: Write build metadata
@@ -621,3 +621,68 @@ jobs:
             ${{ steps.paths.outputs.dmg }}
             ${{ steps.paths.outputs.sha256 }}
             ${{ steps.paths.outputs.appcast }}
+
+      - name: Update Homebrew tap
+        if: github.ref_type == 'tag'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          DMG_PATH: ${{ steps.paths.outputs.dmg }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is not configured."
+            exit 1
+          fi
+
+          DMG_SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
+          TAP_DIR="$RUNNER_TEMP/homebrew-bourbon"
+
+          git clone \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/Unblockerfire/homebrew-bourbon.git" \
+            "$TAP_DIR"
+
+          cd "$TAP_DIR"
+
+          python3 - "$RELEASE_VERSION" "$DMG_SHA256" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          version, sha256 = sys.argv[1:]
+          cask_path = Path("Casks/bourbon.rb")
+          text = cask_path.read_text(encoding="utf-8")
+
+          text, version_count = re.subn(
+              r'  version "[^"]+"',
+              f'  version "{version}"',
+              text,
+              count=1,
+          )
+
+          text, sha_count = re.subn(
+              r'  sha256 (?::no_check|"[^"]+")',
+              f'  sha256 "{sha256}"',
+              text,
+              count=1,
+          )
+
+          if version_count != 1 or sha_count != 1:
+              raise SystemExit("Could not safely update version and SHA-256 in bourbon.rb")
+
+          cask_path.write_text(text, encoding="utf-8")
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "Homebrew cask is already current."
+            exit 0
+          fi
+
+          git add Casks/bourbon.rb
+          git commit -m "Update Bourbon cask to ${RELEASE_VERSION}"
+          git push origin main
