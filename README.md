@@ -6,7 +6,7 @@
 
 Run Windows applications and games on macOS with a native SwiftUI experience.
 
-Preparingfor a AUDIT
+Preparing for an AUDIT
 
 [![Release](https://img.shields.io/github/v/release/Unblockerfire/Bourbon?style=for-the-badge)](https://github.com/Unblockerfire/Bourbon/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/Unblockerfire/Bourbon/release.yml?style=for-the-badge&label=BUILD)](https://github.com/Unblockerfire/Bourbon/actions/workflows/release.yml)
