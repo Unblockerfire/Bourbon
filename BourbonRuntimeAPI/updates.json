@@ -1,24 +1,24 @@
 {
-    "stable":  {
-                   "version":  "2.0.5",
-                   "build":  "100031",
-                   "dmgUrl":  "https://github.com/Unblockerfire/Bourbon/releases/download/v2.0.5/Bourbon2.0.5.dmg",
-                   "dmgLength":  11305505,
-                   "pubDate":  "2026-08-10T02:50:59Z",
-                   "minimumSystemVersion":  "14.0",
-                   "minimumAutoupdateVersion":  "2.0.0",
-                   "releaseType":  "patch",
-                   "edSignature":  "rhQYZTRllU2q8wC8Tfd5Z2NuvuQjhPWTq3XK5hR0kD7cAhlAEFFtmyngrBRx3MHClk+79XtdVhqw55RyNcm/Ag=="
-               },
-    "pre":  {
-                "version":  "2.0.5",
-                "build":  "100031",
-                "dmgUrl":  "https://github.com/Unblockerfire/Bourbon/releases/download/v2.0.5/Bourbon2.0.5.dmg",
-                "dmgLength":  11305505,
-                "pubDate":  "2026-08-10T02:50:59Z",
-                "minimumSystemVersion":  "14.0",
-                "minimumAutoupdateVersion":  "2.0.0",
-                "releaseType":  "patch",
-                "edSignature":  "rhQYZTRllU2q8wC8Tfd5Z2NuvuQjhPWTq3XK5hR0kD7cAhlAEFFtmyngrBRx3MHClk+79XtdVhqw55RyNcm/Ag=="
-            }
+  "stable": {
+    "version": "2.0.8",
+    "build": "100034",
+    "dmgUrl": "https://github.com/Unblockerfire/Bourbon/releases/download/v2.0.8/Bourbon2.0.8.dmg",
+    "dmgLength": 11312446,
+    "pubDate": "2026-08-25T22:14:06Z",
+    "minimumSystemVersion": "14.0",
+    "minimumAutoupdateVersion": "2.0.0",
+    "releaseType": "patch",
+    "edSignature": "4Z1Wq4+DuIJKkYgT1WeA6zF4MNLh49w7lDD/bWavvOkodQ1ebj64+yc8pEFNF1CDtakDkbLJl4ZnsYLzi3sfCA=="
+  },
+  "pre": {
+    "version": "2.0.8",
+    "build": "100034",
+    "dmgUrl": "https://github.com/Unblockerfire/Bourbon/releases/download/v2.0.8/Bourbon2.0.8.dmg",
+    "dmgLength": 11312446,
+    "pubDate": "2026-08-25T22:14:06Z",
+    "minimumSystemVersion": "14.0",
+    "minimumAutoupdateVersion": "2.0.0",
+    "releaseType": "patch",
+    "edSignature": "4Z1Wq4+DuIJKkYgT1WeA6zF4MNLh49w7lDD/bWavvOkodQ1ebj64+yc8pEFNF1CDtakDkbLJl4ZnsYLzi3sfCA=="
+  }
 }
