@@ -982,7 +982,7 @@ enum AdminAPIConfiguration {
             return url
         }
 
-        guard let url = URL(string: "https://api.bourbon.app") else {
+        guard let url = URL(string: "https://api.getbourbon.app") else {
             preconditionFailure("Invalid default Bourbon API URL.")
         }
         return url

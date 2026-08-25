@@ -31,9 +31,8 @@ export default function DownloadPage() {
           release.
         </p>
         <p>
-          Bourbon 2.0.7 is a manual transition release. Download and install it
-          directly; existing Bourbon installations will not receive it through
-          the in-app updater.
+          Bourbon 2.0.8 restores the production license connection and is
+          available through Bourbon&apos;s normal in-app updater.
         </p>
         <div className="buttonRow">
           <DownloadButton />
