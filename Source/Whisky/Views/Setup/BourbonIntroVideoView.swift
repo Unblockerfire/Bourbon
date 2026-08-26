@@ -111,6 +111,8 @@ struct BourbonIntroVideoView: View {
     @ViewBuilder
     private var licenseGateOverlay: some View {
         switch licenseGate {
+        case .warning(let result):
+            LicenseWarningView(result: result, onAcknowledge: acknowledgeWarning)
         case .blocked(let result):
             LicenseBlockingView(
                 result: result,
@@ -122,8 +124,7 @@ struct BourbonIntroVideoView: View {
         case .unavailable(let message):
             LicenseUnavailableView(
                 message: message,
-                onTryAgain: retryLicenseValidation,
-                onContinueOffline: continueOffline
+                onTryAgain: retryLicenseValidation
             )
         case .checkingAfterFinish:
             checkingLicenseView
@@ -153,6 +154,8 @@ struct BourbonIntroVideoView: View {
         switch licenseGate {
         case .valid, .skipped:
             completeIntro()
+        case .warning:
+            player?.pause()
         case .blocked:
             player?.pause()
         case .unavailable:
@@ -173,7 +176,7 @@ struct BourbonIntroVideoView: View {
         switch licenseGate {
         case .idle:
             break
-        case .checking, .checkingAfterFinish, .valid, .skipped, .blocked, .unavailable:
+        case .checking, .checkingAfterFinish, .valid, .warning, .skipped, .blocked, .unavailable:
             return
         }
 
@@ -194,11 +197,16 @@ struct BourbonIntroVideoView: View {
                 }
 
                 await MainActor.run {
-                    if result.isValid && result.status == .valid {
+                    if result.isValid && result.allowed && result.status == .valid {
                         print("License validation succeeded")
-                        licenseGate = .valid
-                        if finishPendingAfterValidation {
-                            completeIntro()
+                        if result.warnings.isEmpty {
+                            licenseGate = .valid
+                            if finishPendingAfterValidation {
+                                completeIntro()
+                            }
+                        } else {
+                            player?.pause()
+                            licenseGate = .warning(result)
                         }
                     } else {
                         print("License validation failed with status: \(result.status.rawValue)")
@@ -212,7 +220,7 @@ struct BourbonIntroVideoView: View {
                     player?.pause()
                     licenseGate = .unavailable(
                         "Bourbon could not reach the license service. " +
-                        "You can try again or continue in limited offline mode for now."
+                        "Try again when your connection is available."
                     )
                 }
             }
@@ -226,9 +234,11 @@ struct BourbonIntroVideoView: View {
         startLicenseValidation()
     }
 
-    private func continueOffline() {
-        print("License validation unavailable")
-        completeIntro()
+    private func acknowledgeWarning() {
+        licenseGate = .valid
+        if finishPendingAfterValidation {
+            completeIntro()
+        }
     }
 
     private func cleanupPlayer() {
@@ -247,12 +257,47 @@ private enum IntroLicenseGate {
     case checking
     case checkingAfterFinish
     case valid
+    case warning(LicenseValidationResult)
     case skipped
     case blocked(LicenseValidationResult)
     case unavailable(String)
 }
 
+private struct LicenseWarningView: View {
+    let result: LicenseValidationResult
+    let onAcknowledge: () -> Void
+
+    var body: some View {
+        BourbonBackground {
+            BourbonGlassCard(maxWidth: 500) {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 42, weight: .semibold))
+                        .foregroundStyle(BourbonStyle.amber)
+
+                    Text("License notice")
+                        .font(.largeTitle.bold())
+
+                    ForEach(result.warnings, id: \.self) { warning in
+                        Text(warning)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    Button("Acknowledge and Continue") {
+                        onAcknowledge()
+                    }
+                    .buttonStyle(BourbonPrimaryButtonStyle())
+                }
+                .multilineTextAlignment(.center)
+            }
+        }
+        .transition(.opacity)
+    }
+}
+
 private struct LicenseBlockingView: View {
+    @Environment(\.openURL) private var openURL
     let result: LicenseValidationResult
     let onTryAgain: () -> Void
     let onAppeal: () async throws -> Void
@@ -271,7 +316,7 @@ private struct LicenseBlockingView: View {
                     Text(result.title)
                         .font(.largeTitle.bold())
 
-                    Text(result.reason ?? fallbackReason)
+                    Text(displayReason)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -283,6 +328,15 @@ private struct LicenseBlockingView: View {
                         )
                             .font(.caption)
                             .foregroundStyle(BourbonStyle.amber)
+                    }
+
+                    if result.revoked {
+                        Button("Open Discord Support") {
+                            if let url = URL(string: BourbonSupport.discordURL) {
+                                openURL(url)
+                            }
+                        }
+                        .buttonStyle(BourbonSecondaryButtonStyle())
                     }
 
                     if appealSubmitted {
@@ -324,6 +378,13 @@ private struct LicenseBlockingView: View {
         .transition(.opacity)
     }
 
+    private var displayReason: String {
+        if result.revoked {
+            return "Your license has been revoked. Please open a support ticket in Discord."
+        }
+        return result.reason ?? fallbackReason
+    }
+
     private var fallbackReason: String {
         "This license cannot continue into Bourbon right now."
     }
@@ -352,7 +413,6 @@ private struct LicenseBlockingView: View {
 private struct LicenseUnavailableView: View {
     let message: String
     let onTryAgain: () -> Void
-    let onContinueOffline: () -> Void
 
     var body: some View {
         BourbonBackground {
@@ -370,17 +430,10 @@ private struct LicenseUnavailableView: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    HStack {
-                        Button("Try Again") {
-                            onTryAgain()
-                        }
-                        .buttonStyle(BourbonSecondaryButtonStyle())
-
-                        Button("Continue Offline") {
-                            onContinueOffline()
-                        }
-                        .buttonStyle(BourbonPrimaryButtonStyle())
+                    Button("Try Again") {
+                        onTryAgain()
                     }
+                    .buttonStyle(BourbonSecondaryButtonStyle())
                 }
                 .multilineTextAlignment(.center)
             }

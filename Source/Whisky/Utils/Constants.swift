@@ -23,3 +23,7 @@ enum ViewWidth {
     static let medium: Double = 500
     static let large: Double = 600
 }
+
+enum BourbonSupport {
+    static let discordURL = "https://discord.gg/CsqAfs9CnM"
+}

@@ -485,19 +485,9 @@ struct WelcomeView: View {
                     isCreatingAccount = false
                 }
             } catch {
-                do {
-                    let record = try BourbonLicenseAPI.mockActivateFreeLicense(displayName: sanitizedDisplayName)
-                    try LicenseKeychainStore.save(record)
-                    await MainActor.run {
-                        hasCreatedLicense = true
-                        legacyCreatedFreeLicense = true
-                        isCreatingAccount = false
-                    }
-                } catch {
-                    await MainActor.run {
-                        isCreatingAccount = false
-                        accountError = "Could not create your free account. Check your connection and try again."
-                    }
+                await MainActor.run {
+                    isCreatingAccount = false
+                    accountError = "Could not create your free account. Check your connection and try again."
                 }
             }
         }
@@ -720,6 +710,7 @@ enum LicenseValidationStatus: String, Codable {
     case paused
     case deleted
     case banned
+    case revoked
     case expired
     case scheduledForDeletion
     case unknown
@@ -729,6 +720,9 @@ struct LicenseValidationResult: Codable {
     let licenseId: String
     let status: LicenseValidationStatus
     let isValid: Bool
+    let allowed: Bool
+    let revoked: Bool
+    let warnings: [String]
     let reason: String?
     let appealAllowed: Bool
     let deletionScheduledAt: Date?
@@ -744,6 +738,8 @@ struct LicenseValidationResult: Codable {
             return "License unavailable"
         case .banned:
             return "Account action required"
+        case .revoked:
+            return "License revoked"
         case .expired:
             return "License expired"
         case .scheduledForDeletion:
@@ -804,25 +800,6 @@ enum BourbonLicenseAPI {
         )
     }
 
-    static func mockActivateFreeLicense(displayName: String) throws -> BourbonLicenseRecord {
-        let installId = try LicenseKeychainStore.installID()
-        let licenseNumber = UserDefaults.standard.integer(forKey: "mockLicenseCounter") + 1
-        UserDefaults.standard.set(licenseNumber, forKey: "mockLicenseCounter")
-        let publicLicenseId = "BRBN-\(String(format: "%08d", licenseNumber))"
-
-        return BourbonLicenseRecord(
-            publicLicenseId: publicLicenseId,
-            licenseToken: UUID().uuidString,
-            installId: installId,
-            displayName: displayName,
-            status: "Free",
-            messages: ["Local mock account created. Online activation can be connected later."],
-            permissions: ["distillery", "local-installs"],
-            warnings: [],
-            strikes: 0
-        )
-    }
-
     static func validateCurrentLicense() async throws -> LicenseValidationResult? {
         guard let license = LicenseKeychainStore.currentLicense(),
               !license.publicLicenseId.isEmpty else {
@@ -834,6 +811,9 @@ enum BourbonLicenseAPI {
                 licenseId: license.publicLicenseId,
                 status: .unknown,
                 isValid: false,
+                allowed: false,
+                revoked: false,
+                warnings: [],
                 reason: "Bourbon could not find the private license token for this installation.",
                 appealAllowed: false,
                 deletionScheduledAt: nil,
@@ -942,12 +922,14 @@ enum BourbonLicenseAPI {
     }
 
     private static func mockValidateLicense(licenseId: String) -> LicenseValidationResult {
-        // Future backend: replace this local development result with
-        // POST /license/validate once the license service is available.
+        // Local fallback used only when a development backend is configured.
         LicenseValidationResult(
             licenseId: licenseId,
             status: .valid,
             isValid: true,
+            allowed: true,
+            revoked: false,
+            warnings: [],
             reason: nil,
             appealAllowed: false,
             deletionScheduledAt: nil,

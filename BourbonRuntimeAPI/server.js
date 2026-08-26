@@ -6,6 +6,7 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { FieldValue, licenseStore } from "./firebase-admin.js";
+import { evaluateLicense } from "./license-policy.js";
 
 const app = express();
 app.use(express.json({ limit: "256kb" }));
@@ -296,8 +297,8 @@ app.post("/license/validate", async (req, res) => {
   }
   const data = snapshot.data();
   await reference.update({ lastValidationAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
-  const status = data.status || "unknown";
-  res.json({ licenseId, status, isValid: status === "valid", reason: data.reason || null, appealAllowed: Boolean(data.appealAllowed), deletionScheduledAt: toIso(data.deletionScheduledAt), checkedAt: new Date().toISOString() });
+  const decision = evaluateLicense(data);
+  res.json({ licenseId, ...decision, appealAllowed: Boolean(data.appealAllowed), deletionScheduledAt: toIso(data.deletionScheduledAt), checkedAt: new Date().toISOString() });
 });
 
 app.post("/license/appeal", async (req, res) => {
