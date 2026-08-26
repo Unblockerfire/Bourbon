@@ -485,10 +485,11 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
 
     private func presentUpdaterError(_ error: Error) {
         pendingUpdateManager.clearPendingInstall()
+        let message = sanitizedUpdaterError(error)
         MainActor.assumeIsolated {
             let alert = NSAlert()
             alert.messageText = "Bourbon update failed."
-            alert.informativeText = sanitizedUpdaterError(error)
+            alert.informativeText = message
             alert.alertStyle = .warning
             alert.addButton(withTitle: "OK")
             alert.addButton(withTitle: "Report")
@@ -499,7 +500,7 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
         }
     }
 
-    private func sanitizedUpdaterError(_ error: Error) -> String {
+    private nonisolated func sanitizedUpdaterError(_ error: Error) -> String {
         error.localizedDescription.replacingOccurrences(
             of: #"https?://[^\s]+"#,
             with: "[redacted URL]",
