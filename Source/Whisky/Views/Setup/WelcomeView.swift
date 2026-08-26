@@ -821,10 +821,6 @@ enum BourbonLicenseAPI {
             )
         }
 
-        if !BourbonAPIConfiguration.hasConfiguredBackend {
-            return mockValidateLicense(licenseId: license.publicLicenseId)
-        }
-
         var request = URLRequest(url: BourbonAPIConfiguration.licenseValidationURL)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -896,11 +892,6 @@ enum BourbonLicenseAPI {
             throw LicenseActivationError.invalidResponse
         }
 
-        if !BourbonAPIConfiguration.hasConfiguredBackend {
-            print("License appeal captured locally for development")
-            return
-        }
-
         var request = URLRequest(url: BourbonAPIConfiguration.licenseAppealURL)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -919,22 +910,6 @@ enum BourbonLicenseAPI {
               200..<300 ~= httpResponse.statusCode else {
             throw LicenseActivationError.invalidResponse
         }
-    }
-
-    private static func mockValidateLicense(licenseId: String) -> LicenseValidationResult {
-        // Local fallback used only when a development backend is configured.
-        LicenseValidationResult(
-            licenseId: licenseId,
-            status: .valid,
-            isValid: true,
-            allowed: true,
-            revoked: false,
-            warnings: [],
-            reason: nil,
-            appealAllowed: false,
-            deletionScheduledAt: nil,
-            checkedAt: Date()
-        )
     }
 
     private static var appVersion: String {
@@ -1017,8 +992,6 @@ enum BourbonAPIConfiguration {
         baseURL.appending(path: "license/appeal")
     }
 
-    static var hasConfiguredBackend: Bool { true }
-
     private static var baseURL: URL {
         if let configuredURL = localConfigURL {
             return configuredURL
@@ -1080,13 +1053,16 @@ enum LicenseKeychainStore {
     }
 
     static func save(_ record: BourbonLicenseRecord) throws {
-        savePublicMetadata(record)
         try updateLicenseToken(record.licenseToken)
+        savePublicMetadata(record)
     }
 
     static func currentLicense() -> BourbonLicenseRecord? {
         if let record = publicMetadataRecord() {
-            return record
+            if readLicenseToken() == nil {
+                _ = migrateLegacyLicenseRecordIfNeeded()
+            }
+            return publicMetadataRecord() ?? record
         }
 
         return migrateLegacyLicenseRecordIfNeeded()
@@ -1194,27 +1170,23 @@ enum LicenseKeychainStore {
     }
 
     private static func migrateLegacyLicenseRecordIfNeeded() -> BourbonLicenseRecord? {
-        guard !defaults.bool(forKey: DefaultsKey.legacyLicenseMigrationAttempted) else {
-            return nil
-        }
-
-        defaults.set(true, forKey: DefaultsKey.legacyLicenseMigrationAttempted)
-
         guard let data = data(account: legacyLicenseAccount, logDescription: "legacy license record"),
-              let record = try? JSONDecoder().decode(BourbonLicenseRecord.self, from: data) else {
+              let record = try? JSONDecoder().decode(BourbonLicenseRecord.self, from: data),
+              !record.licenseToken.isEmpty else {
+            defaults.set(true, forKey: DefaultsKey.legacyLicenseMigrationAttempted)
             return nil
         }
-
-        savePublicMetadata(record)
 
         do {
             try saveLicenseTokenIfMissing(record.licenseToken)
+            savePublicMetadata(record)
             delete(account: legacyLicenseAccount)
+            defaults.set(true, forKey: DefaultsKey.legacyLicenseMigrationAttempted)
         } catch {
             print("License token migration failed")
         }
 
-        return publicMetadataRecord()
+        return publicMetadataRecord() ?? record
     }
 
     private static func add(_ data: Data, account: String) throws {
