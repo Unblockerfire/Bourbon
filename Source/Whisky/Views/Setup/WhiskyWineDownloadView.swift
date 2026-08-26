@@ -3,6 +3,7 @@ import WhiskyKit
 
 struct WhiskyWineDownloadView: View {
     @Binding var tarLocation: URL
+    @Binding var runtimeVersion: String?
     @Binding var path: [SetupStage]
 
     @State private var downloadTask: URLSessionDownloadTask?
@@ -79,6 +80,7 @@ struct WhiskyWineDownloadView: View {
             do {
                 let runtimeInfo = try await WhiskyWineInstaller.latestRuntimeInfo()
                 let sourceURL = runtimeInfo.archiveUrl
+                runtimeVersion = runtimeInfo.version
 
                 let task = URLSession(configuration: .ephemeral).downloadTask(with: sourceURL) { url, response, error in
                     DispatchQueue.main.async {
@@ -133,6 +135,7 @@ struct WhiskyWineDownloadView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             do {
+                runtimeVersion = nil
                 tarLocation = try WhiskyWineInstaller.persistLocalArchive(at: url)
                 path.append(.whiskyWineInstall)
             } catch {

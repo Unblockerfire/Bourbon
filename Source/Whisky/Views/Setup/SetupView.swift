@@ -28,6 +28,7 @@ enum SetupStage {
 struct SetupView: View {
     @State private var path: [SetupStage] = []
     @State var tarLocation: URL = URL(fileURLWithPath: "")
+    @State var runtimeVersion: String?
     @Binding var showSetup: Bool
     @Binding var showBottleCreation: Bool
     let updater: SPUUpdater
@@ -62,9 +63,18 @@ struct SetupView: View {
                         case .rosetta:
                             RosettaView(path: $path, showSetup: $showSetup)
                         case .whiskyWineDownload:
-                            WhiskyWineDownloadView(tarLocation: $tarLocation, path: $path)
+                            WhiskyWineDownloadView(
+                                tarLocation: $tarLocation,
+                                runtimeVersion: $runtimeVersion,
+                                path: $path
+                            )
                         case .whiskyWineInstall:
-                            WhiskyWineInstallView(tarLocation: $tarLocation, path: $path, showSetup: $showSetup)
+                            WhiskyWineInstallView(
+                                tarLocation: $tarLocation,
+                                runtimeVersion: $runtimeVersion,
+                                path: $path,
+                                showSetup: $showSetup
+                            )
                         }
                     }
                 }

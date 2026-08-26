@@ -81,21 +81,7 @@ public class WhiskyWineInstaller {
     public static let binFolder: URL = libraryFolder.appending(path: "Wine").appending(path: "bin")
 
     public static func isWhiskyWineInstalled() -> Bool {
-        if whiskyWineVersion() != nil {
-            return true
-        }
-
-        guard runtimeBinariesInstalled() else {
-            return false
-        }
-
-        do {
-            try writeInstalledVersionMarkerIfNeeded()
-        } catch {
-            Logger.wineKit.warning("BourbonWine binaries are present, but marker creation failed: \(error)")
-        }
-
-        return true
+        whiskyWineVersion() != nil || runtimeBinariesInstalled()
     }
 
     public static func runtimeBinariesInstalled() -> Bool {
@@ -117,7 +103,7 @@ public class WhiskyWineInstaller {
         return nil
     }
 
-    public static func install(from: URL) throws {
+    public static func install(from: URL, runtimeVersion: String? = nil) throws {
         do {
             try validateArchive(at: from, sourceURL: nil)
 
@@ -130,7 +116,7 @@ public class WhiskyWineInstaller {
             }
 
             try Tar.untar(tarBall: from, toURL: applicationFolder)
-            try writeInstalledVersionMarkerIfNeeded()
+            try writeInstalledVersionMarkerIfNeeded(runtimeVersion: runtimeVersion)
             try FileManager.default.removeItem(at: from)
         } catch {
             Logger.wineKit.error("Failed to install BourbonWine from `\(from.path)`: \(error)")
@@ -232,12 +218,13 @@ public class WhiskyWineInstaller {
         return nil
     }
 
-    private static func writeInstalledVersionMarkerIfNeeded() throws {
+    private static func writeInstalledVersionMarkerIfNeeded(runtimeVersion: String?) throws {
         let marker = libraryFolder
             .appending(path: "BourbonWineVersion")
             .appendingPathExtension("plist")
 
-        if FileManager.default.fileExists(atPath: marker.path(percentEncoded: false)) {
+        guard let runtimeVersion,
+              SemanticVersion(runtimeVersion) != nil else {
             return
         }
 
@@ -245,8 +232,19 @@ public class WhiskyWineInstaller {
             try FileManager.default.createDirectory(at: libraryFolder, withIntermediateDirectories: true)
         }
 
-        let data = try PropertyListEncoder().encode(WhiskyWineVersionInfo())
+        guard let data = try installedVersionMarkerData(runtimeVersion: runtimeVersion) else {
+            return
+        }
         try data.write(to: marker, options: .atomic)
+    }
+
+    static func installedVersionMarkerData(runtimeVersion: String?) throws -> Data? {
+        guard let runtimeVersion,
+              let semanticVersion = SemanticVersion(runtimeVersion) else {
+            return nil
+        }
+
+        return try PropertyListEncoder().encode(WhiskyWineVersionInfo(version: semanticVersion))
     }
 
     private static func remotewhiskyWineVersion() async -> SemanticVersion? {
@@ -341,13 +339,15 @@ public class WhiskyWineInstaller {
 }
 
 struct WhiskyWineVersionInfo: Codable {
-    var version: SemanticVersion = SemanticVersion(1, 0, 0)
+    var version: SemanticVersion?
 
     enum CodingKeys: String, CodingKey {
         case version
     }
 
-    init() {}
+    init(version: SemanticVersion? = nil) {
+        self.version = version
+    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -358,12 +358,12 @@ struct WhiskyWineVersionInfo: Codable {
             return
         }
 
-        version = try container.decode(SemanticVersion.self, forKey: .version)
+        version = try container.decodeIfPresent(SemanticVersion.self, forKey: .version)
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(version, forKey: .version)
+        try container.encodeIfPresent(version, forKey: .version)
     }
 }
 

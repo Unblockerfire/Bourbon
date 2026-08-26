@@ -23,6 +23,7 @@ struct WhiskyWineInstallView: View {
     @State var installing: Bool = true
     @State private var errorMessage: String?
     @Binding var tarLocation: URL
+    @Binding var runtimeVersion: String?
     @Binding var path: [SetupStage]
     @Binding var showSetup: Bool
     @AppStorage("hasInstalledDependencies") private var hasInstalledDependencies = false
@@ -76,10 +77,14 @@ struct WhiskyWineInstallView: View {
         .navigationTitle("Installing BourbonWine")
         .onAppear {
             let archiveURL = tarLocation
+            let installedRuntimeVersion = runtimeVersion
             Task {
                 do {
                     try await Task.detached(priority: .userInitiated) {
-                        try WhiskyWineInstaller.install(from: archiveURL)
+                        try WhiskyWineInstaller.install(
+                            from: archiveURL,
+                            runtimeVersion: installedRuntimeVersion
+                        )
                     }.value
                     installing = false
                     try await Task.sleep(nanoseconds: 2_000_000_000)

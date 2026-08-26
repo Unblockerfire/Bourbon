@@ -456,12 +456,19 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
             return
         }
 
-        MainActor.assumeIsolated {
-            let alert = NSAlert()
-            alert.messageText = "You're running the latest version of Bourbon."
-            alert.informativeText = "No update is available right now."
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+        let reason = (error as NSError).userInfo[SPUNoUpdateFoundReasonKey] as? SPUNoUpdateFoundReason
+        let isSuccessfulNoUpdate = reason == .onLatestVersion || reason == .onNewerThanLatestVersion
+
+        if isSuccessfulNoUpdate {
+            MainActor.assumeIsolated {
+                let alert = NSAlert()
+                alert.messageText = "You're running the latest version of Bourbon."
+                alert.informativeText = "No update is available right now."
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        } else {
+            presentUpdaterError(error)
         }
         acknowledgement()
     }
@@ -472,11 +479,16 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
             return
         }
 
+        presentUpdaterError(error)
+        acknowledgement()
+    }
+
+    private func presentUpdaterError(_ error: Error) {
         pendingUpdateManager.clearPendingInstall()
         MainActor.assumeIsolated {
             let alert = NSAlert()
             alert.messageText = "Bourbon update failed."
-            alert.informativeText = error.localizedDescription
+            alert.informativeText = sanitizedUpdaterError(error)
             alert.alertStyle = .warning
             alert.addButton(withTitle: "OK")
             alert.addButton(withTitle: "Report")
@@ -485,7 +497,14 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
                 BourbonReportCenter.openUpdateReport(error)
             }
         }
-        acknowledgement()
+    }
+
+    private func sanitizedUpdaterError(_ error: Error) -> String {
+        error.localizedDescription.replacingOccurrences(
+            of: #"https?://[^\s]+"#,
+            with: "[redacted URL]",
+            options: .regularExpression
+        )
     }
 
     func showDownloadInitiated(cancellation: @escaping () -> Void) {
