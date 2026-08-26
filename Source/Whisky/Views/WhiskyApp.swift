@@ -141,7 +141,7 @@ struct WhiskyApp: App {
                     }
                 }
                 Button("help.discord") {
-                    if let url = URL(string: "https://discord.gg/CsqAfs9CnM") {
+                    if let url = URL(string: BourbonSupport.discordURL) {
                         openURL(url)
                     }
                 }
