@@ -479,7 +479,11 @@ private struct LicenseUnavailableView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     if showingSupport {
-                        Text("For security, Bourbon cannot automatically restore a lost license without the license key. Please open a support ticket in Discord so we can help verify and recover your license.")
+                        'Text(
+                            "For security, Bourbon cannot automatically restore a lost license " +
+                            "without the license key. Please open a support ticket in Discord " +
+                            "so we can help verify and recover your license."
+                        )'
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
