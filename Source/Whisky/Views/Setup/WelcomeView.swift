@@ -341,6 +341,7 @@ struct WelcomeView: View {
         }
     }
 
+    @ViewBuilder
     private var licenseCreationContent: some View {
         if let activatedLicenseKey {
             licenseKeyContent(activatedLicenseKey)
@@ -996,7 +997,7 @@ enum BourbonLicenseAPI {
             licenseKey: decoded.licenseKey,
             installId: try LicenseKeychainStore.installID(),
             displayName: decoded.displayName ?? "Bourbon User",
-            status: decoded.status ?? "Free",
+            status: decoded.status?.rawValue ?? "Free",
             messages: decoded.messages ?? [],
             permissions: decoded.permissions ?? [],
             warnings: validation.warnings,
