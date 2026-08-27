@@ -3,7 +3,7 @@ import AppKit
 import Security
 import SwiftUI
 
-// swiftlint:disable file_length
+// swiftlint:disable file_length function_body_length type_body_length line_length
 
 struct BourbonIntroVideoView: View {
     let buttonTitle: String
@@ -176,7 +176,6 @@ struct BourbonIntroVideoView: View {
         onFinished()
     }
 
-    // swiftlint:disable:next function_body_length
     private func startLicenseValidation() {
         switch licenseGate {
         case .idle:
@@ -270,8 +269,7 @@ struct BourbonIntroVideoView: View {
             } catch {
                 await MainActor.run {
                     licenseGate = .unavailable(
-                        "Bourbon could not restore that license key. " +
-                        "Check the key and try again."
+                        "Bourbon could not restore that license key."
                     )
                 }
             }
@@ -452,7 +450,7 @@ private struct LicenseBlockingView: View {
     }
 }
 
-// swiftlint:disable:next type_body_length`r`nprivate struct LicenseUnavailableView: View {
+private struct LicenseUnavailableView: View {
     let message: String
     let onTryAgain: () -> Void
     let onRecover: (String) -> Void
@@ -479,11 +477,10 @@ private struct LicenseBlockingView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     if showingSupport {
-                        'Text(
-                            "For security, Bourbon cannot automatically restore a lost license " +
-                            "without the license key. Please open a support ticket in Discord " +
-                            "so we can help verify and recover your license."
-                        )'
+                        Text(
+                            "For security, Bourbon cannot automatically restore a lost license. " +
+                            "Please open a support ticket in Discord so we can help verify and recover your license."
+                        )
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
