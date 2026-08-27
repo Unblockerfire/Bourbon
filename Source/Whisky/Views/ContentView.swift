@@ -459,6 +459,7 @@ struct ContentView: View {
         LicenseKeychainStore.currentLicense() ?? BourbonLicenseRecord(
             publicLicenseId: "BRBN-00000001",
             licenseToken: "",
+            licenseKey: nil,
             installId: "",
             displayName: resolvedDisplayName == "there" ? "Bourbon User" : resolvedDisplayName,
             status: "Active",

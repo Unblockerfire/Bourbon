@@ -4,9 +4,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { FieldValue, licenseStore } from "./firebase-admin.js";
 import { evaluateLicense } from "./license-policy.js";
+import { hashesMatch, makeLicenseKey, parseLicenseKey, tokenHash } from "./license-credentials.js";
 
 const app = express();
 app.use(express.json({ limit: "256kb" }));
@@ -168,20 +169,25 @@ function stringValue(value, maximum = 500) {
     : null;
 }
 
-function tokenHash(token) {
-  return createHash("sha256").update(token).digest("hex");
+const recoveryAttempts = new Map();
+function requestRateLimited(req, limit, windowMs = 60_000) {
+  const now = Date.now();
+  const address = req.ip || req.socket.remoteAddress || "unknown";
+  const recent = (recoveryAttempts.get(address) || []).filter((timestamp) => now - timestamp < windowMs);
+  recent.push(now);
+  recoveryAttempts.set(address, recent);
+  if (recoveryAttempts.size > 10_000) {
+    for (const [key, timestamps] of recoveryAttempts) {
+      if (timestamps.at(-1) < now - windowMs) recoveryAttempts.delete(key);
+    }
+  }
+  return recent.length > limit;
 }
 
 function migrationToken(legacyToken) {
   const key = process.env.ADMIN_UPDATE_TOKEN;
   if (!key) throw new Error("Migration secret is not configured");
-  return createHash("sha256").update(`${key}:${legacyToken}`).digest("hex");
-}
-function hashesMatch(left, right) {
-  if (typeof left !== "string" || typeof right !== "string") return false;
-  const leftBytes = Buffer.from(left, "hex");
-  const rightBytes = Buffer.from(right, "hex");
-  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
+  return tokenHash(`${key}:${legacyToken}`);
 }
 
 function toIso(value) {
@@ -234,13 +240,14 @@ app.post("/licenses/activate", async (req, res) => {
   const db = licenseBackend(res);
   if (!db) return;
   const licenseId = `BRBN-${randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`;
-  const licenseToken = randomUUID() + randomUUID().replaceAll("-", "");
+  const licenseToken = randomBytes(48).toString("base64url");
   await db.collection("licenses").doc(licenseId).set({
     status: "valid",
     reason: null,
     appealAllowed: false,
     deletionScheduledAt: null,
     tokenHash: tokenHash(licenseToken),
+    credentialVersion: 2,
     displayName,
     installId,
     appVersion,
@@ -250,7 +257,7 @@ app.post("/licenses/activate", async (req, res) => {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp()
   });
-  res.status(201).json({ publicLicenseId: licenseId, licenseToken, displayName, status: "Free", messages: [], permissions: ["distillery", "local-installs"] });
+  res.status(201).json({ publicLicenseId: licenseId, licenseToken, licenseKey: makeLicenseKey(licenseId, licenseToken), displayName, status: "Free", messages: [], permissions: ["distillery", "local-installs"] });
 });
 
 app.post("/licenses/migrate", async (req, res) => {
@@ -273,14 +280,66 @@ app.post("/licenses/migrate", async (req, res) => {
     if (existing.exists) { licenseId = existing.data().licenseId; return; }
     licenseId = `BRBN-${randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`;
     const newToken = migrationToken(legacyToken);
-    transaction.set(db.collection("licenses").doc(licenseId), { status: "valid", reason: null, appealAllowed: false, deletionScheduledAt: null, tokenHash: tokenHash(newToken), displayName, installId, appVersion, macosVersion, architecture, legacyLicenseId, warningHistory: [], strikeHistory: [], lastValidationAt: FieldValue.serverTimestamp(), createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+    transaction.set(db.collection("licenses").doc(licenseId), { status: "valid", reason: null, appealAllowed: false, deletionScheduledAt: null, tokenHash: tokenHash(newToken), credentialVersion: 2, displayName, installId, appVersion, macosVersion, architecture, legacyLicenseId, warningHistory: [], strikeHistory: [], lastValidationAt: FieldValue.serverTimestamp(), createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
     transaction.set(migration, { licenseId, migratedAt: FieldValue.serverTimestamp() });
   });
   const migration = await db.collection("legacyLicenseMigrations").doc(legacyHash).get();
   const data = migration.data();
-  res.json({ publicLicenseId: data.licenseId, licenseToken: migrationToken(legacyToken), displayName, status: "Free", messages: ["Your Bourbon license was migrated securely."], permissions: ["distillery", "local-installs"] });
+  const migratedToken = migrationToken(legacyToken);
+  res.json({ publicLicenseId: data.licenseId, licenseToken: migratedToken, licenseKey: makeLicenseKey(data.licenseId, migratedToken), displayName, status: "Free", messages: ["Your Bourbon license was migrated securely."], permissions: ["distillery", "local-installs"] });
+});
+app.post("/license/recover", async (req, res) => {
+  if (requestRateLimited(req, 12)) {
+    res.status(429).json({ ok: false, error: "Too many license recovery attempts" });
+    return;
+  }
+  const parsed = parseLicenseKey(req.body?.licenseKey, licenseIdIsValid);
+  if (!parsed) {
+    res.status(400).json({ ok: false, error: "Invalid license key" });
+    return;
+  }
+  const db = licenseBackend(res);
+  if (!db) return;
+  const reference = db.collection("licenses").doc(parsed.licenseId);
+  const snapshot = await reference.get();
+  if (!snapshot.exists || !hashesMatch(snapshot.data().tokenHash, tokenHash(parsed.token))) {
+    res.status(401).json({ ok: false, error: "Invalid license key" });
+    return;
+  }
+  const data = snapshot.data();
+  if (data.credentialVersion !== 2) {
+    res.status(401).json({ ok: false, error: "Invalid license key" });
+    return;
+  }
+  const decision = evaluateLicense(data);
+  const response = {
+    licenseId: parsed.licenseId,
+    ...decision,
+    appealAllowed: Boolean(data.appealAllowed),
+    deletionScheduledAt: toIso(data.deletionScheduledAt),
+    checkedAt: new Date().toISOString()
+  };
+  if (!decision.allowed) {
+    res.status(403).json(response);
+    return;
+  }
+  await reference.update({ lastValidationAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+  res.json({
+    ...response,
+    publicLicenseId: parsed.licenseId,
+    licenseToken: parsed.token,
+    licenseKey: makeLicenseKey(parsed.licenseId, parsed.token),
+    displayName: data.displayName || "Bourbon User",
+    status: data.status,
+    messages: [],
+    permissions: ["distillery", "local-installs"]
+  });
 });
 app.post("/license/validate", async (req, res) => {
+  if (requestRateLimited(req, 30)) {
+    res.status(429).json({ ok: false, error: "Too many license validation attempts" });
+    return;
+  }
   const licenseId = req.body?.licenseId;
   const licenseToken = req.body?.licenseToken;
   if (!licenseIdIsValid(licenseId) || !stringValue(licenseToken, 256)) {

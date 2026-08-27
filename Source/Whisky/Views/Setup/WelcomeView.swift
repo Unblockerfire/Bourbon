@@ -16,8 +16,10 @@
 //  If not, see https://www.gnu.org/licenses/.
 //
 
-import SwiftUI
+import AppKit
 import Security
+import SwiftUI
+import UniformTypeIdentifiers
 import WhiskyKit
 
 // swiftlint:disable file_length
@@ -41,6 +43,7 @@ struct WelcomeView: View {
     @State private var acceptedTerms = false
     @State private var accountError: String?
     @State private var isCreatingAccount = false
+    @State private var activatedLicenseKey: String?
     @Binding var path: [SetupStage]
     @Binding var showSetup: Bool
     @Binding var showBottleCreation: Bool
@@ -339,6 +342,14 @@ struct WelcomeView: View {
     }
 
     private var licenseCreationContent: some View {
+        if let activatedLicenseKey {
+            licenseKeyContent(activatedLicenseKey)
+        } else {
+            licenseActivationContent
+        }
+    }
+
+    private var licenseActivationContent: some View {
         VStack(spacing: 18) {
             Image(systemName: "person.badge.key.fill")
                 .font(.system(size: 46, weight: .semibold))
@@ -348,7 +359,7 @@ struct WelcomeView: View {
                 Text("Create your free Bourbon license")
                     .font(.largeTitle.bold())
                     .multilineTextAlignment(.center)
-                Text("Your public license ID can be shown in Bourbon. Your private token stays in Keychain.")
+                Text("Bourbon stores your license securely on this Mac. Keep a copy of your license key somewhere safe so you can restore it later.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
@@ -384,6 +395,61 @@ struct WelcomeView: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
+    }
+
+    private func licenseKeyContent(_ key: String) -> some View {
+        VStack(spacing: 18) {
+            Image(systemName: "person.badge.key.fill")
+                .font(.system(size: 46, weight: .semibold))
+                .foregroundStyle(BourbonStyle.amber)
+
+            VStack(spacing: 6) {
+                Text("Your Bourbon License")
+                    .font(.largeTitle.bold())
+                Text("This is your Bourbon license key. Bourbon stores it securely on this Mac, but keep a copy somewhere safe in case you ever need to restore your license.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Text(key)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(12)
+                .frame(maxWidth: .infinity)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+
+            HStack(spacing: 10) {
+                Button {
+                    saveLicenseKey(key)
+                } label: {
+                    Label("Save License Key", systemImage: "arrow.down.to.line")
+                }
+                .buttonStyle(BourbonSecondaryButtonStyle())
+
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(key, forType: .string)
+                }
+                .buttonStyle(BourbonSecondaryButtonStyle())
+            }
+
+            Button("Continue") {
+                hasCreatedLicense = true
+                legacyCreatedFreeLicense = true
+                activatedLicenseKey = nil
+            }
+            .buttonStyle(BourbonPrimaryButtonStyle())
+            .keyboardShortcut(.defaultAction)
+        }
+    }
+
+    private func saveLicenseKey(_ key: String) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "Bourbon-License.txt"
+        panel.allowedContentTypes = [.plainText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let contents = "Bourbon License Key\n\n\(key)\n\nKeep this file somewhere safe. You can use this key to restore your Bourbon license if the local copy is lost.\n"
+        try? contents.write(to: url, atomically: true, encoding: .utf8)
     }
 
     func checkInstallStatus() {
@@ -480,8 +546,7 @@ struct WelcomeView: View {
                 )
                 try LicenseKeychainStore.save(record)
                 await MainActor.run {
-                    hasCreatedLicense = true
-                    legacyCreatedFreeLicense = true
+                    activatedLicenseKey = record.licenseKey ?? "\(record.publicLicenseId).\(record.licenseToken)"
                     isCreatingAccount = false
                 }
             } catch {
@@ -696,6 +761,7 @@ struct SetupStatusRow<Accessory: View>: View {
 struct BourbonLicenseRecord: Codable {
     let publicLicenseId: String
     let licenseToken: String
+    let licenseKey: String?
     let installId: String
     let displayName: String
     let status: String
@@ -703,6 +769,57 @@ struct BourbonLicenseRecord: Codable {
     let permissions: [String]
     let warnings: [String]
     let strikes: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case publicLicenseId
+        case licenseToken
+        case licenseKey
+        case installId
+        case displayName
+        case status
+        case messages
+        case permissions
+        case warnings
+        case strikes
+    }
+
+    init(
+        publicLicenseId: String,
+        licenseToken: String,
+        licenseKey: String? = nil,
+        installId: String,
+        displayName: String,
+        status: String,
+        messages: [String],
+        permissions: [String],
+        warnings: [String],
+        strikes: Int
+    ) {
+        self.publicLicenseId = publicLicenseId
+        self.licenseToken = licenseToken
+        self.licenseKey = licenseKey
+        self.installId = installId
+        self.displayName = displayName
+        self.status = status
+        self.messages = messages
+        self.permissions = permissions
+        self.warnings = warnings
+        self.strikes = strikes
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        publicLicenseId = try container.decode(String.self, forKey: .publicLicenseId)
+        licenseToken = try container.decode(String.self, forKey: .licenseToken)
+        licenseKey = try container.decodeIfPresent(String.self, forKey: .licenseKey)
+        installId = try container.decode(String.self, forKey: .installId)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        status = try container.decode(String.self, forKey: .status)
+        messages = try container.decode([String].self, forKey: .messages)
+        permissions = try container.decode([String].self, forKey: .permissions)
+        warnings = try container.decode([String].self, forKey: .warnings)
+        strikes = try container.decode(Int.self, forKey: .strikes)
+    }
 }
 
 enum LicenseValidationStatus: String, Codable {
@@ -782,6 +899,7 @@ enum BourbonLicenseAPI {
         }
 
         let decoded = try JSONDecoder().decode(LicenseActivationResponse.self, from: data)
+        let displayedLicenseKey = decoded.licenseKey ?? "\(decoded.publicLicenseId).\(decoded.licenseToken)"
         guard !decoded.publicLicenseId.isEmpty,
               !decoded.licenseToken.isEmpty else {
             throw LicenseActivationError.invalidResponse
@@ -790,6 +908,7 @@ enum BourbonLicenseAPI {
         return BourbonLicenseRecord(
             publicLicenseId: decoded.publicLicenseId,
             licenseToken: decoded.licenseToken,
+            licenseKey: displayedLicenseKey,
             installId: installId,
             displayName: decoded.displayName,
             status: decoded.status,
@@ -800,25 +919,14 @@ enum BourbonLicenseAPI {
         )
     }
 
-    static func validateCurrentLicense() async throws -> LicenseValidationResult? {
+    static func validateCurrentLicense() async throws -> LicenseValidationResult {
         guard let license = LicenseKeychainStore.currentLicense(),
               !license.publicLicenseId.isEmpty else {
-            return nil
+            throw LicenseActivationError.missingToken
         }
 
         guard let token = LicenseKeychainStore.readLicenseToken() else {
-            return LicenseValidationResult(
-                licenseId: license.publicLicenseId,
-                status: .unknown,
-                isValid: false,
-                allowed: false,
-                revoked: false,
-                warnings: [],
-                reason: "Bourbon could not find the private license token for this installation.",
-                appealAllowed: false,
-                deletionScheduledAt: nil,
-                checkedAt: Date()
-            )
+            throw LicenseActivationError.missingToken
         }
 
         var request = URLRequest(url: BourbonAPIConfiguration.licenseValidationURL)
@@ -850,6 +958,46 @@ enum BourbonLicenseAPI {
         return try decoder.decode(LicenseValidationResult.self, from: data)
     }
 
+    static func recoverLicense(key: String) async throws -> LicenseRecoveryOutcome {
+        var request = URLRequest(url: BourbonAPIConfiguration.licenseRecoveryURL)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(LicenseRecoveryRequest(licenseKey: key))
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 15
+        let (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw LicenseActivationError.invalidResponse
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(LicenseRecoveryResponse.self, from: data)
+        guard let validation = decoded.validationResult else {
+            throw LicenseActivationError.invalidResponse
+        }
+        guard 200..<300 ~= httpResponse.statusCode,
+              let publicLicenseId = decoded.publicLicenseId,
+              let licenseToken = decoded.licenseToken else {
+            throw LicenseActivationError.blocked(validation)
+        }
+
+        let record = BourbonLicenseRecord(
+            publicLicenseId: publicLicenseId,
+            licenseToken: licenseToken,
+            licenseKey: decoded.licenseKey,
+            installId: try LicenseKeychainStore.installID(),
+            displayName: decoded.displayName ?? "Bourbon User",
+            status: decoded.status ?? "Free",
+            messages: decoded.messages ?? [],
+            permissions: decoded.permissions ?? [],
+            warnings: validation.warnings,
+            strikes: 0
+        )
+        return LicenseRecoveryOutcome(record: record, validation: validation)
+    }
+
     private static func migrateLegacyLicense(
         license: BourbonLicenseRecord,
         token: String
@@ -878,6 +1026,7 @@ enum BourbonLicenseAPI {
         return BourbonLicenseRecord(
             publicLicenseId: decoded.publicLicenseId,
             licenseToken: decoded.licenseToken,
+            licenseKey: decoded.licenseKey,
             installId: license.installId,
             displayName: decoded.displayName,
             status: decoded.status,
@@ -954,6 +1103,53 @@ private struct LicenseValidationRequest: Encodable {
     let licenseToken: String
 }
 
+private struct LicenseRecoveryRequest: Encodable {
+    let licenseKey: String
+}
+
+struct LicenseRecoveryOutcome {
+    let record: BourbonLicenseRecord
+    let validation: LicenseValidationResult
+}
+
+private struct LicenseRecoveryResponse: Decodable {
+    let licenseId: String?
+    let status: LicenseValidationStatus?
+    let isValid: Bool?
+    let allowed: Bool?
+    let revoked: Bool?
+    let warnings: [String]?
+    let reason: String?
+    let appealAllowed: Bool?
+    let deletionScheduledAt: Date?
+    let checkedAt: Date?
+    let publicLicenseId: String?
+    let licenseToken: String?
+    let licenseKey: String?
+    let displayName: String?
+    let messages: [String]?
+    let permissions: [String]?
+
+    var validationResult: LicenseValidationResult? {
+        guard let licenseId, let status, let isValid, let allowed, let revoked,
+              let warnings, let appealAllowed, let checkedAt else {
+            return nil
+        }
+        return LicenseValidationResult(
+            licenseId: licenseId,
+            status: status,
+            isValid: isValid,
+            allowed: allowed,
+            revoked: revoked,
+            warnings: warnings,
+            reason: reason,
+            appealAllowed: appealAllowed,
+            deletionScheduledAt: deletionScheduledAt,
+            checkedAt: checkedAt
+        )
+    }
+}
+
 private struct LicenseAppealRequest: Encodable {
     let licenseId: String
     let licenseToken: String
@@ -964,6 +1160,7 @@ private struct LicenseAppealRequest: Encodable {
 private struct LicenseActivationResponse: Decodable {
     let publicLicenseId: String
     let licenseToken: String
+    let licenseKey: String?
     let displayName: String
     let status: String
     let messages: [String]
@@ -986,6 +1183,10 @@ enum BourbonAPIConfiguration {
 
     static var licenseMigrationURL: URL {
         baseURL.appending(path: "licenses/migrate")
+    }
+
+    static var licenseRecoveryURL: URL {
+        baseURL.appending(path: "license/recover")
     }
 
     static var licenseAppealURL: URL {
@@ -1158,6 +1359,7 @@ enum LicenseKeychainStore {
         return BourbonLicenseRecord(
             publicLicenseId: publicLicenseId,
             licenseToken: "",
+            licenseKey: nil,
             installId: defaults.string(forKey: DefaultsKey.installId) ?? "",
             displayName: defaults.string(forKey: DefaultsKey.licenseDisplayName) ?? "Bourbon User",
             status: defaults.string(forKey: DefaultsKey.licenseStatus) ?? "Active",
@@ -1237,4 +1439,6 @@ enum LicenseKeychainStore {
 enum LicenseActivationError: Error {
     case invalidResponse
     case keychain(OSStatus)
+    case missingToken
+    case blocked(LicenseValidationResult)
 }

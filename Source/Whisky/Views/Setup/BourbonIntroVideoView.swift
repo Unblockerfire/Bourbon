@@ -1,4 +1,5 @@
 import AVKit
+import AppKit
 import Security
 import SwiftUI
 
@@ -124,11 +125,14 @@ struct BourbonIntroVideoView: View {
         case .unavailable(let message):
             LicenseUnavailableView(
                 message: message,
-                onTryAgain: retryLicenseValidation
+                onTryAgain: retryLicenseValidation,
+                onRecover: recoverLicense,
+                onSupport: openSupport,
+                allowsRecovery: true
             )
         case .checkingAfterFinish:
             checkingLicenseView
-        case .idle, .checking, .valid, .skipped:
+        case .idle, .checking, .valid:
             EmptyView()
         }
     }
@@ -152,7 +156,7 @@ struct BourbonIntroVideoView: View {
 
     private func finishIntro() {
         switch licenseGate {
-        case .valid, .skipped:
+        case .valid:
             completeIntro()
         case .warning:
             player?.pause()
@@ -176,7 +180,7 @@ struct BourbonIntroVideoView: View {
         switch licenseGate {
         case .idle:
             break
-        case .checking, .checkingAfterFinish, .valid, .warning, .skipped, .blocked, .unavailable:
+        case .checking, .checkingAfterFinish, .valid, .warning, .blocked, .unavailable:
             return
         }
 
@@ -185,17 +189,7 @@ struct BourbonIntroVideoView: View {
 
         Task {
             do {
-                guard let result = try await BourbonLicenseAPI.validateCurrentLicense() else {
-                    print("License validation succeeded")
-                    await MainActor.run {
-                        licenseGate = .skipped
-                        if finishPendingAfterValidation {
-                            completeIntro()
-                        }
-                    }
-                    return
-                }
-
+                let result = try await BourbonLicenseAPI.validateCurrentLicense()
                 await MainActor.run {
                     if result.isValid && result.allowed && result.status == .valid {
                         print("License validation succeeded")
@@ -213,6 +207,17 @@ struct BourbonIntroVideoView: View {
                         player?.pause()
                         licenseGate = .blocked(result)
                     }
+                }
+            } catch LicenseActivationError.missingToken {
+                print("License token unavailable")
+                await MainActor.run {
+                    player?.pause()
+                    licenseGate = .unavailable("Bourbon could not find the license stored on this Mac.")
+                }
+            } catch LicenseActivationError.blocked(let result) {
+                await MainActor.run {
+                    player?.pause()
+                    licenseGate = .blocked(result)
                 }
             } catch {
                 print("License validation unavailable")
@@ -241,6 +246,39 @@ struct BourbonIntroVideoView: View {
         }
     }
 
+    private func recoverLicense(_ key: String) {
+        player?.pause()
+        Task {
+            do {
+                let outcome = try await BourbonLicenseAPI.recoverLicense(key: key)
+                try LicenseKeychainStore.save(outcome.record)
+                await MainActor.run {
+                    if outcome.validation.warnings.isEmpty {
+                        licenseGate = .valid
+                        if finishPendingAfterValidation {
+                            completeIntro()
+                        }
+                    } else {
+                        licenseGate = .warning(outcome.validation)
+                    }
+                }
+            } catch LicenseActivationError.blocked(let result) {
+                await MainActor.run {
+                    licenseGate = .blocked(result)
+                }
+            } catch {
+                await MainActor.run {
+                    licenseGate = .unavailable("Bourbon could not restore that license key. Check the key and try again.")
+                }
+            }
+        }
+    }
+
+    private func openSupport() {
+        guard let url = URL(string: BourbonSupport.discordURL) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     private func cleanupPlayer() {
         if let playbackObserver {
             NotificationCenter.default.removeObserver(playbackObserver)
@@ -258,7 +296,6 @@ private enum IntroLicenseGate {
     case checkingAfterFinish
     case valid
     case warning(LicenseValidationResult)
-    case skipped
     case blocked(LicenseValidationResult)
     case unavailable(String)
 }
@@ -300,6 +337,7 @@ private struct LicenseBlockingView: View {
     @Environment(\.openURL) private var openURL
     let result: LicenseValidationResult
     let onTryAgain: () -> Void
+
     let onAppeal: () async throws -> Void
     @State private var isAppealing = false
     @State private var appealSubmitted = false
@@ -413,6 +451,12 @@ private struct LicenseBlockingView: View {
 private struct LicenseUnavailableView: View {
     let message: String
     let onTryAgain: () -> Void
+    let onRecover: (String) -> Void
+    let onSupport: () -> Void
+    let allowsRecovery: Bool
+    @State private var licenseKey = ""
+    @State private var showingKeyInput = false
+    @State private var showingSupport = false
 
     var body: some View {
         BourbonBackground {
@@ -422,7 +466,7 @@ private struct LicenseUnavailableView: View {
                         .font(.system(size: 42, weight: .semibold))
                         .foregroundStyle(BourbonStyle.amber)
 
-                    Text("License check unavailable")
+                    Text("License unavailable")
                         .font(.largeTitle.bold())
 
                     Text(message)
@@ -430,10 +474,40 @@ private struct LicenseUnavailableView: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Button("Try Again") {
-                        onTryAgain()
+                    if showingSupport {
+                        Text("For security, Bourbon cannot automatically restore a lost license without the license key. Please open a support ticket in Discord so we can help verify and recover your license.")
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Button("Open Discord Support") { onSupport() }
+                            .buttonStyle(BourbonPrimaryButtonStyle())
+                        Button("Back") { showingSupport = false }
+                            .buttonStyle(BourbonSecondaryButtonStyle())
+                    } else if showingKeyInput {
+                        TextField("Paste your Bourbon license key", text: $licenseKey)
+                            .textFieldStyle(.roundedBorder)
+                            .textSelection(.enabled)
+
+                        HStack {
+                            Button("Back") { showingKeyInput = false }
+                                .buttonStyle(BourbonSecondaryButtonStyle())
+                            Button("Restore License") {
+                                onRecover(licenseKey.trimmingCharacters(in: .whitespacesAndNewlines))
+                            }
+                            .buttonStyle(BourbonPrimaryButtonStyle())
+                            .disabled(licenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    } else {
+                        if allowsRecovery {
+                            Button("I Have a License Key") { showingKeyInput = true }
+                                .buttonStyle(BourbonPrimaryButtonStyle())
+                            Button("I Don't Have My License Key") { showingSupport = true }
+                                .buttonStyle(BourbonSecondaryButtonStyle())
+                        }
+                        Button("Try Again") { onTryAgain() }
+                            .buttonStyle(BourbonSecondaryButtonStyle())
                     }
-                    .buttonStyle(BourbonSecondaryButtonStyle())
                 }
                 .multilineTextAlignment(.center)
             }

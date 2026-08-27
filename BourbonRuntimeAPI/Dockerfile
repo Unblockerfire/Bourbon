@@ -24,7 +24,7 @@ ENV NODE_ENV=production
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 
 COPY --from=api-deps /src/BourbonRuntimeAPI/node_modules ./api/node_modules
-COPY BourbonRuntimeAPI/server.js BourbonRuntimeAPI/firebase-admin.js BourbonRuntimeAPI/license-policy.js BourbonRuntimeAPI/updates.json ./api/
+COPY BourbonRuntimeAPI/server.js BourbonRuntimeAPI/firebase-admin.js BourbonRuntimeAPI/license-policy.js BourbonRuntimeAPI/license-credentials.js BourbonRuntimeAPI/updates.json ./api/
 
 COPY --from=web-builder /src/BourbonWebsite/.next/standalone ./web
 COPY --from=web-builder /src/BourbonWebsite/.next/static ./web/.next/static
