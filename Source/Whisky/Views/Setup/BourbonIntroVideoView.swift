@@ -5,6 +5,7 @@ import SwiftUI
 
 // swiftlint:disable file_length
 
+// swiftlint:disable type_body_length
 struct BourbonIntroVideoView: View {
     let buttonTitle: String
     let startReturningUserUpdateCheck: () -> Void
@@ -294,6 +295,8 @@ struct BourbonIntroVideoView: View {
     }
 }
 
+// swiftlint:enable type_body_length
+
 private enum IntroLicenseGate {
     case idle
     case checking
@@ -452,7 +455,6 @@ private struct LicenseBlockingView: View {
     }
 }
 
-// swiftlint:disable:next type_body_length
 private struct LicenseUnavailableView: View {
     let message: String
     let onTryAgain: () -> Void

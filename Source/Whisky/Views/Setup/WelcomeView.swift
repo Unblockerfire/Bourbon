@@ -454,7 +454,8 @@ struct WelcomeView: View {
         panel.nameFieldStringValue = "Bourbon-License.txt"
         panel.allowedContentTypes = [.plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let contents = "Bourbon License Key\n\n\(key)\n\nKeep this file somewhere safe. You can use this key to restore your Bourbon license if the local copy is lost.\n"
+        let contents = "Bourbon License Key\n\n\(key)\n\nKeep this file somewhere safe. " +
+            "You can use this key to restore your Bourbon license if the local copy is lost.\n"
         try? contents.write(to: url, atomically: true, encoding: .utf8)
     }
 
