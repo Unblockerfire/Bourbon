@@ -953,9 +953,8 @@ enum BourbonLicenseAPI {
             throw LicenseActivationError.invalidResponse
         }
         if httpResponse.statusCode == 404 {
-            let migrated = try await migrateLegacyLicense(license: license, token: token)
-            try LicenseKeychainStore.save(migrated)
-            return try await validateCurrentLicense()
+            LicenseKeychainStore.clearObsoleteLicenseState()
+            throw LicenseActivationError.licenseReset
         }
         guard 200..<300 ~= httpResponse.statusCode else {
             throw LicenseActivationError.invalidResponse
@@ -1006,44 +1005,6 @@ enum BourbonLicenseAPI {
         return LicenseRecoveryOutcome(record: record, validation: validation)
     }
 
-    private static func migrateLegacyLicense(
-        license: BourbonLicenseRecord,
-        token: String
-    ) async throws -> BourbonLicenseRecord {
-        var request = URLRequest(url: BourbonAPIConfiguration.licenseMigrationURL)
-        request.httpMethod = "POST"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let payload = LicenseMigrationRequest(
-            legacyLicenseId: license.publicLicenseId,
-            legacyToken: token,
-            displayName: license.displayName,
-            appVersion: appVersion,
-            macosVersion: ProcessInfo.processInfo.operatingSystemVersionString,
-            architecture: currentArchitecture,
-            installId: license.installId
-        )
-        request.httpBody = try encoder.encode(payload)
-        let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
-        guard let http = response as? HTTPURLResponse,
-              200..<300 ~= http.statusCode else {
-            throw LicenseActivationError.invalidResponse
-        }
-        let decoded = try JSONDecoder().decode(LicenseActivationResponse.self, from: data)
-        return BourbonLicenseRecord(
-            publicLicenseId: decoded.publicLicenseId,
-            licenseToken: decoded.licenseToken,
-            licenseKey: decoded.licenseKey,
-            installId: license.installId,
-            displayName: decoded.displayName,
-            status: decoded.status,
-            messages: decoded.messages,
-            permissions: decoded.permissions,
-            warnings: license.warnings,
-            strikes: license.strikes
-        )
-    }
     static func submitAppeal(for result: LicenseValidationResult) async throws {
         guard let token = LicenseKeychainStore.readLicenseToken() else {
             throw LicenseActivationError.invalidResponse
@@ -1094,16 +1055,6 @@ private struct LicenseActivationRequest: Encodable {
     let installId: String
     let acceptedLegalVersion: String
     let acceptedLegalAt: Date
-}
-
-private struct LicenseMigrationRequest: Encodable {
-    let legacyLicenseId: String
-    let legacyToken: String
-    let displayName: String
-    let appVersion: String
-    let macosVersion: String
-    let architecture: String
-    let installId: String
 }
 
 private struct LicenseValidationRequest: Encodable {
@@ -1189,10 +1140,6 @@ enum BourbonAPIConfiguration {
         baseURL.appending(path: "license/validate")
     }
 
-    static var licenseMigrationURL: URL {
-        baseURL.appending(path: "licenses/migrate")
-    }
-
     static var licenseRecoveryURL: URL {
         baseURL.appending(path: "license/recover")
     }
@@ -1258,7 +1205,6 @@ enum LicenseKeychainStore {
         static let licensePermissions = "bourbon.licensePermissions"
         static let licenseWarnings = "bourbon.licenseWarnings"
         static let licenseStrikes = "bourbon.licenseStrikes"
-        static let legacyLicenseMigrationAttempted = "bourbon.legacyLicenseMigrationAttempted"
     }
 
     static func save(_ record: BourbonLicenseRecord) throws {
@@ -1268,13 +1214,15 @@ enum LicenseKeychainStore {
 
     static func currentLicense() -> BourbonLicenseRecord? {
         if let record = publicMetadataRecord() {
-            if readLicenseToken() == nil {
-                _ = migrateLegacyLicenseRecordIfNeeded()
+            guard readLicenseToken() != nil else {
+                clearObsoleteLicenseState()
+                return nil
             }
-            return publicMetadataRecord() ?? record
+            return record
         }
 
-        return migrateLegacyLicenseRecordIfNeeded()
+        delete(account: legacyLicenseAccount)
+        return nil
     }
 
     static func installID() throws -> String {
@@ -1297,18 +1245,6 @@ enum LicenseKeychainStore {
 
         print("License token found in Keychain")
         return token
-    }
-
-    static func saveLicenseTokenIfMissing(_ token: String) throws {
-        guard !token.isEmpty else { return }
-
-        do {
-            try add(Data(token.utf8), account: licenseTokenAccount)
-            print("License token missing, creating new token")
-        } catch LicenseActivationError.keychain(let status) where status == errSecDuplicateItem {
-            print("License token found in Keychain")
-            return
-        }
     }
 
     static func updateLicenseToken(_ token: String) throws {
@@ -1347,6 +1283,22 @@ enum LicenseKeychainStore {
         SecItemDelete(query as CFDictionary)
     }
 
+    static func clearObsoleteLicenseState() {
+        deleteLicenseToken()
+        delete(account: legacyLicenseAccount)
+        for key in [
+            DefaultsKey.publicLicenseId,
+            DefaultsKey.licenseDisplayName,
+            DefaultsKey.licenseStatus,
+            DefaultsKey.licenseMessages,
+            DefaultsKey.licensePermissions,
+            DefaultsKey.licenseWarnings,
+            DefaultsKey.licenseStrikes,
+        ] {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     private static func savePublicMetadata(_ record: BourbonLicenseRecord) {
         defaults.set(record.publicLicenseId, forKey: DefaultsKey.publicLicenseId)
         defaults.set(record.installId, forKey: DefaultsKey.installId)
@@ -1379,25 +1331,6 @@ enum LicenseKeychainStore {
         )
     }
 
-    private static func migrateLegacyLicenseRecordIfNeeded() -> BourbonLicenseRecord? {
-        guard let data = data(account: legacyLicenseAccount, logDescription: "legacy license record"),
-              let record = try? JSONDecoder().decode(BourbonLicenseRecord.self, from: data),
-              !record.licenseToken.isEmpty else {
-            defaults.set(true, forKey: DefaultsKey.legacyLicenseMigrationAttempted)
-            return nil
-        }
-
-        do {
-            try saveLicenseTokenIfMissing(record.licenseToken)
-            savePublicMetadata(record)
-            delete(account: legacyLicenseAccount)
-            defaults.set(true, forKey: DefaultsKey.legacyLicenseMigrationAttempted)
-        } catch {
-            print("License token migration failed")
-        }
-
-        return publicMetadataRecord() ?? record
-    }
 
     private static func add(_ data: Data, account: String) throws {
         var addQuery = baseQuery(account: account)
@@ -1448,5 +1381,6 @@ enum LicenseActivationError: Error {
     case invalidResponse
     case keychain(OSStatus)
     case missingToken
+    case licenseReset
     case blocked(LicenseValidationResult)
 }

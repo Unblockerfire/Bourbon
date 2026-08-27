@@ -184,12 +184,6 @@ function requestRateLimited(req, limit, windowMs = 60_000) {
   return recent.length > limit;
 }
 
-function migrationToken(legacyToken) {
-  const key = process.env.ADMIN_UPDATE_TOKEN;
-  if (!key) throw new Error("Migration secret is not configured");
-  return tokenHash(`${key}:${legacyToken}`);
-}
-
 function toIso(value) {
   return value?.toDate instanceof Function ? value.toDate().toISOString() : null;
 }
@@ -260,34 +254,6 @@ app.post("/licenses/activate", async (req, res) => {
   res.status(201).json({ publicLicenseId: licenseId, licenseToken, licenseKey: makeLicenseKey(licenseId, licenseToken), displayName, status: "Free", messages: [], permissions: ["distillery", "local-installs"] });
 });
 
-app.post("/licenses/migrate", async (req, res) => {
-  const legacyLicenseId = req.body?.legacyLicenseId;
-  const legacyToken = stringValue(req.body?.legacyToken, 256);
-  const displayName = stringValue(req.body?.displayName, 120) || "Legacy Bourbon user";
-  const appVersion = stringValue(req.body?.appVersion, 120);
-  const macosVersion = stringValue(req.body?.macosVersion, 160);
-  const architecture = stringValue(req.body?.architecture, 16);
-  const installId = stringValue(req.body?.installId, 160);
-  if (!licenseIdIsValid(legacyLicenseId) || !legacyToken || !appVersion || !macosVersion || !installId || !["arm64", "x86_64"].includes(architecture)) {
-    res.status(400).json({ ok: false, error: "Invalid license migration request" }); return;
-  }
-  const db = licenseBackend(res); if (!db) return;
-  const legacyHash = tokenHash(legacyToken);
-  let licenseId;
-  await db.runTransaction(async (transaction) => {
-    const migration = db.collection("legacyLicenseMigrations").doc(legacyHash);
-    const existing = await transaction.get(migration);
-    if (existing.exists) { licenseId = existing.data().licenseId; return; }
-    licenseId = `BRBN-${randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`;
-    const newToken = migrationToken(legacyToken);
-    transaction.set(db.collection("licenses").doc(licenseId), { status: "valid", reason: null, appealAllowed: false, deletionScheduledAt: null, tokenHash: tokenHash(newToken), credentialVersion: 2, displayName, installId, appVersion, macosVersion, architecture, legacyLicenseId, warningHistory: [], strikeHistory: [], lastValidationAt: FieldValue.serverTimestamp(), createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
-    transaction.set(migration, { licenseId, migratedAt: FieldValue.serverTimestamp() });
-  });
-  const migration = await db.collection("legacyLicenseMigrations").doc(legacyHash).get();
-  const data = migration.data();
-  const migratedToken = migrationToken(legacyToken);
-  res.json({ publicLicenseId: data.licenseId, licenseToken: migratedToken, licenseKey: makeLicenseKey(data.licenseId, migratedToken), displayName, status: "Free", messages: ["Your Bourbon license was migrated securely."], permissions: ["distillery", "local-installs"] });
-});
 app.post("/license/recover", async (req, res) => {
   if (requestRateLimited(req, 12)) {
     res.status(429).json({ ok: false, error: "Too many license recovery attempts" });

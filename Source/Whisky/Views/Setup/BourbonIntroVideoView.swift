@@ -123,13 +123,15 @@ struct BourbonIntroVideoView: View {
                     try await BourbonLicenseAPI.submitAppeal(for: result)
                 }
             )
-        case .unavailable(let message):
+        case .unavailable(let message, let allowsFreshActivation):
             LicenseUnavailableView(
                 message: message,
                 onTryAgain: retryLicenseValidation,
                 onRecover: recoverLicense,
                 onSupport: openSupport,
-                allowsRecovery: true
+                onStartFreshActivation: completeIntro,
+                allowsRecovery: true,
+                allowsFreshActivation: allowsFreshActivation
             )
         case .checkingAfterFinish:
             checkingLicenseView
@@ -214,7 +216,20 @@ struct BourbonIntroVideoView: View {
                 print("License token unavailable")
                 await MainActor.run {
                     player?.pause()
-                    licenseGate = .unavailable("Bourbon could not find the license stored on this Mac.")
+                    licenseGate = .unavailable(
+                        "Bourbon could not find a usable license on this Mac. " +
+                        "Restore a saved key or start a fresh license activation.",
+                        true
+                    )
+                }
+            } catch LicenseActivationError.licenseReset {
+                await MainActor.run {
+                    player?.pause()
+                    licenseGate = .unavailable(
+                        "This installation used an older Bourbon license that is no longer available. " +
+                        "Start a fresh license activation to continue.",
+                        true
+                    )
                 }
             } catch LicenseActivationError.blocked(let result) {
                 await MainActor.run {
@@ -227,7 +242,8 @@ struct BourbonIntroVideoView: View {
                     player?.pause()
                     licenseGate = .unavailable(
                         "Bourbon could not reach the license service. " +
-                        "Try again when your connection is available."
+                        "Try again when your connection is available.",
+                        false
                     )
                 }
             }
@@ -272,7 +288,8 @@ struct BourbonIntroVideoView: View {
                 await MainActor.run {
                     licenseGate = .unavailable(
                         "Bourbon could not restore that license key. " +
-                        "Check the key and try again."
+                        "Check the key and try again.",
+                        false
                     )
                 }
             }
@@ -304,7 +321,7 @@ private enum IntroLicenseGate {
     case valid
     case warning(LicenseValidationResult)
     case blocked(LicenseValidationResult)
-    case unavailable(String)
+    case unavailable(String, Bool)
 }
 
 private struct LicenseWarningView: View {
@@ -460,7 +477,9 @@ private struct LicenseUnavailableView: View {
     let onTryAgain: () -> Void
     let onRecover: (String) -> Void
     let onSupport: () -> Void
+    let onStartFreshActivation: () -> Void
     let allowsRecovery: Bool
+    let allowsFreshActivation: Bool
     @State private var licenseKey = ""
     @State private var showingKeyInput = false
     @State private var showingSupport = false
@@ -515,6 +534,10 @@ private struct LicenseUnavailableView: View {
                                 .buttonStyle(BourbonPrimaryButtonStyle())
                             Button("I Don't Have My License Key") { showingSupport = true }
                                 .buttonStyle(BourbonSecondaryButtonStyle())
+                        }
+                        if allowsFreshActivation {
+                            Button("Start Fresh License Activation") { onStartFreshActivation() }
+                                .buttonStyle(BourbonPrimaryButtonStyle())
                         }
                         Button("Try Again") { onTryAgain() }
                             .buttonStyle(BourbonSecondaryButtonStyle())

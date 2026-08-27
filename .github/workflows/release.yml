@@ -686,3 +686,70 @@ jobs:
           git add Casks/bourbon.rb
           git commit -m "Update Bourbon cask to ${RELEASE_VERSION}"
           git push origin main
+
+      - name: Announce release in Discord
+        if: github.ref_type == 'tag' && success()
+        env:
+          DISCORD_RELEASE_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DISCORD_RELEASE_WEBHOOK_URL:-}" ]; then
+            echo "::error::DISCORD_RELEASE_WEBHOOK_URL is not configured."
+            exit 1
+          fi
+
+          node --input-type=module <<'NODE'
+          const webhookURL = process.env.DISCORD_RELEASE_WEBHOOK_URL;
+          const version = process.env.RELEASE_VERSION;
+          const tag = process.env.RELEASE_TAG;
+          const releaseURL = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/releases/tag/${encodeURIComponent(tag)}`;
+          const versionPattern = /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/;
+
+          if (!versionPattern.test(version)) {
+            throw new Error("Release version is not a valid semantic version.");
+          }
+
+          const payload = {
+            embeds: [{
+              title: `🥃 Bourbon Release ${version}`,
+              description: `Bourbon ${version} is now available.`,
+              color: 0x8B5E34,
+              fields: [
+                {
+                  name: "Homebrew upgrade",
+                  value: "```sh\\nbrew update && brew upgrade --cask bourbon\\n```"
+                },
+                {
+                  name: "New install",
+                  value: "```sh\\nbrew tap Unblockerfire/bourbon\\nbrew install --cask bourbon\\n```"
+                },
+                {
+                  name: "Release",
+                  value: `[View Release](${releaseURL})`
+                }
+              ],
+              footer: {
+                text: "Automated Bourbon release announcement"
+              }
+            }],
+            allowed_mentions: { parse: [] }
+          };
+
+          const response = await fetch(webhookURL, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+            throw new Error(`Discord webhook returned HTTP ${response.status}`);
+          }
+
+          console.log("Discord release announcement sent.");
+          NODE
