@@ -176,6 +176,7 @@ struct BourbonIntroVideoView: View {
         onFinished()
     }
 
+    // swiftlint:disable:next function_body_length
     private func startLicenseValidation() {
         switch licenseGate {
         case .idle:
@@ -268,7 +269,10 @@ struct BourbonIntroVideoView: View {
                 }
             } catch {
                 await MainActor.run {
-                    licenseGate = .unavailable("Bourbon could not restore that license key. Check the key and try again.")
+                    licenseGate = .unavailable(
+                        "Bourbon could not restore that license key. " +
+                        "Check the key and try again."
+                    )
                 }
             }
         }

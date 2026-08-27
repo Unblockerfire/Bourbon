@@ -359,7 +359,10 @@ struct WelcomeView: View {
                 Text("Create your free Bourbon license")
                     .font(.largeTitle.bold())
                     .multilineTextAlignment(.center)
-                Text("Bourbon stores your license securely on this Mac. Keep a copy of your license key somewhere safe so you can restore it later.")
+                Text(
+                    "Bourbon stores your license securely on this Mac. Keep a copy of your " +
+                    "license key somewhere safe so you can restore it later."
+                )
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
@@ -406,7 +409,10 @@ struct WelcomeView: View {
             VStack(spacing: 6) {
                 Text("Your Bourbon License")
                     .font(.largeTitle.bold())
-                Text("This is your Bourbon license key. Bourbon stores it securely on this Mac, but keep a copy somewhere safe in case you ever need to restore your license.")
+                Text(
+                    "This is your Bourbon license key. Bourbon stores it securely on this Mac, " +
+                    "but keep a copy somewhere safe in case you ever need to restore your license."
+                )
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
