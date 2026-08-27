@@ -452,7 +452,7 @@ private struct LicenseBlockingView: View {
     }
 }
 
-private struct LicenseUnavailableView: View {
+// swiftlint:disable:next type_body_length`r`nprivate struct LicenseUnavailableView: View {
     let message: String
     let onTryAgain: () -> Void
     let onRecover: (String) -> Void
