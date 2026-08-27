@@ -216,7 +216,11 @@ struct BourbonIntroVideoView: View {
                 print("License token unavailable")
                 await MainActor.run {
                     player?.pause()
-                    licenseGate = .unavailable("Bourbon could not find a usable license on this Mac. Restore a saved key or start a fresh license activation.", true)
+                    licenseGate = .unavailable(
+                        "Bourbon could not find a usable license on this Mac. " +
+                        "Restore a saved key or start a fresh license activation.",
+                        true
+                    )
                 }
             } catch LicenseActivationError.licenseReset {
                 await MainActor.run {
