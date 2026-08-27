@@ -1293,7 +1293,7 @@ enum LicenseKeychainStore {
             DefaultsKey.licenseMessages,
             DefaultsKey.licensePermissions,
             DefaultsKey.licenseWarnings,
-            DefaultsKey.licenseStrikes,
+            DefaultsKey.licenseStrikes
         ] {
             defaults.removeObject(forKey: key)
         }
@@ -1330,7 +1330,6 @@ enum LicenseKeychainStore {
             strikes: defaults.integer(forKey: DefaultsKey.licenseStrikes)
         )
     }
-
 
     private static func add(_ data: Data, account: String) throws {
         var addQuery = baseQuery(account: account)
