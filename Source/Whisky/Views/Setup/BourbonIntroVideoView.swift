@@ -3,7 +3,7 @@ import AppKit
 import Security
 import SwiftUI
 
-// swiftlint:disable file_length function_body_length type_body_length line_length
+// swiftlint:disable file_length
 
 struct BourbonIntroVideoView: View {
     let buttonTitle: String
@@ -176,6 +176,7 @@ struct BourbonIntroVideoView: View {
         onFinished()
     }
 
+    // swiftlint:disable:next function_body_length
     private func startLicenseValidation() {
         switch licenseGate {
         case .idle:
@@ -269,7 +270,8 @@ struct BourbonIntroVideoView: View {
             } catch {
                 await MainActor.run {
                     licenseGate = .unavailable(
-                        "Bourbon could not restore that license key."
+                        "Bourbon could not restore that license key. " +
+                        "Check the key and try again."
                     )
                 }
             }
@@ -450,6 +452,7 @@ private struct LicenseBlockingView: View {
     }
 }
 
+// swiftlint:disable:next type_body_length
 private struct LicenseUnavailableView: View {
     let message: String
     let onTryAgain: () -> Void
@@ -478,8 +481,9 @@ private struct LicenseUnavailableView: View {
 
                     if showingSupport {
                         Text(
-                            "For security, Bourbon cannot automatically restore a lost license. " +
-                            "Please open a support ticket in Discord so we can help verify and recover your license."
+                            "For security, Bourbon cannot automatically restore a lost license " +
+                            "without the license key. Please open a support ticket in Discord " +
+                            "so we can help verify and recover your license."
                         )
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
