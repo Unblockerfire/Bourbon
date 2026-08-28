@@ -77,6 +77,7 @@ struct BottleCreationView: View {
         guard !isCreating else { return }
         creationError = nil
         isCreating = true
+        print("bottle.creation.ui.submit")
         creationTask = Task { @MainActor in
             defer {
                 isCreating = false
@@ -92,8 +93,10 @@ struct BottleCreationView: View {
                 newlyCreatedBottleURL = url
                 cancel()
             } catch is CancellationError {
+                print("bottle.creation.ui.cancelled")
                 creationError = "Bottle creation was cancelled."
             } catch {
+                print("bottle.creation.ui.failed: \(error.localizedDescription)")
                 creationError = Task.isCancelled
                     ? "Bottle creation was cancelled."
                     : "Bourbon couldn’t create this bottle. Try again."

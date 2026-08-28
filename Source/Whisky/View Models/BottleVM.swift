@@ -41,19 +41,23 @@ final class BottleVM: ObservableObject {
     func createNewBottle(bottleName: String, winVersion: WinVersion, bottleURL: URL) async throws -> URL {
         let newBottleDir = bottleURL.appending(path: UUID().uuidString)
         var createdDirectory = false
+        print("bottle.creation.requested")
 
         do {
             try Task.checkCancellation()
             try FileManager.default.createDirectory(at: newBottleDir, withIntermediateDirectories: true)
             createdDirectory = true
+            print("bottle.creation.directory.created")
             try Task.checkCancellation()
 
             let bottle = Bottle(bottleUrl: newBottleDir, inFlight: true)
             bottle.settings.windowsVersion = winVersion
             bottle.settings.name = bottleName
             bottles.append(bottle)
+            print("bottle.creation.visible.inFlight")
 
             try await Wine.changeWinVersion(bottle: bottle, win: winVersion)
+            print("bottle.creation.winecfg.completed")
             try Task.checkCancellation()
             let wineVer = try await Wine.wineVersion()
             try Task.checkCancellation()
@@ -64,8 +68,10 @@ final class BottleVM: ObservableObject {
             bottle.inFlight = false
             bottlesList.paths.append(newBottleDir)
             loadBottles()
+            print("bottle.creation.completed")
             return newBottleDir
         } catch {
+            print("bottle.creation.failed: \(error.localizedDescription)")
             bottles.removeAll { $0.url == newBottleDir }
             bottlesList.paths.removeAll { $0 == newBottleDir }
             if createdDirectory {
