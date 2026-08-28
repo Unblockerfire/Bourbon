@@ -1,24 +1,24 @@
 {
   "stable": {
-    "version": "2.0.15",
-    "build": "100041",
-    "dmgUrl": "https://github.com/Unblockerfire/Bourbon/releases/download/v2.0.15/Bourbon2.0.15.dmg",
-    "dmgLength": 11358862,
-    "pubDate": "2026-08-28T01:43:35Z",
+    "version": "2.0.17",
+    "build": "100043",
+    "dmgUrl": "https://github.com/Unblockerfire/Bourbon/releases/download/v2.0.17/Bourbon2.0.17.dmg",
+    "dmgLength": 11374065,
+    "pubDate": "2026-08-28T19:14:03Z",
     "minimumSystemVersion": "14.0",
     "minimumAutoupdateVersion": "2.0.0",
     "releaseType": "patch",
-    "edSignature": "4YqP0yCmoD/7d7x6AVBApTghK4jnmRtIw1qT7GDWTl3Ze0wrEpRC5x9lQ9zrkzFLv0AgcxcUnIMi/YhbjJBXAA=="
+    "edSignature": "ZIjOOWzrIf1DrcLixt0jXuLgqWshEcGMn1gKtfbT0zdo8WDKoPfzR3JVYHv8VdYoaiDN5lKfnbMvaa0kQCgeCw=="
   },
   "pre": {
-    "version": "2.0.15",
-    "build": "100041",
-    "dmgUrl": "https://github.com/Unblockerfire/Bourbon/releases/download/v2.0.15/Bourbon2.0.15.dmg",
-    "dmgLength": 11358862,
-    "pubDate": "2026-08-28T01:43:35Z",
+    "version": "2.0.17",
+    "build": "100043",
+    "dmgUrl": "https://github.com/Unblockerfire/Bourbon/releases/download/v2.0.17/Bourbon2.0.17.dmg",
+    "dmgLength": 11374065,
+    "pubDate": "2026-08-28T19:14:03Z",
     "minimumSystemVersion": "14.0",
     "minimumAutoupdateVersion": "2.0.0",
     "releaseType": "patch",
-    "edSignature": "4YqP0yCmoD/7d7x6AVBApTghK4jnmRtIw1qT7GDWTl3Ze0wrEpRC5x9lQ9zrkzFLv0AgcxcUnIMi/YhbjJBXAA=="
+    "edSignature": "ZIjOOWzrIf1DrcLixt0jXuLgqWshEcGMn1gKtfbT0zdo8WDKoPfzR3JVYHv8VdYoaiDN5lKfnbMvaa0kQCgeCw=="
   }
 }
