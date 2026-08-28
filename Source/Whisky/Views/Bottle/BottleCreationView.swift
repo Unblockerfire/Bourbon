@@ -24,6 +24,7 @@ struct BottleCreationView: View {
     @Binding var newlyCreatedBottleURL: URL?
     @Binding var selectedInstallerURL: URL?
     var cancel: () -> Void = {}
+    var created: (URL) -> Void = { _ in }
 
     private let supportedWindowsVersions: [WinVersion] = [.win11, .win10, .win81, .win8, .win7, .winXP]
     private let deprecatedWindowsVersions: Set<WinVersion> = [.win7, .winXP]
@@ -91,6 +92,7 @@ struct BottleCreationView: View {
                     bottleURL: newBottleURL
                 )
                 newlyCreatedBottleURL = url
+                created(url)
                 cancel()
             } catch is CancellationError {
                 print("bottle.creation.ui.cancelled")
