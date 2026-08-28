@@ -329,8 +329,7 @@ struct ContentView: View {
 
             Divider()
 
-            ScrollViewReader { proxy in
-                List(selection: $selected) {
+            List(selection: $selected) {
                     Section {
                         ForEach(filteredBottles) { bottle in
                             Group {
@@ -357,7 +356,6 @@ struct ContentView: View {
                     if selected != nil {
                         activePage = nil
                     }
-                }
             }
         }
     }

@@ -187,7 +187,7 @@ struct BourbonIntroVideoView: View {
         onFinished()
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func startLicenseValidation() {
         switch licenseGate {
         case .idle:
@@ -280,7 +280,7 @@ struct BourbonIntroVideoView: View {
         }
     }
 
-    // swiftlint:disable function_body_length
+    // swiftlint:disable function_body_length cyclomatic_complexity
     private func recoverLicense(_ key: String) {
         player?.pause()
         licenseRequestID = UUID()
