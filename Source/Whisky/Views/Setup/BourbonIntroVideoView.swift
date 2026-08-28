@@ -264,7 +264,8 @@ struct BourbonIntroVideoView: View {
         }
     }
 
-    // swiftlint:disable function_body_length\n    private func recoverLicense(_ key: String) {
+    // swiftlint:disable function_body_length
+    private func recoverLicense(_ key: String) {
         player?.pause()
         Task {
             do {
@@ -342,6 +343,7 @@ struct BourbonIntroVideoView: View {
         }
     }
 
+    // swiftlint:enable function_body_length
     private func openSupport() {
         guard let url = URL(string: BourbonSupport.discordURL) else { return }
         NSWorkspace.shared.open(url)
