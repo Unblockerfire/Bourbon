@@ -952,7 +952,7 @@ enum BourbonLicenseAPI {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LicenseActivationError.invalidResponse
         }
-        if httpResponse.statusCode == 404 {
+        if httpResponse.statusCode == 401 || httpResponse.statusCode == 404 {
             LicenseKeychainStore.clearObsoleteLicenseState()
             throw LicenseActivationError.licenseReset
         }
@@ -960,8 +960,7 @@ enum BourbonLicenseAPI {
             throw LicenseActivationError.invalidResponse
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        let decoder = BourbonLicenseAPI.decoder()
         return try decoder.decode(LicenseValidationResult.self, from: data)
     }
 
@@ -974,21 +973,44 @@ enum BourbonLicenseAPI {
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
-        let (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        } catch {
+            throw LicenseActivationError.network
+        }
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LicenseActivationError.invalidResponse
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let decoded = try decoder.decode(LicenseRecoveryResponse.self, from: data)
+        if httpResponse.statusCode == 429 {
+            throw LicenseActivationError.rateLimited
+        }
+        if httpResponse.statusCode == 400 || httpResponse.statusCode == 401 {
+            throw LicenseActivationError.invalidLicense
+        }
+        guard 200..<300 ~= httpResponse.statusCode || httpResponse.statusCode == 403 else {
+            throw LicenseActivationError.service(status: httpResponse.statusCode)
+        }
+
+        let decoder = BourbonLicenseAPI.decoder()
+        let decoded: LicenseRecoveryResponse
+        do {
+            decoded = try decoder.decode(LicenseRecoveryResponse.self, from: data)
+        } catch {
+            print("License recovery response decoding failed")
+            throw LicenseActivationError.invalidResponse
+        }
         guard let validation = decoded.validationResult else {
             throw LicenseActivationError.invalidResponse
         }
-        guard 200..<300 ~= httpResponse.statusCode,
-              let publicLicenseId = decoded.publicLicenseId,
-              let licenseToken = decoded.licenseToken else {
+        if httpResponse.statusCode == 403 {
             throw LicenseActivationError.blocked(validation)
+        }
+        guard let publicLicenseId = decoded.publicLicenseId,
+              let licenseToken = decoded.licenseToken else {
+            throw LicenseActivationError.invalidResponse
         }
 
         let record = BourbonLicenseRecord(
@@ -1003,7 +1025,30 @@ enum BourbonLicenseAPI {
             warnings: validation.warnings,
             strikes: 0
         )
+        print("License recovery server accepted credential")
         return LicenseRecoveryOutcome(record: record, validation: validation)
+    }
+
+    private static func decoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(String.self)
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: value) {
+                return date
+            }
+            formatter.formatOptions = [.withInternetDateTime]
+            if let date = formatter.date(from: value) {
+                return date
+            }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid ISO-8601 date"
+            )
+        }
+        return decoder
     }
 
     private static func normalizeRecoveryKey(_ value: String) -> String {
@@ -1393,6 +1438,10 @@ enum LicenseKeychainStore {
 
 enum LicenseActivationError: Error {
     case invalidResponse
+    case network
+    case invalidLicense
+    case rateLimited
+    case service(status: Int)
     case keychain(OSStatus)
     case missingToken
     case licenseReset

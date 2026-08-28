@@ -268,8 +268,10 @@ struct BourbonIntroVideoView: View {
         player?.pause()
         Task {
             do {
+                print("License recovery request started")
                 let outcome = try await BourbonLicenseAPI.recoverLicense(key: key)
                 try LicenseKeychainStore.save(outcome.record)
+                print("License recovery credential saved")
                 await MainActor.run {
                     if outcome.validation.warnings.isEmpty {
                         licenseGate = .valid
@@ -289,6 +291,42 @@ struct BourbonIntroVideoView: View {
                     licenseGate = .unavailable(
                         "Bourbon restored the license, but could not save it securely on this Mac. " +
                         "Please try again.",
+                        false
+                    )
+                }
+            } catch LicenseActivationError.invalidLicense {
+                await MainActor.run {
+                    licenseGate = .unavailable(
+                        "That license key is invalid or no longer available. " +
+                        "Please check the key and try again.",
+                        false
+                    )
+                }
+            } catch LicenseActivationError.rateLimited {
+                await MainActor.run {
+                    licenseGate = .unavailable(
+                        "Too many recovery attempts were made. Please wait a moment and try again.",
+                        false
+                    )
+                }
+            } catch LicenseActivationError.service {
+                await MainActor.run {
+                    licenseGate = .unavailable(
+                        "Bourbon couldn’t reach the licensing service. Please try again.",
+                        false
+                    )
+                }
+            } catch LicenseActivationError.network {
+                await MainActor.run {
+                    licenseGate = .unavailable(
+                        "Bourbon couldn’t contact the licensing service. Check your connection and try again.",
+                        false
+                    )
+                }
+            } catch LicenseActivationError.invalidResponse {
+                await MainActor.run {
+                    licenseGate = .unavailable(
+                        "Bourbon received an invalid response from the licensing service. Please try again.",
                         false
                     )
                 }
