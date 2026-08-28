@@ -359,18 +359,6 @@ struct ContentView: View {
                         activePage = nil
                     }
                 }
-                .onChange(of: newlyCreatedBottleURL) { _, url in
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        selected = url
-                        firstInstallBottleURL = url
-                        if url != nil {
-                            hasCompletedFirstRunOnboarding = true
-                        }
-                        withAnimation {
-                            proxy.scrollTo(url, anchor: .center)
-                        }
-                    }
-                }
             }
         }
     }
