@@ -450,14 +450,8 @@ public class Wine {
     }
 
     public static func wineVersion() async throws -> String {
-        var output = try await runWine(["--version"], bottle: nil)
-        output.replace("wine-", with: "")
-
-        // Deal with WineCX version names
-        if let index = output.firstIndex(where: { $0.isWhitespace }) {
-            return String(output.prefix(upTo: index))
-        }
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let output = try await runWine(["--version"], bottle: nil)
+        return try WineSemanticVersion.requireVersionToken(from: output)
     }
 
     @discardableResult

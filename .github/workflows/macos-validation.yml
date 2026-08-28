@@ -134,12 +134,19 @@ jobs:
         run: swiftlint lint --strict
 
       - name: Run WhiskyKit tests
-        run: swift test --package-path Source/WhiskyKit
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/bourbon-validation-logs"
+          swift test --package-path Source/WhiskyKit 2>&1 \
+            | tee "$RUNNER_TEMP/bourbon-validation-logs/whiskykit-tests.log"
 
       - name: Build Bourbon
         working-directory: Source
+        shell: bash
         run: |
           set -o pipefail
+          mkdir -p "$RUNNER_TEMP/bourbon-validation-logs"
 
           xcodebuild \
             -project Whisky.xcodeproj \
@@ -148,4 +155,14 @@ jobs:
             -destination 'generic/platform=macOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            build
+            build 2>&1 \
+            | tee "$RUNNER_TEMP/bourbon-validation-logs/bourbon-release-build.log"
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bourbon-macos-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bourbon-validation-logs
+          if-no-files-found: warn
+          retention-days: 14

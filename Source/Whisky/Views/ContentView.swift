@@ -233,8 +233,8 @@ struct ContentView: View {
     }
 
     private func openBottleCreation() {
-        print("bottle.create.button.clicked")
-        print("bottle.create.view.opened")
+        BottleCreationDiagnostics.record("bottle.create.button.clicked")
+        BottleCreationDiagnostics.record("bottle.create.view.opened")
         previousPageBeforeCreation = activePage
         selected = nil
         newlyCreatedBottleURL = nil
@@ -397,12 +397,12 @@ struct ContentView: View {
                     showBottleCreation = false
                 },
                 created: { url in
-                    print("bottle.create.selection.started")
+                    BottleCreationDiagnostics.record("bottle.create.selection.started")
                     selected = url
                     selectedBottleURL = url
                     firstInstallBottleURL = firstInstallerURL == nil ? nil : url
-                    print("bottle.create.selection.completed")
-                    print("bottle.create.completed")
+                    BottleCreationDiagnostics.record("bottle.create.selection.completed")
+                    BottleCreationDiagnostics.record("bottle.create.completed")
                     activePage = nil
                     showBottleCreation = false
                 }

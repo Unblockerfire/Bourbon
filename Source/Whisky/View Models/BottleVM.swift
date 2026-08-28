@@ -17,8 +17,20 @@
 //
 
 import Foundation
+import os
 import SemanticVersion
 import WhiskyKit
+
+enum BottleCreationDiagnostics {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "Bourbon",
+        category: "bottle-creation"
+    )
+
+    static func record(_ event: String) {
+        logger.notice("\(event, privacy: .public)")
+    }
+}
 
 // swiftlint:disable:next todo
 // TODO: Don't use unchecked!
@@ -97,20 +109,20 @@ final class BottleVM: ObservableObject {
         _ stage: BottleCreationStage,
         operation: @MainActor () async throws -> Result
     ) async throws -> Result {
-        print(stage.startedEvent)
+        BottleCreationDiagnostics.record(stage.startedEvent)
         do {
             let result = try await operation()
             if let completedEvent = stage.completedEvent {
-                print(completedEvent)
+                BottleCreationDiagnostics.record(completedEvent)
             }
             return result
         } catch is CancellationError {
-            print("bottle.create.cancel.completed stage=\(stage.rawValue)")
+            BottleCreationDiagnostics.record("bottle.create.cancel.completed stage=\(stage.rawValue)")
             throw CancellationError()
         } catch {
             let errorType = String(describing: type(of: error))
-            let description = error is BottleCreationError ? "invalid_wine_version" : "stage_failed"
-            print(
+            let description = safeErrorDescription(error)
+            BottleCreationDiagnostics.record(
                 "bottle.create.failed stage=\(stage.rawValue) " +
                 "error_type=\(errorType) description=\(description)"
             )
@@ -122,22 +134,43 @@ final class BottleVM: ObservableObject {
         phase: String,
         operation: @MainActor () async throws -> Result
     ) async throws -> Result {
-        print("bottle.create.wine.process.started phase=\(phase)")
+        BottleCreationDiagnostics.record("bottle.create.wine.process.started stage=wine phase=\(phase)")
         do {
             let result = try await operation()
-            print("bottle.create.wine.process.terminated phase=\(phase) status=success")
+            BottleCreationDiagnostics.record(
+                "bottle.create.wine.process.terminated stage=wine phase=\(phase) status=success"
+            )
             return result
         } catch is CancellationError {
-            print("bottle.create.wine.process.terminated phase=\(phase) status=cancelled")
+            BottleCreationDiagnostics.record(
+                "bottle.create.wine.process.terminated stage=wine phase=\(phase) status=cancelled"
+            )
             throw CancellationError()
         } catch {
             let errorType = String(describing: type(of: error))
-            print(
-                "bottle.create.wine.process.terminated phase=\(phase) " +
-                "status=failure error_type=\(errorType)"
+            let description = safeErrorDescription(error)
+            BottleCreationDiagnostics.record(
+                "bottle.create.wine.process.terminated stage=wine phase=\(phase) " +
+                "status=failure error_type=\(errorType) description=\(description)"
             )
             throw error
         }
+    }
+
+    private func safeErrorDescription(_ error: Error) -> String {
+        if error is BottleCreationError {
+            return "invalid_wine_version"
+        }
+        if let wineError = error as? WineProcessError {
+            return "wine_process_exit_status_\(wineError.status)"
+        }
+        if error is WineVersionError {
+            return "wine_version_output_invalid"
+        }
+        if error is CocoaError {
+            return "filesystem_operation_failed"
+        }
+        return "creation_operation_failed"
     }
 
     private func cleanupPartialBottle(at bottleURL: URL, removeDirectory: Bool) {
@@ -148,8 +181,9 @@ final class BottleVM: ObservableObject {
         do {
             try FileManager.default.removeItem(at: bottleURL)
         } catch {
-            print(
-                "bottle.create.cleanup.failed error_type=filesystem " +
+            let errorType = String(describing: type(of: error))
+            BottleCreationDiagnostics.record(
+                "bottle.create.cleanup.failed stage=cleanup error_type=\(errorType) " +
                 "description=partial_directory_removal_failed"
             )
         }
