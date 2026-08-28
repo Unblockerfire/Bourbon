@@ -971,37 +971,8 @@ enum BourbonLicenseAPI {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(LicenseRecoveryRequest(licenseKey: normalizedKey))
 
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 15
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession(configuration: configuration).data(for: request)
-        } catch {
-            throw LicenseActivationError.network
-        }
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LicenseActivationError.invalidResponse
-        }
-
-        if httpResponse.statusCode == 429 {
-            throw LicenseActivationError.rateLimited
-        }
-        if httpResponse.statusCode == 400 || httpResponse.statusCode == 401 {
-            throw LicenseActivationError.invalidLicense
-        }
-        guard 200..<300 ~= httpResponse.statusCode || httpResponse.statusCode == 403 else {
-            throw LicenseActivationError.service(status: httpResponse.statusCode)
-        }
-
-        let decoder = BourbonLicenseAPI.decoder()
-        let decoded: LicenseRecoveryResponse
-        do {
-            decoded = try decoder.decode(LicenseRecoveryResponse.self, from: data)
-        } catch {
-            print("License recovery response decoding failed")
-            throw LicenseActivationError.invalidResponse
-        }
+        let (data, httpResponse) = try await recoveryResponse(for: request)
+        let decoded = try decodeRecoveryResponse(data: data, statusCode: httpResponse.statusCode)
         guard let validation = decoded.validationResult else {
             throw LicenseActivationError.invalidResponse
         }
@@ -1027,6 +998,41 @@ enum BourbonLicenseAPI {
         )
         print("License recovery server accepted credential")
         return LicenseRecoveryOutcome(record: record, validation: validation)
+    }
+
+    private static func recoveryResponse(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 15
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        } catch {
+            throw LicenseActivationError.network
+        }
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw LicenseActivationError.invalidResponse
+        }
+        return (data, httpResponse)
+    }
+
+    private static func decodeRecoveryResponse(data: Data, statusCode: Int) throws -> LicenseRecoveryResponse {
+        if statusCode == 429 {
+            throw LicenseActivationError.rateLimited
+        }
+        if statusCode == 400 || statusCode == 401 {
+            throw LicenseActivationError.invalidLicense
+        }
+        guard 200..<300 ~= statusCode else {
+            throw LicenseActivationError.service(status: statusCode)
+        }
+
+        do {
+            return try decoder().decode(LicenseRecoveryResponse.self, from: data)
+        } catch {
+            print("License recovery response decoding failed")
+            throw LicenseActivationError.invalidResponse
+        }
     }
 
     private static func decoder() -> JSONDecoder {
