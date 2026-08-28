@@ -330,7 +330,7 @@ struct ContentView: View {
 
             Divider()
 
-            ScrollViewReader { proxy in
+            ScrollViewReader { _ in
                 List(selection: $selected) {
                     Section {
                         ForEach(filteredBottles) { bottle in
