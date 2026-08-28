@@ -20,7 +20,7 @@ jobs:
       REPOSITORY: Unblockerfire/Bourbon
       SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-      ADMIN_UPDATE_TOKEN: ${{ secrets.ADMIN_UPDATE_TOKEN }}
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
     steps:
       - name: Check release prerequisites
         shell: bash
@@ -34,8 +34,8 @@ jobs:
             echo "::error::HOMEBREW_TAP_TOKEN is not configured."
             exit 1
           fi
-          if [ -z "${ADMIN_UPDATE_TOKEN:-}" ]; then
-            echo "::error::ADMIN_UPDATE_TOKEN is not configured."
+          if [ -z "${FLY_API_TOKEN:-}" ]; then
+            echo "::error::FLY_API_TOKEN is not configured."
             exit 1
           fi
 
@@ -50,13 +50,18 @@ jobs:
           set -euo pipefail
           git fetch --tags --force
           if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
-            echo "::error::${RELEASE_TAG} already exists."
-            exit 1
+            EXISTING_SHA="$(git rev-list -n 1 "${RELEASE_TAG}")"
+            if [ "$EXISTING_SHA" != "$GITHUB_SHA" ]; then
+              echo "::error::${RELEASE_TAG} already exists at ${EXISTING_SHA}, expected ${GITHUB_SHA}."
+              exit 1
+            fi
+            echo "${RELEASE_TAG} already points at this release commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "${RELEASE_TAG}" "${GITHUB_SHA}" -m "Bourbon ${RELEASE_VERSION}"
+            git push origin "refs/tags/${RELEASE_TAG}"
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${RELEASE_TAG}" "${GITHUB_SHA}" -m "Bourbon ${RELEASE_VERSION}"
-          git push origin "refs/tags/${RELEASE_TAG}"
 
       - name: Wait for GitHub release assets
         shell: bash
@@ -78,18 +83,17 @@ jobs:
             exit 1
           fi
 
-      - name: Publish Sparkle update channels
+      - name: Build runtime update configuration
         shell: bash
         run: |
           set -euo pipefail
           python3 <<'PY'
           import json
           import os
-          import urllib.request
           import xml.etree.ElementTree as ET
+          from email.utils import parsedate_to_datetime
 
-          path = "/tmp/appcast.xml"
-          tree = ET.parse(path)
+          tree = ET.parse("/tmp/appcast.xml")
           root = tree.getroot()
           sparkle = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
           bourbon = "{https://getbourbon.app/appcast}"
@@ -107,50 +111,62 @@ jobs:
                   raise SystemExit(f"Appcast is missing {name}")
               return value or None
 
-          payload = {
-              "version": text(f"{sparkle}shortVersionString"),
+          version = text(f"{sparkle}shortVersionString")
+          if version != os.environ["RELEASE_VERSION"]:
+              raise SystemExit(f"Unexpected appcast version: {version}")
+
+          signature = enclosure.attrib.get(f"{sparkle}edSignature")
+          if not signature:
+              raise SystemExit("Appcast is missing EdDSA signature")
+
+          pub_date = parsedate_to_datetime(text("pubDate")).isoformat().replace("+00:00", "Z")
+          release = {
+              "version": version,
               "build": text(f"{sparkle}version"),
               "dmgUrl": enclosure.attrib["url"],
               "dmgLength": int(enclosure.attrib["length"]),
-              "pubDate": text("pubDate"),
+              "pubDate": pub_date,
               "minimumSystemVersion": text(f"{sparkle}minimumSystemVersion"),
               "minimumAutoupdateVersion": text(f"{sparkle}minimumAutoupdateVersion", required=False),
               "releaseType": text(f"{bourbon}releaseType", required=False),
-              "edSignature": enclosure.attrib.get(f"{sparkle}edSignature"),
+              "edSignature": signature,
           }
-
-          if payload["version"] != os.environ["RELEASE_VERSION"]:
-              raise SystemExit(f"Unexpected appcast version: {payload['version']}")
-          if not payload["edSignature"]:
-              raise SystemExit("Appcast is missing EdDSA signature")
-
-          token = os.environ["ADMIN_UPDATE_TOKEN"]
-          endpoint = "https://api.getbourbon.app/admin/updates/publish"
-          for channel in ("stable", "pre"):
-              body = dict(payload, channel=channel)
-              request = urllib.request.Request(
-                  endpoint,
-                  data=json.dumps(body).encode("utf-8"),
-                  headers={
-                      "Authorization": f"Bearer {token}",
-                      "Content-Type": "application/json",
-                  },
-                  method="POST",
-              )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  result = json.loads(response.read().decode("utf-8"))
-                  if not result.get("ok") or result.get("version") != os.environ["RELEASE_VERSION"]:
-                      raise SystemExit(f"Update feed publish failed for {channel}: {result}")
-                  print(f"Published {channel} update feed for {result['version']}")
+          payload = {"stable": release, "pre": release}
+          with open("BourbonRuntimeAPI/updates.json", "w", encoding="utf-8") as output:
+              json.dump(payload, output, indent=2)
+              output.write("\n")
+          print(f"Prepared runtime feeds for Bourbon {version}")
           PY
+
+      - name: Install flyctl
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L https://fly.io/install.sh | sh
+          "$HOME/.fly/bin/flyctl" version
+
+      - name: Deploy runtime update feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HOME/.fly/bin/flyctl" deploy \
+            --config BourbonRuntimeAPI/fly.toml \
+            --dockerfile BourbonRuntimeAPI/Dockerfile \
+            --remote-only
 
       - name: Verify Sparkle feeds
         shell: bash
         run: |
           set -euo pipefail
-          for channel in stable pre; do
-            curl -fsSL "https://api.getbourbon.app/updates/${channel}/appcast.xml" -o "/tmp/${channel}.xml"
-            python3 - "$channel" "/tmp/${channel}.xml" "$RELEASE_VERSION" <<'PY'
+          ready=0
+          for attempt in $(seq 1 36); do
+            all_ok=1
+            for channel in stable pre; do
+              if ! curl -fsSL "https://api.getbourbon.app/updates/${channel}/appcast.xml" -o "/tmp/${channel}.xml"; then
+                all_ok=0
+                break
+              fi
+              if ! python3 - "$channel" "/tmp/${channel}.xml" "$RELEASE_VERSION" <<'PY'
           import sys
           import xml.etree.ElementTree as ET
           channel, path, expected = sys.argv[1:]
@@ -162,7 +178,40 @@ jobs:
               raise SystemExit(f"{channel} feed reports {version!r}, expected {expected!r}")
           print(f"Verified {channel} feed at {version}")
           PY
+              then
+                all_ok=0
+                break
+              fi
+            done
+            if [ "$all_ok" -eq 1 ]; then
+              ready=1
+              break
+            fi
+            echo "Waiting for deployed Sparkle feeds, attempt ${attempt}/36..."
+            sleep 10
           done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::Sparkle feeds did not update to ${RELEASE_VERSION}."
+            exit 1
+          fi
+
+      - name: Persist update metadata to Bourbon branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp BourbonRuntimeAPI/updates.json /tmp/updates.json
+          git fetch origin Bourbon
+          git checkout -B persist-release-feed origin/Bourbon
+          cp /tmp/updates.json BourbonRuntimeAPI/updates.json
+          if git diff --quiet -- BourbonRuntimeAPI/updates.json; then
+            echo "BourbonRuntimeAPI/updates.json already matches ${RELEASE_VERSION}."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add BourbonRuntimeAPI/updates.json
+          git commit -m "Update Bourbon runtime feed to ${RELEASE_VERSION}"
+          git push origin HEAD:Bourbon
 
       - name: Verify Homebrew cask
         shell: bash
