@@ -280,7 +280,7 @@ struct BourbonIntroVideoView: View {
         }
     }
 
-    // swiftlint:disable function_body_length cyclomatic_complexity
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     private func recoverLicense(_ key: String) {
         player?.pause()
         licenseRequestID = UUID()
@@ -370,7 +370,6 @@ struct BourbonIntroVideoView: View {
         }
     }
 
-    // swiftlint:enable function_body_length
     private func openSupport() {
         guard let url = URL(string: BourbonSupport.discordURL) else { return }
         NSWorkspace.shared.open(url)
