@@ -264,7 +264,7 @@ struct BourbonIntroVideoView: View {
         }
     }
 
-    private func recoverLicense(_ key: String) {
+    // swiftlint:disable:next function_body_length\n    private func recoverLicense(_ key: String) {
         player?.pause()
         Task {
             do {
