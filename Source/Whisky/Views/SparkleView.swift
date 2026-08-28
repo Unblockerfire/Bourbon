@@ -457,7 +457,7 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
         }
 
         if isSuccessfulNoUpdate(error) {
-            MainActor.assumeIsolated { presentCurrentVersionNotice() }
+            MainActor.assumeIsolated { Self.presentCurrentVersionNotice() }
         } else {
             presentUpdaterError(error)
         }
@@ -471,7 +471,7 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
         }
 
         if isSuccessfulNoUpdate(error) {
-            MainActor.assumeIsolated { presentCurrentVersionNotice() }
+            MainActor.assumeIsolated { Self.presentCurrentVersionNotice() }
         } else {
             presentUpdaterError(error)
         }
@@ -510,7 +510,7 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
     }
 
     @MainActor
-    private func presentCurrentVersionNotice() {
+    private static func presentCurrentVersionNotice() {
         let alert = NSAlert()
         alert.messageText = "You're up to date!"
         alert.informativeText = "Bourbon is already running the latest available version."
