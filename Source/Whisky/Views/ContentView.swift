@@ -160,7 +160,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: showBottleCreation) { _, isPresented in
-            if isPresented {
+            if isPresented && activePage != .createBottle {
                 previousPageBeforeCreation = activePage
                 selected = nil
                 showSetup = false
@@ -233,9 +233,12 @@ struct ContentView: View {
     }
 
     private func openBottleCreation() {
-        print("bottle.creation.opened")
+        print("bottle.create.button.clicked")
+        print("bottle.create.view.opened")
         previousPageBeforeCreation = activePage
         selected = nil
+        newlyCreatedBottleURL = nil
+        firstInstallerURL = nil
         showSetup = false
         showBottleCreation = true
         activePage = .createBottle
@@ -394,9 +397,12 @@ struct ContentView: View {
                     showBottleCreation = false
                 },
                 created: { url in
-                    print("bottle.creation.completed")
+                    print("bottle.create.selection.started")
                     selected = url
+                    selectedBottleURL = url
                     firstInstallBottleURL = firstInstallerURL == nil ? nil : url
+                    print("bottle.create.selection.completed")
+                    print("bottle.create.completed")
                     activePage = nil
                     showBottleCreation = false
                 }

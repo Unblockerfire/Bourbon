@@ -4,12 +4,106 @@ on:
   push:
     branches:
       - Bourbon
+      - codex/**
   pull_request:
     branches:
       - Bourbon
   workflow_dispatch:
 
 jobs:
+  inspect-production-release:
+    name: Inspect production release DMG
+    runs-on: macos-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download and inspect latest production DMG
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RELEASE_DIR="$RUNNER_TEMP/production-release"
+          MOUNT_DIR="$RUNNER_TEMP/production-release-mount"
+          mkdir -p "$RELEASE_DIR" "$MOUNT_DIR"
+
+          RELEASE_TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.dmg' \
+            --dir "$RELEASE_DIR"
+
+          DMG_PATH="$(find "$RELEASE_DIR" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          if [ -z "$DMG_PATH" ]; then
+            echo "::error::Latest release did not contain a DMG."
+            exit 1
+          fi
+
+          hdiutil attach "$DMG_PATH" \
+            -mountpoint "$MOUNT_DIR" \
+            -nobrowse \
+            -readonly \
+            -noverify
+
+          cleanup_mount() {
+            hdiutil detach "$MOUNT_DIR" -quiet || true
+          }
+          trap cleanup_mount EXIT
+
+          APP_PATH="$MOUNT_DIR/Bourbon.app"
+          BUILD_INFO_PATH="$APP_PATH/Contents/Resources/BuildInfo.json"
+          if [ ! -f "$BUILD_INFO_PATH" ]; then
+            echo "::error::Production Bourbon.app is missing BuildInfo.json."
+            exit 1
+          fi
+
+          BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            "$APP_PATH/Contents/Info.plist")"
+          BUNDLE_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$APP_PATH/Contents/Info.plist")"
+          EXPECTED_VERSION="${RELEASE_TAG#v}"
+          EXPECTED_COMMIT="$(git rev-list -n 1 "$RELEASE_TAG")"
+
+          python3 - "$BUILD_INFO_PATH" "$EXPECTED_COMMIT" "$EXPECTED_VERSION" "$BUNDLE_BUILD" <<'PY'
+          import json
+          import sys
+
+          path, expected_commit, expected_version, expected_build = sys.argv[1:]
+          with open(path, encoding="utf-8") as source:
+              build_info = json.load(source)
+
+          checks = {
+              "gitCommit": expected_commit,
+              "marketingVersion": expected_version,
+              "buildNumber": expected_build,
+          }
+          for key, expected in checks.items():
+              actual = str(build_info.get(key, ""))
+              if actual != expected:
+                  raise SystemExit(
+                      f"Production BuildInfo {key} mismatch: expected {expected}, got {actual}"
+                  )
+
+          print(json.dumps(build_info, indent=2, sort_keys=True))
+          PY
+
+          if [ "$BUNDLE_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "::error::Production bundle version does not match release tag."
+            exit 1
+          fi
+
+          echo "Production tag: $RELEASE_TAG"
+          echo "Production commit: $EXPECTED_COMMIT"
+          echo "Production bundle version: $BUNDLE_VERSION"
+          echo "Production bundle build: $BUNDLE_BUILD"
+
   validate-macos:
     name: Validate Bourbon on macOS
     runs-on: macos-latest
@@ -38,6 +132,9 @@ jobs:
       - name: Run SwiftLint
         working-directory: Source
         run: swiftlint lint --strict
+
+      - name: Run WhiskyKit tests
+        run: swift test --package-path Source/WhiskyKit
 
       - name: Build Bourbon
         working-directory: Source

@@ -67,6 +67,7 @@ struct BottleCreationView: View {
         .onDisappear {
             creationTask?.cancel()
             creationTask = nil
+            print("bottle.create.ui.dismissed")
         }
     }
 
@@ -78,7 +79,7 @@ struct BottleCreationView: View {
         guard !isCreating else { return }
         creationError = nil
         isCreating = true
-        print("bottle.creation.started")
+        print("bottle.create.submit")
         creationTask = Task { @MainActor in
             defer {
                 isCreating = false
@@ -96,10 +97,8 @@ struct BottleCreationView: View {
                 created(url)
                 cancel()
             } catch is CancellationError {
-                print("bottle.creation.cancelled")
                 creationError = "Bottle creation was cancelled."
             } catch {
-                print("bottle.creation.failed")
                 creationError = Task.isCancelled
                     ? "Bottle creation was cancelled."
                     : "Bourbon couldn’t create this bottle. Try again."
@@ -215,6 +214,7 @@ struct BottleCreationView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 Button(isCreating ? "Cancel Creation" : "Cancel") {
+                    print("bottle.create.cancel.requested")
                     creationTask?.cancel()
                     cancel()
                 }
