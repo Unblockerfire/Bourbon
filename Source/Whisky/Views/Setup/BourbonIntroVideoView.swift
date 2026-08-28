@@ -284,6 +284,14 @@ struct BourbonIntroVideoView: View {
                 await MainActor.run {
                     licenseGate = .blocked(result)
                 }
+            } catch LicenseActivationError.keychain {
+                await MainActor.run {
+                    licenseGate = .unavailable(
+                        "Bourbon restored the license, but could not save it securely on this Mac. " +
+                        "Please try again.",
+                        false
+                    )
+                }
             } catch {
                 await MainActor.run {
                     licenseGate = .unavailable(

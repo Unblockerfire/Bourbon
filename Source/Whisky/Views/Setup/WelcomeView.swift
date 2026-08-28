@@ -966,10 +966,11 @@ enum BourbonLicenseAPI {
     }
 
     static func recoverLicense(key: String) async throws -> LicenseRecoveryOutcome {
+        let normalizedKey = normalizeRecoveryKey(key)
         var request = URLRequest(url: BourbonAPIConfiguration.licenseRecoveryURL)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(LicenseRecoveryRequest(licenseKey: key))
+        request.httpBody = try JSONEncoder().encode(LicenseRecoveryRequest(licenseKey: normalizedKey))
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
@@ -1003,6 +1004,19 @@ enum BourbonLicenseAPI {
             strikes: 0
         )
         return LicenseRecoveryOutcome(record: record, validation: validation)
+    }
+
+    private static func normalizeRecoveryKey(_ value: String) -> String {
+        let pattern = #"BRBN-[A-Za-z0-9-]{8,64}\.[A-Za-z0-9_-]{64}"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        let matches = regex.matches(in: value, range: range)
+        guard matches.count == 1, let matchRange = Range(matches[0].range, in: value) else {
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return String(value[matchRange])
     }
 
     static func submitAppeal(for result: LicenseValidationResult) async throws {
@@ -1268,8 +1282,9 @@ enum LicenseKeychainStore {
             print("License token missing, creating new token")
             try add(Data(token.utf8), account: licenseTokenAccount)
         } else {
-            print("License token update failed: \(status)")
-            throw LicenseActivationError.keychain(status)
+            print("License token update failed, replacing Bourbon token: \(status)")
+            deleteLicenseToken()
+            try add(Data(token.utf8), account: licenseTokenAccount)
         }
     }
 
