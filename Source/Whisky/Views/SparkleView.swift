@@ -357,7 +357,7 @@ final class BourbonPendingUpdateManager: ObservableObject, @unchecked Sendable {
 
         if let installReply {
             self.installReply = nil
-            installReply(.installAndRelaunch)
+            installReply(.install)
         } else {
             // Future Sparkle refinement: if Sparkle exposes a direct public
             // install-postponed-update API, call it here. For now, checking for

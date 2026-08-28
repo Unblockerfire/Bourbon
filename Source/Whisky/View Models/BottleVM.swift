@@ -24,6 +24,7 @@ import WhiskyKit
 // TODO: Don't use unchecked!
 @MainActor
 final class BottleVM: ObservableObject {
+    static let shared = BottleVM()
 
     var bottlesList = BottleData()
     @Published var bottles: [Bottle] = []
@@ -37,7 +38,6 @@ final class BottleVM: ObservableObject {
         return bottles.filter { $0.isAvailable == true }.count
     }
 
-    @MainActor
     func createNewBottle(bottleName: String, winVersion: WinVersion, bottleURL: URL) async throws -> URL {
         let newBottleDir = bottleURL.appending(path: UUID().uuidString)
         var createdDirectory = false
