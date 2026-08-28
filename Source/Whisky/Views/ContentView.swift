@@ -407,6 +407,12 @@ struct ContentView: View {
                 selectedInstallerURL: $firstInstallerURL,
                 cancel: {
                     showBottleCreation = false
+                },
+                created: { url in
+                    selected = url
+                    firstInstallBottleURL = firstInstallerURL == nil ? nil : url
+                    activePage = nil
+                    showBottleCreation = false
                 }
             )
         } else if let firstInstallBottleURL,

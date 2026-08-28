@@ -22,8 +22,9 @@ import WhiskyKit
 
 // swiftlint:disable:next todo
 // TODO: Don't use unchecked!
-final class BottleVM: ObservableObject, @unchecked Sendable {
-    @MainActor static let shared = BottleVM()
+@MainActor
+final class BottleVM: ObservableObject {
+    static let shared = BottleVM()
 
     var bottlesList = BottleData()
     @Published var bottles: [Bottle] = []
@@ -37,42 +38,44 @@ final class BottleVM: ObservableObject, @unchecked Sendable {
         return bottles.filter { $0.isAvailable == true }.count
     }
 
-    func createNewBottle(bottleName: String, winVersion: WinVersion, bottleURL: URL) -> URL {
+    func createNewBottle(bottleName: String, winVersion: WinVersion, bottleURL: URL) async throws -> URL {
         let newBottleDir = bottleURL.appending(path: UUID().uuidString)
+        var createdDirectory = false
 
-        Task.detached {
-            var bottleId: Bottle?
-            do {
-                try FileManager.default.createDirectory(atPath: newBottleDir.path(percentEncoded: false),
-                                                        withIntermediateDirectories: true)
-                let bottle = Bottle(bottleUrl: newBottleDir, inFlight: true)
-                bottleId = bottle
+        do {
+            try Task.checkCancellation()
+            try FileManager.default.createDirectory(at: newBottleDir, withIntermediateDirectories: true)
+            createdDirectory = true
+            try Task.checkCancellation()
 
-                await MainActor.run {
-                    self.bottles.append(bottle)
-                }
+            let bottle = Bottle(bottleUrl: newBottleDir, inFlight: true)
+            bottle.settings.windowsVersion = winVersion
+            bottle.settings.name = bottleName
+            bottles.append(bottle)
 
-                bottle.settings.windowsVersion = winVersion
-                bottle.settings.name = bottleName
-                try await Wine.changeWinVersion(bottle: bottle, win: winVersion)
-                let wineVer = try await Wine.wineVersion()
-                bottle.settings.wineVersion = SemanticVersion(wineVer) ?? SemanticVersion(0, 0, 0)
-                // Add record
-                await MainActor.run {
-                    self.bottlesList.paths.append(newBottleDir)
-                    self.loadBottles()
-                }
-            } catch {
-                print("Failed to create new bottle: \(error)")
-                if let bottle = bottleId {
-                    await MainActor.run {
-                        if let index = self.bottles.firstIndex(of: bottle) {
-                            self.bottles.remove(at: index)
-                        }
-                    }
-                }
+            try await Wine.changeWinVersion(bottle: bottle, win: winVersion)
+            try Task.checkCancellation()
+            let wineVer = try await Wine.wineVersion()
+            try Task.checkCancellation()
+            guard let semanticWineVersion = SemanticVersion(wineVer) else {
+                throw BottleCreationError.invalidWineVersion
             }
+            bottle.settings.wineVersion = semanticWineVersion
+            bottle.inFlight = false
+            bottlesList.paths.append(newBottleDir)
+            loadBottles()
+            return newBottleDir
+        } catch {
+            bottles.removeAll { $0.url == newBottleDir }
+            bottlesList.paths.removeAll { $0 == newBottleDir }
+            if createdDirectory {
+                try? FileManager.default.removeItem(at: newBottleDir)
+            }
+            throw error
         }
-        return newBottleDir
     }
+}
+
+enum BottleCreationError: Error {
+    case invalidWineVersion
 }

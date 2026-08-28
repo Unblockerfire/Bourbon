@@ -409,26 +409,40 @@ public class Wine {
     public static func runWine(
         _ args: [String], bottle: Bottle?, environment: [String: String] = [:]
     ) async throws -> String {
-        var result: [String] = []
-        let fileHandle = try makeFileHandle()
-        fileHandle.writeApplicaitonInfo()
-        var environment = constructWineRuntimeEnvironment(environment)
+        let processReference = ProcessReference()
+        return try await withTaskCancellationHandler(operation: {
+            var result: [String] = []
+            var terminationStatus: Int32 = 0
+            let fileHandle = try makeFileHandle()
+            fileHandle.writeApplicaitonInfo()
+            var environment = constructWineRuntimeEnvironment(environment)
 
-        if let bottle = bottle {
-            fileHandle.writeInfo(for: bottle)
-            environment = constructWineEnvironment(for: bottle, environment: environment)
-        }
-
-        for await output in try runWineProcess(args: args, environment: environment, fileHandle: fileHandle) {
-            switch output {
-            case .started, .terminated:
-                break
-            case .message(let message), .error(let message):
-                result.append(message)
+            if let bottle = bottle {
+                fileHandle.writeInfo(for: bottle)
+                environment = constructWineEnvironment(for: bottle, environment: environment)
             }
-        }
 
-        return result.joined()
+            try Task.checkCancellation()
+            for await output in try runWineProcess(args: args, environment: environment, fileHandle: fileHandle) {
+                try Task.checkCancellation()
+                switch output {
+                case .started(let process):
+                    processReference.register(process)
+                case .terminated(let process):
+                    terminationStatus = process.terminationStatus
+                    processReference.clear(process)
+                case .message(let message), .error(let message):
+                    result.append(message)
+                }
+            }
+
+            guard terminationStatus == 0 else {
+                throw WineProcessError(command: args, status: terminationStatus, output: result.joined())
+            }
+            return result.joined()
+        }, onCancel: {
+            processReference.cancel()
+        })
     }
 
     public static func wineVersion() async throws -> String {
@@ -527,6 +541,44 @@ public class Wine {
         guard !environment.isEmpty else { return result }
         result.merge(environment, uniquingKeysWith: { $1 })
         return result
+    }
+}
+
+private final class ProcessReference: @unchecked Sendable {
+    private let lock = NSLock()
+    private var process: Process?
+    private var cancellationRequested = false
+
+    func register(_ process: Process) {
+        lock.lock()
+        self.process = process
+        let shouldTerminate = cancellationRequested
+        lock.unlock()
+        if shouldTerminate && process.isRunning { process.terminate() }
+    }
+
+    func cancel() {
+        lock.lock()
+        cancellationRequested = true
+        let process = process
+        lock.unlock()
+        if let process, process.isRunning { process.terminate() }
+    }
+
+    func clear(_ process: Process) {
+        lock.lock()
+        if self.process === process { self.process = nil }
+        lock.unlock()
+    }
+}
+
+public struct WineProcessError: LocalizedError {
+    public let command: [String]
+    public let status: Int32
+    public let output: String
+
+    public var errorDescription: String? {
+        "Wine command failed with exit status \(status)."
     }
 }
 

@@ -31,6 +31,9 @@ struct BottleCreationView: View {
     @State private var newBottleName: String = ""
     @State private var newBottleVersion: WinVersion = .win10
     @State private var bottleType: BourbonBottleType = .applications
+    @State private var isCreating = false
+    @State private var creationError: String?
+    @State private var creationTask: Task<Void, Never>?
     @State private var newBottleURL: URL = UserDefaults.standard.url(forKey: "defaultBottleLocation")
                                            ?? BottleData.defaultBottleDir
 
@@ -60,6 +63,10 @@ struct BottleCreationView: View {
                 submit()
             }
         }
+        .onDisappear {
+            creationTask?.cancel()
+            creationTask = nil
+        }
     }
 
     func submit() {
@@ -67,16 +74,35 @@ struct BottleCreationView: View {
 
         let bottleName = newBottleName.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalName = bottleName.isEmpty ? "My Bottle" : bottleName
-        newlyCreatedBottleURL = BottleVM.shared.createNewBottle(
-            bottleName: finalName,
-            winVersion: newBottleVersion,
-            bottleURL: newBottleURL
-        )
-        cancel()
+        guard !isCreating else { return }
+        creationError = nil
+        isCreating = true
+        creationTask = Task { @MainActor in
+            defer {
+                isCreating = false
+                creationTask = nil
+            }
+
+            do {
+                let url = try await BottleVM.shared.createNewBottle(
+                    bottleName: finalName,
+                    winVersion: newBottleVersion,
+                    bottleURL: newBottleURL
+                )
+                newlyCreatedBottleURL = url
+                cancel()
+            } catch is CancellationError {
+                creationError = "Bottle creation was cancelled."
+            } catch {
+                creationError = Task.isCancelled
+                    ? "Bottle creation was cancelled."
+                    : "Bourbon couldn’t create this bottle. Try again."
+            }
+        }
     }
 
     private var canCreate: Bool {
-        true
+        !isCreating
     }
 
     private var headerSection: some View {
@@ -180,23 +206,32 @@ struct BottleCreationView: View {
     }
 
     private var actionBar: some View {
-        HStack(spacing: 12) {
-            Button("Cancel") {
-                cancel()
-            }
-            .buttonStyle(BourbonSecondaryButtonStyle())
-            .keyboardShortcut(.cancelAction)
-            .help("Close without creating a bottle.")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Button(isCreating ? "Cancel Creation" : "Cancel") {
+                    creationTask?.cancel()
+                    cancel()
+                }
+                .buttonStyle(BourbonSecondaryButtonStyle())
+                .keyboardShortcut(.cancelAction)
+                .help("Close without creating a bottle.")
 
-            Spacer()
+                Spacer()
 
-            Button("Create") {
-                submit()
+                Button(isCreating ? "Creating…" : "Create") {
+                    submit()
+                }
+                .buttonStyle(BourbonPrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canCreate || isCreating)
+                .help("Create a new Windows environment.")
             }
-            .buttonStyle(BourbonPrimaryButtonStyle())
-            .keyboardShortcut(.defaultAction)
-            .disabled(!canCreate)
-            .help("Create a new Windows environment.")
+
+            if let creationError {
+                Text(creationError)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.top, 18)
         .overlay(alignment: .top) {
