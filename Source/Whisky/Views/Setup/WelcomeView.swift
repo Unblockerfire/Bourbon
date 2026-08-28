@@ -521,6 +521,7 @@ struct WelcomeView: View {
     }
 
     private func finishOnboardingAndCreateBottle() {
+        hasCompletedFirstRunOnboarding = true
         showSetup = false
         showBottleCreation = true
     }
@@ -899,7 +900,13 @@ enum BourbonLicenseAPI {
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 20
-        let (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        } catch {
+            throw LicenseActivationError.network
+        }
 
         guard let httpResponse = response as? HTTPURLResponse,
               200..<300 ~= httpResponse.statusCode else {
@@ -1023,7 +1030,7 @@ enum BourbonLicenseAPI {
         if statusCode == 400 || statusCode == 401 {
             throw LicenseActivationError.invalidLicense
         }
-        guard 200..<300 ~= statusCode else {
+        guard 200..<300 ~= statusCode || statusCode == 403 else {
             throw LicenseActivationError.service(status: statusCode)
         }
 
@@ -1274,6 +1281,9 @@ enum LicenseKeychainStore {
 
     static func save(_ record: BourbonLicenseRecord) throws {
         try updateLicenseToken(record.licenseToken)
+        guard readLicenseToken() == record.licenseToken else {
+            throw LicenseActivationError.keychain(errSecDecode)
+        }
         savePublicMetadata(record)
     }
 

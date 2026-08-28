@@ -63,10 +63,6 @@ public struct BottleData: Codable {
             if FileManager.default.fileExists(atPath: bottleMetadata) {
                 validPaths.append(path)
                 bottles.append(Bottle(bottleUrl: path, isAvailable: true))
-            } else if FileManager.default.fileExists(atPath: bottlePath) {
-                validPaths.append(path)
-            } else {
-                continue
             }
         }
 

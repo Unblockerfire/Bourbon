@@ -20,6 +20,7 @@ struct BottleView: View {
     @State private var installerSteps = InstallerPipelineStep.initialSteps
     @State private var installError: InstallerErrorInfo?
     @State private var lastInstallerURL: URL?
+    @State private var showsEmptyBottlePrompt = true
 
     private let gridLayout = [GridItem(.adaptive(minimum: 100, maximum: .infinity))]
 
@@ -85,40 +86,40 @@ struct BottleView: View {
     }
 
     private var emptyState: some View {
-        Button {
-            chooseInstaller()
-        } label: {
+        BourbonGlassCard(maxWidth: 480) {
             VStack(spacing: 16) {
                 Image(systemName: "square.and.arrow.down.fill")
                     .font(.system(size: 46, weight: .semibold))
                     .foregroundStyle(BourbonStyle.amber)
 
-                Text("Install your first app!")
+                Text(showsEmptyBottlePrompt ? "No application selected" : "This bottle is ready")
                     .font(.title.bold())
 
-                Text("Choose an EXE, MSI, or BAT file to install into this bottle.")
+                Text(
+                    showsEmptyBottlePrompt
+                        ? "Choose an EXE, MSI, or BAT file now, or add one later."
+                        : "You can add a Windows application whenever you’re ready."
+                )
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
-                Text("Bourbon will keep installing in the background if you browse elsewhere.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                HStack(spacing: 12) {
+                    Button("Choose EXE") {
+                        chooseInstaller()
+                    }
+                    .buttonStyle(BourbonPrimaryButtonStyle())
+                    .disabled(installManager.isInstalling)
+
+                    if showsEmptyBottlePrompt {
+                        Button("Not Now") {
+                            showsEmptyBottlePrompt = false
+                        }
+                        .buttonStyle(BourbonSecondaryButtonStyle())
+                    }
+                }
             }
-            .frame(maxWidth: 480)
-            .padding(.horizontal, 38)
-            .padding(.vertical, 34)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(BourbonStyle.cardStroke, lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.35), radius: 30, y: 16)
-            .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .disabled(installManager.isInstalling)
         .help("Choose a Windows installer to add your first app to this bottle.")
     }
 

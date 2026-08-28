@@ -16,6 +16,7 @@ struct BourbonIntroVideoView: View {
     @State private var playbackObserver: NSObjectProtocol?
     @State private var licenseGate: IntroLicenseGate = .idle
     @State private var finishPendingAfterValidation = false
+    @State private var licenseRequestID = UUID()
 
     var body: some View {
         GeometryReader { proxy in
@@ -102,6 +103,7 @@ struct BourbonIntroVideoView: View {
             }
         }
         .onDisappear {
+            licenseRequestID = UUID()
             cleanupPlayer()
         }
     }
@@ -129,7 +131,7 @@ struct BourbonIntroVideoView: View {
                 onTryAgain: retryLicenseValidation,
                 onRecover: recoverLicense,
                 onSupport: openSupport,
-                onStartFreshActivation: completeIntro,
+                onStartFreshActivation: startFreshActivation,
                 allowsRecovery: true,
                 allowsFreshActivation: allowsFreshActivation
             )
@@ -179,6 +181,12 @@ struct BourbonIntroVideoView: View {
         onFinished()
     }
 
+    private func startFreshActivation() {
+        licenseRequestID = UUID()
+        cleanupPlayer()
+        onFinished()
+    }
+
     // swiftlint:disable:next function_body_length
     private func startLicenseValidation() {
         switch licenseGate {
@@ -189,12 +197,15 @@ struct BourbonIntroVideoView: View {
         }
 
         licenseGate = .checking
+        licenseRequestID = UUID()
+        let requestID = licenseRequestID
         print("Starting license validation")
 
         Task {
             do {
                 let result = try await BourbonLicenseAPI.validateCurrentLicense()
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     if result.isValid && result.allowed && result.status == .valid {
                         print("License validation succeeded")
                         if result.warnings.isEmpty {
@@ -215,6 +226,7 @@ struct BourbonIntroVideoView: View {
             } catch LicenseActivationError.missingToken {
                 print("License token unavailable")
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     player?.pause()
                     licenseGate = .unavailable(
                         "Bourbon could not find a usable license on this Mac. " +
@@ -224,6 +236,7 @@ struct BourbonIntroVideoView: View {
                 }
             } catch LicenseActivationError.licenseReset {
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     player?.pause()
                     licenseGate = .unavailable(
                         "This installation used an older Bourbon license that is no longer available. " +
@@ -233,12 +246,14 @@ struct BourbonIntroVideoView: View {
                 }
             } catch LicenseActivationError.blocked(let result) {
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     player?.pause()
                     licenseGate = .blocked(result)
                 }
             } catch {
                 print("License validation unavailable")
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     player?.pause()
                     licenseGate = .unavailable(
                         "Bourbon could not reach the license service. " +
@@ -251,6 +266,7 @@ struct BourbonIntroVideoView: View {
     }
 
     private func retryLicenseValidation() {
+        licenseRequestID = UUID()
         finishPendingAfterValidation = false
         licenseGate = .idle
         player?.play()
@@ -267,6 +283,8 @@ struct BourbonIntroVideoView: View {
     // swiftlint:disable function_body_length
     private func recoverLicense(_ key: String) {
         player?.pause()
+        licenseRequestID = UUID()
+        let requestID = licenseRequestID
         Task {
             do {
                 print("License recovery request started")
@@ -274,6 +292,7 @@ struct BourbonIntroVideoView: View {
                 try LicenseKeychainStore.save(outcome.record)
                 print("License recovery credential saved")
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     if outcome.validation.warnings.isEmpty {
                         licenseGate = .valid
                         if finishPendingAfterValidation {
@@ -285,10 +304,12 @@ struct BourbonIntroVideoView: View {
                 }
             } catch LicenseActivationError.blocked(let result) {
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     licenseGate = .blocked(result)
                 }
             } catch LicenseActivationError.keychain {
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     licenseGate = .unavailable(
                         "Bourbon restored the license, but could not save it securely on this Mac. " +
                         "Please try again.",
@@ -297,6 +318,7 @@ struct BourbonIntroVideoView: View {
                 }
             } catch LicenseActivationError.invalidLicense {
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     licenseGate = .unavailable(
                         "That license key is invalid or no longer available. " +
                         "Please check the key and try again.",
@@ -305,6 +327,7 @@ struct BourbonIntroVideoView: View {
                 }
             } catch LicenseActivationError.rateLimited {
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     licenseGate = .unavailable(
                         "Too many recovery attempts were made. Please wait a moment and try again.",
                         false
@@ -312,6 +335,7 @@ struct BourbonIntroVideoView: View {
                 }
             } catch LicenseActivationError.service {
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     licenseGate = .unavailable(
                         "Bourbon couldn’t reach the licensing service. Please try again.",
                         false
@@ -319,6 +343,7 @@ struct BourbonIntroVideoView: View {
                 }
             } catch LicenseActivationError.network {
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     licenseGate = .unavailable(
                         "Bourbon couldn’t contact the licensing service. Check your connection and try again.",
                         false
@@ -326,6 +351,7 @@ struct BourbonIntroVideoView: View {
                 }
             } catch LicenseActivationError.invalidResponse {
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     licenseGate = .unavailable(
                         "Bourbon received an invalid response from the licensing service. Please try again.",
                         false
@@ -333,9 +359,10 @@ struct BourbonIntroVideoView: View {
                 }
             } catch {
                 await MainActor.run {
+                    guard requestID == licenseRequestID else { return }
                     licenseGate = .unavailable(
-                        "Bourbon could not restore that license key. " +
-                        "Check the key and try again.",
+                        "Bourbon could not complete license recovery. Please try again. " +
+                        "If the problem continues, contact Bourbon support.",
                         false
                     )
                 }

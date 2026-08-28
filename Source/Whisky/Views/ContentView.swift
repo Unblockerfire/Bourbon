@@ -43,7 +43,6 @@ struct ContentView: View {
 
     @State private var selected: URL?
     @State private var showBottleCreation: Bool = false
-    @State private var bottlesLoaded: Bool = false
     @State private var showBottleSelection: Bool = false
     @State private var newlyCreatedBottleURL: URL?
     @State private var firstInstallBottleURL: URL?
@@ -146,6 +145,9 @@ struct ContentView: View {
                          bottles: bottleVM.bottles)
         }
         .onChange(of: selected) {
+            if selected != nil {
+                print("bottle.selection.changed")
+            }
             selectedBottleURL = selected
         }
         .onChange(of: showSetup) { _, isPresented in
@@ -172,8 +174,9 @@ struct ContentView: View {
             openedFileURL = url
         }
         .task {
+            print("bottle.list.refresh.started")
             bottleVM.loadBottles()
-            bottlesLoaded = true
+            print("bottle.list.refresh.completed")
 
             if !WhiskyWineInstaller.isWhiskyWineInstalled() {
                 showSetup = true
@@ -230,6 +233,7 @@ struct ContentView: View {
     }
 
     private func openBottleCreation() {
+        print("bottle.creation.opened")
         previousPageBeforeCreation = activePage
         selected = nil
         showSetup = false
@@ -354,18 +358,6 @@ struct ContentView: View {
                         activePage = nil
                     }
                 }
-                .onChange(of: newlyCreatedBottleURL) { _, url in
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        selected = url
-                        firstInstallBottleURL = url
-                        if url != nil {
-                            hasCompletedFirstRunOnboarding = true
-                        }
-                        withAnimation {
-                            proxy.scrollTo(url, anchor: .center)
-                        }
-                    }
-                }
             }
         }
     }
@@ -402,6 +394,13 @@ struct ContentView: View {
                 selectedInstallerURL: $firstInstallerURL,
                 cancel: {
                     showBottleCreation = false
+                },
+                created: { url in
+                    print("bottle.creation.completed")
+                    selected = url
+                    firstInstallBottleURL = firstInstallerURL == nil ? nil : url
+                    activePage = nil
+                    showBottleCreation = false
                 }
             )
         } else if let firstInstallBottleURL,
@@ -418,20 +417,18 @@ struct ContentView: View {
                     .id(bottle.url)
             }
         } else {
-            if (bottleVM.bottles.isEmpty || bottleVM.countActive() == 0) && bottlesLoaded {
-                BourbonHomeView(
-                    bottles: bottleVM.bottles,
-                    displayName: resolvedDisplayName,
-                    subtitle: homeSubtitle,
-                    createBottle: {
-                        openBottleCreation()
-                    },
-                    openBottle: { bottle in
-                        selected = bottle.url
-                        activePage = nil
-                    }
-                )
-            }
+            BourbonHomeView(
+                bottles: bottleVM.bottles,
+                displayName: resolvedDisplayName,
+                subtitle: homeSubtitle,
+                createBottle: {
+                    openBottleCreation()
+                },
+                openBottle: { bottle in
+                    selected = bottle.url
+                    activePage = nil
+                }
+            )
         }
     }
 

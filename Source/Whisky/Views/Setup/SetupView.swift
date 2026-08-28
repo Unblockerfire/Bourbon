@@ -80,6 +80,11 @@ struct SetupView: View {
                 }
             }
         }
+        .onAppear {
+            if hasSeenIntroVideo {
+                showIntro = false
+            }
+        }
     }
 
     private func startReturningUserUpdateCheck() {

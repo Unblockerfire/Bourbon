@@ -357,7 +357,7 @@ final class BourbonPendingUpdateManager: ObservableObject, @unchecked Sendable {
 
         if let installReply {
             self.installReply = nil
-            installReply(.install)
+            installReply(.installAndRelaunch)
         } else {
             // Future Sparkle refinement: if Sparkle exposes a direct public
             // install-postponed-update API, call it here. For now, checking for
@@ -456,17 +456,8 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
             return
         }
 
-        let reason = (error as NSError).userInfo[SPUNoUpdateFoundReasonKey] as? SPUNoUpdateFoundReason
-        let isSuccessfulNoUpdate = reason == .onLatestVersion || reason == .onNewerThanLatestVersion
-
-        if isSuccessfulNoUpdate {
-            MainActor.assumeIsolated {
-                let alert = NSAlert()
-                alert.messageText = "You're running the latest version of Bourbon."
-                alert.informativeText = "No update is available right now."
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
-            }
+        if isSuccessfulNoUpdate(error) {
+            MainActor.assumeIsolated { presentCurrentVersionNotice() }
         } else {
             presentUpdaterError(error)
         }
@@ -479,8 +470,26 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
             return
         }
 
-        presentUpdaterError(error)
+        if isSuccessfulNoUpdate(error) {
+            MainActor.assumeIsolated { presentCurrentVersionNotice() }
+        } else {
+            presentUpdaterError(error)
+        }
         acknowledgement()
+    }
+
+    private nonisolated func isSuccessfulNoUpdate(_ error: Error) -> Bool {
+        var currentError: NSError? = error as NSError
+        while let candidate = currentError {
+            let reason = candidate.userInfo[SPUNoUpdateFoundReasonKey] as? SPUNoUpdateFoundReason
+            if reason == .onLatestVersion || reason == .onNewerThanLatestVersion {
+                return true
+            }
+
+            currentError = candidate.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+
+        return false
     }
 
     private func presentUpdaterError(_ error: Error) {
@@ -498,6 +507,16 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
                 BourbonReportCenter.openUpdateReport(error)
             }
         }
+    }
+
+    @MainActor
+    private func presentCurrentVersionNotice() {
+        let alert = NSAlert()
+        alert.messageText = "You're up to date!"
+        alert.informativeText = "Bourbon is already running the latest available version."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     private nonisolated func sanitizedUpdaterError(_ error: Error) -> String {
@@ -600,10 +619,10 @@ struct BourbonPendingUpdatePrompt: View {
 
     private var message: String {
         if let pendingVersion = manager.pendingVersion {
-            return "Bourbon \(pendingVersion) has been downloaded. Please restart to install the update."
+            return "Bourbon \(pendingVersion) is ready. Install now and Bourbon will close and relaunch automatically."
         }
 
-        return "A new version of Bourbon has been downloaded. Please restart to install the update."
+        return "A new version of Bourbon is ready. Install now and Bourbon will close and relaunch automatically."
     }
 }
 
