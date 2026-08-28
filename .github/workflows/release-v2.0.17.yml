@@ -1,0 +1,186 @@
+name: Release Bourbon 2.0.17
+
+on:
+  push:
+    branches:
+      - release/v2.0.17
+    paths:
+      - .github/workflows/release-v2.0.17.yml
+
+permissions:
+  contents: write
+
+jobs:
+  trigger-release:
+    name: Tag, publish feeds, and verify distribution
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: 2.0.17
+      RELEASE_TAG: v2.0.17
+      REPOSITORY: Unblockerfire/Bourbon
+      SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      ADMIN_UPDATE_TOKEN: ${{ secrets.ADMIN_UPDATE_TOKEN }}
+    steps:
+      - name: Check release prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SPARKLE_PRIVATE_KEY:-}" ]; then
+            echo "::error::SPARKLE_PRIVATE_KEY is not configured."
+            exit 1
+          fi
+          if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is not configured."
+            exit 1
+          fi
+          if [ -z "${ADMIN_UPDATE_TOKEN:-}" ]; then
+            echo "::error::ADMIN_UPDATE_TOKEN is not configured."
+            exit 1
+          fi
+
+      - name: Check out release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create production tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            echo "::error::${RELEASE_TAG} already exists."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${RELEASE_TAG}" "${GITHUB_SHA}" -m "Bourbon ${RELEASE_VERSION}"
+          git push origin "refs/tags/${RELEASE_TAG}"
+
+      - name: Wait for GitHub release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          APPCAST_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/appcast.xml"
+          DMG_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/Bourbon${RELEASE_VERSION}.dmg"
+          ready=0
+          for attempt in $(seq 1 72); do
+            if curl -fsSL "$APPCAST_URL" -o /tmp/appcast.xml && curl -fsSI "$DMG_URL" >/dev/null; then
+              ready=1
+              break
+            fi
+            echo "Waiting for release workflow, attempt ${attempt}/72..."
+            sleep 10
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::Timed out waiting for ${RELEASE_TAG} release assets."
+            exit 1
+          fi
+
+      - name: Publish Sparkle update channels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json
+          import os
+          import urllib.request
+          import xml.etree.ElementTree as ET
+
+          path = "/tmp/appcast.xml"
+          tree = ET.parse(path)
+          root = tree.getroot()
+          sparkle = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+          bourbon = "{https://getbourbon.app/appcast}"
+          item = root.find("./channel/item")
+          if item is None:
+              raise SystemExit("Appcast is missing an item")
+          enclosure = item.find("enclosure")
+          if enclosure is None:
+              raise SystemExit("Appcast is missing an enclosure")
+
+          def text(name, required=True):
+              node = item.find(name)
+              value = (node.text or "").strip() if node is not None else ""
+              if required and not value:
+                  raise SystemExit(f"Appcast is missing {name}")
+              return value or None
+
+          payload = {
+              "version": text(f"{sparkle}shortVersionString"),
+              "build": text(f"{sparkle}version"),
+              "dmgUrl": enclosure.attrib["url"],
+              "dmgLength": int(enclosure.attrib["length"]),
+              "pubDate": text("pubDate"),
+              "minimumSystemVersion": text(f"{sparkle}minimumSystemVersion"),
+              "minimumAutoupdateVersion": text(f"{sparkle}minimumAutoupdateVersion", required=False),
+              "releaseType": text(f"{bourbon}releaseType", required=False),
+              "edSignature": enclosure.attrib.get(f"{sparkle}edSignature"),
+          }
+
+          if payload["version"] != os.environ["RELEASE_VERSION"]:
+              raise SystemExit(f"Unexpected appcast version: {payload['version']}")
+          if not payload["edSignature"]:
+              raise SystemExit("Appcast is missing EdDSA signature")
+
+          token = os.environ["ADMIN_UPDATE_TOKEN"]
+          endpoint = "https://api.getbourbon.app/admin/updates/publish"
+          for channel in ("stable", "pre"):
+              body = dict(payload, channel=channel)
+              request = urllib.request.Request(
+                  endpoint,
+                  data=json.dumps(body).encode("utf-8"),
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Content-Type": "application/json",
+                  },
+                  method="POST",
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  result = json.loads(response.read().decode("utf-8"))
+                  if not result.get("ok") or result.get("version") != os.environ["RELEASE_VERSION"]:
+                      raise SystemExit(f"Update feed publish failed for {channel}: {result}")
+                  print(f"Published {channel} update feed for {result['version']}")
+          PY
+
+      - name: Verify Sparkle feeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          for channel in stable pre; do
+            curl -fsSL "https://api.getbourbon.app/updates/${channel}/appcast.xml" -o "/tmp/${channel}.xml"
+            python3 - "$channel" "/tmp/${channel}.xml" "$RELEASE_VERSION" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          channel, path, expected = sys.argv[1:]
+          sparkle = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+          root = ET.parse(path).getroot()
+          item = root.find("./channel/item")
+          version = item.find(f"{sparkle}shortVersionString").text.strip() if item is not None else None
+          if version != expected:
+              raise SystemExit(f"{channel} feed reports {version!r}, expected {expected!r}")
+          print(f"Verified {channel} feed at {version}")
+          PY
+          done
+
+      - name: Verify Homebrew cask
+        shell: bash
+        run: |
+          set -euo pipefail
+          CASK_URL="https://raw.githubusercontent.com/Unblockerfire/homebrew-bourbon/main/Casks/bourbon.rb"
+          ready=0
+          for attempt in $(seq 1 36); do
+            if curl -fsSL "$CASK_URL" -o /tmp/bourbon.rb && grep -Fq "version \"${RELEASE_VERSION}\"" /tmp/bourbon.rb; then
+              ready=1
+              break
+            fi
+            echo "Waiting for Homebrew tap, attempt ${attempt}/36..."
+            sleep 10
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::Homebrew tap did not update to ${RELEASE_VERSION}."
+            exit 1
+          fi
+          grep -F "version \"${RELEASE_VERSION}\"" /tmp/bourbon.rb
+          echo "Homebrew cask verified at ${RELEASE_VERSION}."
