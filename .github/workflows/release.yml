@@ -2,6 +2,12 @@ name: Bourbon Release
 
 on:
   workflow_dispatch:
+    inputs:
+      validation_only:
+        description: 'Build and upload validation artifacts without publishing a release'
+        required: false
+        default: false
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -337,10 +343,20 @@ jobs:
           echo "BuildInfo.json:"
           cat "$BUILD_INFO_PATH"
 
-          if ! /usr/bin/grep -R "Distillery" "$RELEASE_APP/Contents/Resources" >/dev/null 2>&1 &&
-             ! /usr/bin/strings "$RELEASE_APP/Contents/MacOS/Bourbon" | /usr/bin/grep -q "Distillery"; then
-            echo "::warning::Could not find Distillery text in app resources or executable strings."
+          BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$RELEASE_APP/Contents/Info.plist")"
+          DISPLAY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$RELEASE_APP/Contents/Info.plist")"
+
+          if [ "$BUNDLE_IDENTIFIER" != "com.unblockerfire.Bourbon" ]; then
+            echo "::error::Unexpected Bourbon bundle identifier: $BUNDLE_IDENTIFIER"
+            exit 1
           fi
+
+          if [ "$DISPLAY_NAME" != "Bourbon" ]; then
+            echo "::error::Unexpected Bourbon display name: $DISPLAY_NAME"
+            exit 1
+          fi
+
+          echo "Bourbon bundle metadata is valid."
 
       - name: Create DMG
         shell: bash
@@ -611,7 +627,19 @@ jobs:
           rm -f "$SPARKLE_KEY_FILE"
           cat "$APPCAST_PATH"
 
+      - name: Upload validation artifacts
+        if: github.ref_type == 'branch' || inputs.validation_only == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bourbon-macOS-validation-${{ github.run_number }}
+          path: |
+            ${{ steps.paths.outputs.dmg }}
+            ${{ steps.paths.outputs.sha256 }}
+            ${{ steps.paths.outputs.appcast }}
+          if-no-files-found: error
+
       - name: Publish GitHub Release
+        if: github.ref_type == 'tag' && inputs.validation_only != true
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
@@ -623,7 +651,7 @@ jobs:
             ${{ steps.paths.outputs.appcast }}
 
       - name: Update Homebrew tap
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && inputs.validation_only != true
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
@@ -688,7 +716,7 @@ jobs:
           git push origin main
 
       - name: Announce release in Discord
-        if: github.ref_type == 'tag' && success()
+        if: github.ref_type == 'tag' && inputs.validation_only != true && success()
         env:
           DISCORD_RELEASE_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
