@@ -2,6 +2,12 @@ name: Bourbon Release
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the validated build as a GitHub release
+        required: false
+        default: false
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -337,9 +343,17 @@ jobs:
           echo "BuildInfo.json:"
           cat "$BUILD_INFO_PATH"
 
-          if ! /usr/bin/grep -R "Distillery" "$RELEASE_APP/Contents/Resources" >/dev/null 2>&1 &&
-             ! /usr/bin/strings "$RELEASE_APP/Contents/MacOS/Bourbon" | /usr/bin/grep -q "Distillery"; then
-            echo "::warning::Could not find Distillery text in app resources or executable strings."
+          BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$RELEASE_APP/Contents/Info.plist")"
+          BUNDLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$RELEASE_APP/Contents/Info.plist")"
+
+          if [ "$BUNDLE_IDENTIFIER" != "com.unblockerfire.Bourbon" ]; then
+            echo "::error::Unexpected Bourbon bundle identifier: $BUNDLE_IDENTIFIER"
+            exit 1
+          fi
+
+          if [ "$BUNDLE_NAME" != "Bourbon" ]; then
+            echo "::error::Unexpected Bourbon display name: $BUNDLE_NAME"
+            exit 1
           fi
 
       - name: Create DMG
@@ -611,7 +625,20 @@ jobs:
           rm -f "$SPARKLE_KEY_FILE"
           cat "$APPCAST_PATH"
 
+      - name: Upload test artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release != true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bourbon-macOS-test-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ steps.paths.outputs.dmg }}
+            ${{ steps.paths.outputs.sha256 }}
+            ${{ steps.paths.outputs.appcast }}
+
       - name: Publish GitHub Release
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_release == true }}
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
