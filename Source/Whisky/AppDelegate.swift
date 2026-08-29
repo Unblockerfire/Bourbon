@@ -18,6 +18,7 @@
 
 import Foundation
 import SwiftUI
+import WhiskyKit
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -55,6 +56,8 @@ private enum BourbonInstallationGuard {
     @MainActor
     static func runLaunchChecks() {
         guard !isRunningFromDevelopmentBuild else { return }
+        let displayName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        guard !DiagnosticAppInstallationPolicy.isDiagnosticBuild(displayName: displayName) else { return }
 
         if isRunningFromMountedInstaller {
             showMountedInstallerAlert()

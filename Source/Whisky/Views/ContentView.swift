@@ -1499,7 +1499,7 @@ struct BourbonBuildDiagnosticsCard: View {
     var body: some View {
         BourbonGlassCard(maxWidth: 900, cornerRadius: 20) {
             VStack(alignment: .leading, spacing: 16) {
-                Label("About Bourbon", systemImage: "info.circle")
+                Label("About \(diagnostics.displayName)", systemImage: "info.circle")
                     .font(.headline)
                     .foregroundStyle(BourbonStyle.amber)
 
@@ -1541,6 +1541,7 @@ struct BourbonBuildDiagnosticsCard: View {
 }
 
 struct BourbonBuildDiagnostics {
+    let displayName: String
     let version: String
     let buildNumber: String
     let gitCommitShort: String
@@ -1562,6 +1563,7 @@ struct BourbonBuildDiagnostics {
         let feedURL = infoDictionary["SUFeedURL"] as? String ?? "Unavailable"
 
         return BourbonBuildDiagnostics(
+            displayName: infoDictionary["CFBundleDisplayName"] as? String ?? "Bourbon",
             version: version,
             buildNumber: buildNumber,
             gitCommitShort: shortCommit,

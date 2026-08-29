@@ -61,6 +61,8 @@
 		8CB681E72AED7CD00018D319 /* WhiskyKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8CB681E62AED7CD00018D319 /* WhiskyKit */; };
 		AB0BCABD2B61036E00E21C31 /* RunningProcessesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0BCABC2B61036E00E21C31 /* RunningProcessesView.swift */; };
 		C0D3C0DE0000000000000002 /* ProblemReportingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3C0DE0000000000000001 /* ProblemReportingView.swift */; };
+		C0D3C0DE0000000000000004 /* DiagnosticAppInstallerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3C0DE0000000000000003 /* DiagnosticAppInstallerView.swift */; };
+		C0D3C0DE0000000000000006 /* DiagnosticAppInstallerDragView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D3C0DE0000000000000005 /* DiagnosticAppInstallerDragView.swift */; };
 		DB696FC82AFAE5DA0037EB2F /* PinCreationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB696FC72AFAE5DA0037EB2F /* PinCreationView.swift */; };
 		EB58FB552A499896002DC184 /* SemanticVersion in Frameworks */ = {isa = PBXBuildFile; productRef = EB58FB542A499896002DC184 /* SemanticVersion */; };
 		EEA5A2462A31DD65008274AE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEA5A2452A31DD65008274AE /* AppDelegate.swift */; };
@@ -164,6 +166,8 @@
 		8CB681E42AED7C6F0018D319 /* WhiskyKit */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = WhiskyKit; sourceTree = "<group>"; };
 		AB0BCABC2B61036E00E21C31 /* RunningProcessesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunningProcessesView.swift; sourceTree = "<group>"; };
 		C0D3C0DE0000000000000001 /* ProblemReportingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProblemReportingView.swift; sourceTree = "<group>"; };
+		C0D3C0DE0000000000000003 /* DiagnosticAppInstallerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticAppInstallerView.swift; sourceTree = "<group>"; };
+		C0D3C0DE0000000000000005 /* DiagnosticAppInstallerDragView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticAppInstallerDragView.swift; sourceTree = "<group>"; };
 		DB696FC72AFAE5DA0037EB2F /* PinCreationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinCreationView.swift; sourceTree = "<group>"; };
 		EEA5A2452A31DD65008274AE /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -341,6 +345,8 @@
 				6E40495529CCA19C006E3F1B /* WhiskyApp.swift */,
 				6E40495729CCA19C006E3F1B /* ContentView.swift */,
 				C0D3C0DE0000000000000001 /* ProblemReportingView.swift */,
+				C0D3C0DE0000000000000003 /* DiagnosticAppInstallerView.swift */,
+				C0D3C0DE0000000000000005 /* DiagnosticAppInstallerDragView.swift */,
 				6E064B1329DD331F00D9A2D2 /* SparkleView.swift */,
 				6E7C07BF2AAF570100F6E66B /* FileOpenView.swift */,
 			);
@@ -634,6 +640,8 @@
 				6E2B25C12B0E20F50084A67A /* PinAddView.swift in Sources */,
 				6E49E0212AECB7DB00009CAC /* SettingsView.swift in Sources */,
 				C0D3C0DE0000000000000002 /* ProblemReportingView.swift in Sources */,
+				C0D3C0DE0000000000000004 /* DiagnosticAppInstallerView.swift in Sources */,
+				C0D3C0DE0000000000000006 /* DiagnosticAppInstallerDragView.swift in Sources */,
 				6E7C07C02AAF570100F6E66B /* FileOpenView.swift in Sources */,
 				6E6C0CF22A419A6800356232 /* WelcomeView.swift in Sources */,
 				6E40498129CCA8B0006E3F1B /* BottleView.swift in Sources */,

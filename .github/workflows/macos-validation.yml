@@ -208,6 +208,35 @@ jobs:
             build 2>&1 \
             | tee "$RUNNER_TEMP/bourbon-validation-logs/bourbon-release-build.log"
 
+      - name: Write diagnostic build metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_PATH="$RUNNER_TEMP/BourbonDiagnosticDerivedData/Build/Products/Release/Bourbon.app"
+          BUILD_INFO_PATH="$APP_PATH/Contents/Resources/BuildInfo.json"
+          MARKETING_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            "$APP_PATH/Contents/Info.plist")"
+          BUILD_NUMBER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$APP_PATH/Contents/Info.plist")"
+
+          export BUILD_INFO_PATH MARKETING_VERSION BUILD_NUMBER
+          python3 <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          payload = {
+              "gitCommit": os.environ["GITHUB_SHA"],
+              "marketingVersion": os.environ["MARKETING_VERSION"],
+              "buildNumber": os.environ["BUILD_NUMBER"],
+              "buildDateUTC": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+          }
+          with open(os.environ["BUILD_INFO_PATH"], "w", encoding="utf-8") as destination:
+              json.dump(payload, destination, indent=2, sort_keys=True)
+              destination.write("\n")
+          PY
+
       - name: Create non-production diagnostic DMG
         shell: bash
         run: |
@@ -228,6 +257,22 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Delete :SUFeedURL' \
             "$DIAGNOSTIC_APP/Contents/Info.plist" 2>/dev/null || true
           /usr/bin/codesign --force --deep --sign - "$DIAGNOSTIC_APP"
+
+          DISPLAY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' \
+            "$DIAGNOSTIC_APP/Contents/Info.plist")"
+          test "$DISPLAY_NAME" = 'Bourbon Diagnostic'
+          test ! -e "$DIAGNOSTIC_ROOT/Bourbon.app"
+          test -f "$DIAGNOSTIC_APP/Contents/Resources/BuildInfo.json"
+          python3 - "$DIAGNOSTIC_APP/Contents/Resources/BuildInfo.json" "$GITHUB_SHA" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              build_info = json.load(source)
+          if build_info.get("gitCommit") != sys.argv[2]:
+              raise SystemExit("Diagnostic BuildInfo commit does not match GITHUB_SHA")
+          print(f"Diagnostic commit: {build_info['gitCommit']}")
+          PY
 
           hdiutil create \
             -volname 'Bourbon Diagnostic' \

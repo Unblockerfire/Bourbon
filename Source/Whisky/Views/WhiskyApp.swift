@@ -24,6 +24,7 @@ import WhiskyKit
 @main
 struct WhiskyApp: App {
     @State var showSetup: Bool = false
+    @StateObject private var diagnosticInstaller = DiagnosticInstallationCoordinator()
     @AppStorage("hasCompletedFirstRunOnboarding") private var hasCompletedFirstRunOnboarding = false
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openURL) var openURL
@@ -47,34 +48,25 @@ struct WhiskyApp: App {
             delegate: updatePolicyDelegate
         )
 
-        do {
-            try updater.start()
-        } catch {
-            print("Failed to start Bourbon updater: \(error.localizedDescription)")
+        let displayName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        if !DiagnosticAppInstallationPolicy.isDiagnosticBuild(displayName: displayName) {
+            do {
+                try updater.start()
+            } catch {
+                print("Failed to start Bourbon updater: \(error.localizedDescription)")
+            }
         }
     }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(showSetup: $showSetup, updater: updater)
-                .frame(minWidth: ViewWidth.large, minHeight: 316)
-                .environmentObject(BottleVM.shared)
-                .onAppear {
-                    NSWindow.allowsAutomaticWindowTabbing = false
-                    Task { @MainActor in
-                        BourbonAdminServicesMenuController.shared.installAdminLoginItem()
-                    }
-                    BourbonReportCenter.startListeningForReportRequests()
-                    if !hasCompletedFirstRunOnboarding {
-                        showSetup = true
-                    }
-
-                    Task.detached {
-                        await WhiskyApp.deleteOldLogs()
-                    }
-
-                    BourbonReportCenter.promptForRecentCrashIfNeeded()
+            Group {
+                if diagnosticInstaller.requiresSetup {
+                    DiagnosticAppInstallerView(coordinator: diagnosticInstaller)
+                } else {
+                    mainContent
                 }
+            }
         }
         // Don't ask me how this works, it just does
         .handlesExternalEvents(matching: ["{same path of URL?}"])
@@ -148,8 +140,29 @@ struct WhiskyApp: App {
             }
         }
         Settings {
-            SettingsView()
+            if diagnosticInstaller.requiresSetup {
+                Text("Finish moving Bourbon Diagnostic to Applications to open settings.")
+                    .padding(28)
+            } else {
+                SettingsView()
+            }
         }
+    }
+
+    private var mainContent: some View {
+        ContentView(showSetup: $showSetup, updater: updater)
+            .frame(minWidth: ViewWidth.large, minHeight: 316)
+            .environmentObject(BottleVM.shared)
+            .onAppear {
+                NSWindow.allowsAutomaticWindowTabbing = false
+                Task { @MainActor in
+                    BourbonAdminServicesMenuController.shared.installAdminLoginItem()
+                }
+                BourbonReportCenter.startListeningForReportRequests()
+                if !hasCompletedFirstRunOnboarding { showSetup = true }
+                Task.detached { await WhiskyApp.deleteOldLogs() }
+                BourbonReportCenter.promptForRecentCrashIfNeeded()
+            }
     }
 
     static func killBottles() {
