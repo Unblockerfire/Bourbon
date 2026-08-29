@@ -15,7 +15,7 @@ final class RuntimeWineBinaryTests: XCTestCase {
             "/runtime/Libraries/Wine/bin/wineserver"
         ])
 
-        let binary = WhiskyWineInstaller.runtimeWineBinary(in: binFolder) {
+        let binary = RuntimeWineBinary.resolve(in: binFolder) {
             existingPaths.contains($0)
         }
 
@@ -28,7 +28,7 @@ final class RuntimeWineBinaryTests: XCTestCase {
             "/runtime/Libraries/Wine/bin/wine64"
         ])
 
-        let binary = WhiskyWineInstaller.runtimeWineBinary(in: binFolder) {
+        let binary = RuntimeWineBinary.resolve(in: binFolder) {
             existingPaths.contains($0)
         }
 
@@ -36,7 +36,7 @@ final class RuntimeWineBinaryTests: XCTestCase {
     }
 
     func testFallsBackToStandardWinePathForActionableLaunchFailure() {
-        let binary = WhiskyWineInstaller.runtimeWineBinary(in: binFolder) { _ in false }
+        let binary = RuntimeWineBinary.resolve(in: binFolder) { _ in false }
 
         XCTAssertEqual(binary.path, "/runtime/Libraries/Wine/bin/wine")
     }

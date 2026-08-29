@@ -80,29 +80,12 @@ public class WhiskyWineInstaller {
     /// URL to the installed `wine` `bin` directory
     public static let binFolder: URL = libraryFolder.appending(path: "Wine").appending(path: "bin")
 
-    /// Resolve the Wine launcher shipped by the installed runtime.
-    ///
-    /// Some Wine distributions expose `wine64`, while the current BourbonWine
-    /// archive exposes `wine`. Prefer `wine64` when both exist, but never point
-    /// the application at a launcher that is absent from the installed archive.
-    public static func runtimeWineBinary(
-        in binFolder: URL = WhiskyWineInstaller.binFolder,
-        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
-    ) -> URL {
-        let wine64 = binFolder.appending(path: "wine64")
-        if fileExists(wine64.path(percentEncoded: false)) {
-            return wine64
-        }
-
-        return binFolder.appending(path: "wine")
-    }
-
     public static func isWhiskyWineInstalled() -> Bool {
         whiskyWineVersion() != nil || runtimeBinariesInstalled()
     }
 
     public static func runtimeBinariesInstalled() -> Bool {
-        let wine = runtimeWineBinary()
+        let wine = RuntimeWineBinary.resolve(in: binFolder)
         let wineserver = binFolder.appending(path: "wineserver")
         return FileManager.default.fileExists(atPath: wine.path(percentEncoded: false))
             && FileManager.default.fileExists(atPath: wineserver.path(percentEncoded: false))
