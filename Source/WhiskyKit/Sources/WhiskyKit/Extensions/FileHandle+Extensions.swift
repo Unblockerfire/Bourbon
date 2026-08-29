@@ -51,24 +51,24 @@ extension FileHandle {
         header += "Bourbon Version: \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "")\n"
         header += "Date: \(ISO8601DateFormatter().string(from: Date.now))\n"
         header += "macOS Version: \(macOSVersion.majorVersion).\(macOSVersion.minorVersion).\(macOSVersion.patchVersion)\n\n"
-        write(line: header)
+        write(line: WineDiagnosticSanitizer.redact(header))
     }
     // swiftlint:enable line_length
 
     func writeInfo(for process: Process) {
-        #if DEBUG
         var header = String()
 
         if let arguments = process.arguments {
-            header += "Arguments: \(arguments.joined(separator: " "))\n\n"
+            let safeArguments = WineDiagnosticSanitizer.redact(arguments.joined(separator: " "))
+            header += "Arguments: \(safeArguments)\n\n"
         }
 
         if let environment = process.environment, !environment.isEmpty {
-            header += "Environment:\n\(environment as AnyObject)\n\n"
+            let runtimeEnvironment = WineDiagnosticSanitizer.filteredRuntimeEnvironment(environment)
+            header += "Environment:\n\(WineDiagnosticSanitizer.redactEnvironment(runtimeEnvironment))\n\n"
         }
 
         write(line: header)
-        #endif
     }
 
     func writeInfo(for bottle: Bottle) {
@@ -91,6 +91,6 @@ extension FileHandle {
             header += "DXVK HUD: \(bottle.settings.dxvkHud)\n\n"
         }
 
-        write(line: header)
+        write(line: WineDiagnosticSanitizer.redact(header))
     }
 }

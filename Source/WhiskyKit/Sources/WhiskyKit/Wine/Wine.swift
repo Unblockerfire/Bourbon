@@ -156,6 +156,11 @@ public class Wine {
 
     /// Path to the selected `wine` binary.
     public static var wineBinary: URL {
+        resolveWineExecutable()
+    }
+
+    /// Resolve the Wine launcher used by every Bourbon Wine command.
+    public static func resolveWineExecutable() -> URL {
         customWineRunner?.wine ?? RuntimeWineBinary.resolve(in: WhiskyWineInstaller.binFolder)
     }
 
@@ -189,7 +194,6 @@ public class Wine {
         process.qualityOfService = .userInitiated
 
         let processName = name ?? args.joined(separator: " ")
-        #if DEBUG
         debugLogWineLaunch(
             name: processName,
             args: args,
@@ -198,7 +202,6 @@ public class Wine {
             workingDirectory: process.currentDirectoryURL,
             fileHandle: fileHandle
         )
-        #endif
 
         do {
             switch outputMode {
@@ -208,14 +211,12 @@ public class Wine {
                 return try process.runUncaptured(name: processName, fileHandle: fileHandle)
             }
         } catch {
-            #if DEBUG
             debugLogProcessLaunchError(
                 error,
                 name: processName,
                 executableURL: executableURL,
                 fileHandle: fileHandle
             )
-            #endif
             throw error
         }
     }
@@ -225,10 +226,12 @@ public class Wine {
         name: String? = nil, args: [String], environment: [String: String] = [:],
         directory: URL? = nil,
         outputMode: WineProcessOutputMode = .captured,
+        executableURL: URL? = nil,
         fileHandle: FileHandle?
     ) throws -> AsyncStream<ProcessOutput> {
+        let selectedExecutable = executableURL ?? resolveWineExecutable()
         return try runProcess(
-            name: name, args: args, environment: environment, executableURL: wineBinary,
+            name: name, args: args, environment: environment, executableURL: selectedExecutable,
             directory: directory, outputMode: outputMode, fileHandle: fileHandle
         )
     }
@@ -413,6 +416,21 @@ public class Wine {
     public static func runWine(
         _ args: [String], bottle: Bottle?, environment: [String: String] = [:]
     ) async throws -> String {
+        try await runWineCommand(
+            args,
+            bottle: bottle,
+            environment: environment,
+            executableURL: resolveWineExecutable()
+        )
+    }
+
+    private static func runWineCommand(
+        _ args: [String],
+        bottle: Bottle?,
+        environment: [String: String] = [:],
+        phase: String? = nil,
+        executableURL: URL
+    ) async throws -> String {
         let processReference = ProcessReference()
         return try await withTaskCancellationHandler(operation: {
             var result: [String] = []
@@ -427,7 +445,14 @@ public class Wine {
             }
 
             try Task.checkCancellation()
-            for await output in try runWineProcess(args: args, environment: environment, fileHandle: fileHandle) {
+            let processName = phase.map { "phase=\($0) command=\(args.joined(separator: " "))" }
+            for await output in try runWineProcess(
+                name: processName,
+                args: args,
+                environment: environment,
+                executableURL: executableURL,
+                fileHandle: fileHandle
+            ) {
                 try Task.checkCancellation()
                 switch output {
                 case .started(let process):
@@ -452,6 +477,78 @@ public class Wine {
     public static func wineVersion() async throws -> String {
         let output = try await runWine(["--version"], bottle: nil)
         return try WineSemanticVersion.requireVersionToken(from: output)
+    }
+
+    public static func preflightRuntime() async throws -> WineRuntimePreflightResult {
+        let executableURL = resolveWineExecutable()
+        let executablePath = executableURL.path(percentEncoded: false)
+        try validateRuntimeExecutable(executableURL)
+
+        do {
+            let output = try await runWineCommand(
+                ["--version"],
+                bottle: nil,
+                phase: "preflight",
+                executableURL: executableURL
+            )
+            let version = try preflightVersion(from: output)
+            let result = WineRuntimePreflightResult(version: version)
+            Logger.wineKit.info("Runtime preflight passed with Wine \(result.version, privacy: .public)")
+            return result
+        } catch let error as WineRuntimePreflightError {
+            Logger.wineKit.error("Runtime preflight failed: \(error.localizedDescription, privacy: .public)")
+            throw error
+        } catch let error as WineProcessError {
+            let classifiedError = WineDiagnosticSanitizer.classifiedFailure(
+                details: error.output,
+                executablePath: executablePath,
+                status: error.status
+            )
+            Logger.wineKit.error(
+                "Runtime preflight failed: \(classifiedError.localizedDescription, privacy: .public)"
+            )
+            throw classifiedError
+        } catch {
+            let classifiedError = WineDiagnosticSanitizer.classifiedFailure(
+                details: String(describing: error) + "\n" + error.localizedDescription,
+                executablePath: executablePath
+            )
+            Logger.wineKit.error(
+                "Runtime preflight failed: \(classifiedError.localizedDescription, privacy: .public)"
+            )
+            throw classifiedError
+        }
+    }
+
+    private static func validateRuntimeExecutable(_ executableURL: URL) throws {
+        let executablePath = executableURL.path(percentEncoded: false)
+        let fileManager = FileManager.default
+        let error: WineRuntimePreflightError?
+        if !fileManager.fileExists(atPath: executablePath) {
+            error = .executableMissing(path: executablePath)
+        } else if !fileManager.isExecutableFile(atPath: executablePath) {
+            error = .cannotExecute(
+                path: executablePath,
+                details: "The file exists but does not have executable permission."
+            )
+        } else {
+            error = nil
+        }
+
+        if let error {
+            Logger.wineKit.error("Runtime preflight failed: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    private static func preflightVersion(from output: String) throws -> String {
+        guard WineDiagnosticSanitizer.isValidVersionOutput(output),
+              let version = try? WineSemanticVersion.requireVersionToken(from: output) else {
+            throw WineRuntimePreflightError.invalidWineOutput(
+                details: WineDiagnosticSanitizer.excerpt(from: output)
+            )
+        }
+        return version
     }
 
     @discardableResult
@@ -576,12 +673,12 @@ public struct WineProcessError: LocalizedError {
     public let output: String
 
     public var errorDescription: String? {
-        "Wine command failed with exit status \(status)."
+        let excerpt = WineDiagnosticSanitizer.excerpt(from: output)
+        return "Wine command failed with exit status \(status). \(excerpt)"
     }
 }
 
 private extension Wine {
-    #if DEBUG
     // swiftlint:disable:next function_parameter_count
     static func debugLogWineLaunch(
         name: String,
@@ -596,6 +693,9 @@ private extension Wine {
         let executablePath = executableURL.path(percentEncoded: false)
         let exists = fileManager.fileExists(atPath: executablePath, isDirectory: &isDirectory)
         let isExecutable = fileManager.isExecutableFile(atPath: executablePath)
+        let attributes = try? fileManager.attributesOfItem(atPath: executablePath)
+        let permissions = (attributes?[.posixPermissions] as? NSNumber)?.intValue
+        let permissionText = permissions.map { String(format: "%03o", $0) } ?? "<unavailable>"
         let customEnvironment = ProcessInfo.processInfo.environment
         let rootOverride = CustomWineSettings.root
         let wineOverride = CustomWineSettings.wine
@@ -603,8 +703,10 @@ private extension Wine {
         let filteredEnvironment = debugFilteredEnvironment(environment)
         let filteredParentEnvironment = debugFilteredEnvironment(customEnvironment)
         let fileOutput = debugFileOutput(for: executableURL)
+        let quarantineOutput = debugQuarantineOutput(for: executableURL)
+        let linkedLibraries = debugLinkedLibraries(for: executableURL)
 
-        let message = """
+        let rawMessage = """
 
         [BourbonWine Debug] Preparing Wine process launch
         Launch name: \(name)
@@ -614,7 +716,7 @@ private extension Wine {
         WHISKY_CUSTOM_WINE value: \(wineOverride ?? "<not set>")
         WHISKY_CUSTOM_WINESERVER override used: \(wineserverOverride != nil)
         WHISKY_CUSTOM_WINESERVER value: \(wineserverOverride ?? "<not set>")
-        Resolved Wine executable: \(wineBinary.path(percentEncoded: false))
+        Selected Wine executable: \(executablePath)
         Resolved wineserver executable: \(wineserverBinary.path(percentEncoded: false))
         Process executable: \(executablePath)
         Process arguments: \(args)
@@ -622,13 +724,19 @@ private extension Wine {
         Executable exists: \(exists)
         Executable is directory: \(isDirectory.boolValue)
         Executable is executable: \(isExecutable)
+        Executable POSIX permissions: \(permissionText)
+        Rosetta installed: \(Rosetta2.isRosettaInstalled)
         file output: \(fileOutput)
+        quarantine attribute: \(quarantineOutput)
+        linked libraries:
+        \(linkedLibraries)
         Filtered child environment:
         \(filteredEnvironment)
         Filtered Bourbon app environment:
         \(filteredParentEnvironment)
 
         """
+        let message = WineDiagnosticSanitizer.redact(rawMessage)
         Logger.wineKit.info("\(message, privacy: .public)")
         fileHandle?.write(line: message)
     }
@@ -652,7 +760,7 @@ private extension Wine {
                 "no matching Rosetta supplement error in Process.run error."
         }
 
-        let message = """
+        let rawMessage = """
 
         [BourbonWine Debug] Process launch error
         Launch name: \(name)
@@ -662,26 +770,47 @@ private extension Wine {
         \(rosettaContext)
 
         """
+        let message = WineDiagnosticSanitizer.redact(rawMessage)
         Logger.wineKit.error("\(message, privacy: .public)")
         fileHandle?.write(line: message)
     }
 
     static func debugFilteredEnvironment(_ environment: [String: String]) -> String {
-        let prefixes = ["WINE", "DYLD", "PATH", "WHISKY_", "ROSETTA"]
-        let values = environment
-            .filter { key, _ in prefixes.contains(where: { key.hasPrefix($0) }) }
-            .sorted { $0.key < $1.key }
-
-        guard !values.isEmpty else { return "<none>" }
-        return values
-            .map { key, value in "\(key)=\(value)" }
-            .joined(separator: "\n")
+        WineDiagnosticSanitizer.redactEnvironment(
+            WineDiagnosticSanitizer.filteredRuntimeEnvironment(environment)
+        )
     }
 
     static func debugFileOutput(for url: URL) -> String {
+        debugCommandOutput(
+            executable: URL(fileURLWithPath: "/usr/bin/file"),
+            arguments: [url.path(percentEncoded: false)]
+        )
+    }
+
+    static func debugQuarantineOutput(for url: URL) -> String {
+        debugCommandOutput(
+            executable: URL(fileURLWithPath: "/usr/bin/xattr"),
+            arguments: ["-p", "com.apple.quarantine", url.path(percentEncoded: false)],
+            emptyResult: "<not quarantined>"
+        )
+    }
+
+    static func debugLinkedLibraries(for url: URL) -> String {
+        debugCommandOutput(
+            executable: URL(fileURLWithPath: "/usr/bin/otool"),
+            arguments: ["-L", url.path(percentEncoded: false)]
+        )
+    }
+
+    static func debugCommandOutput(
+        executable: URL,
+        arguments: [String],
+        emptyResult: String = "<no output>"
+    ) -> String {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/file")
-        process.arguments = [url.path(percentEncoded: false)]
+        process.executableURL = executable
+        process.arguments = arguments
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -693,13 +822,12 @@ private extension Wine {
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             let output = String(data: data, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return output ?? "<unreadable file output>"
+            guard let output, !output.isEmpty else { return emptyResult }
+            return WineDiagnosticSanitizer.excerpt(from: output)
         } catch {
-            return "file command failed: \(error.localizedDescription)"
+            return "diagnostic command failed: \(WineDiagnosticSanitizer.redact(error.localizedDescription))"
         }
     }
-    #endif
-
     static func runProgramArguments(for url: URL, args: [String]) -> [String] {
         let path = url.path(percentEncoded: false)
         switch url.pathExtension.lowercased() {
@@ -1113,6 +1241,12 @@ extension Wine {
 
     @discardableResult
     public static func changeWinVersion(bottle: Bottle, win: WinVersion) async throws -> String {
-        return try await Wine.runWine(["winecfg", "-v", win.rawValue], bottle: bottle)
+        let executableURL = resolveWineExecutable()
+        return try await runWineCommand(
+            ["winecfg", "-v", win.rawValue],
+            bottle: bottle,
+            phase: "configuration",
+            executableURL: executableURL
+        )
     }
 }

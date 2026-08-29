@@ -22,7 +22,7 @@ final class RuntimeWineBinaryTests: XCTestCase {
         XCTAssertEqual(binary.lastPathComponent, "wine")
     }
 
-    func testPrefersWine64WhenRuntimeProvidesBothLaunchers() {
+    func testPrefersWineWhenRuntimeProvidesBothLaunchers() {
         let existingPaths = Set([
             "/runtime/Libraries/Wine/bin/wine",
             "/runtime/Libraries/Wine/bin/wine64"
@@ -32,10 +32,19 @@ final class RuntimeWineBinaryTests: XCTestCase {
             existingPaths.contains($0)
         }
 
+        XCTAssertEqual(binary.lastPathComponent, "wine")
+    }
+
+    func testFallsBackToWine64ForSupportedAlternateRuntime() {
+        let existingPaths = Set(["/runtime/Libraries/Wine/bin/wine64"])
+        let binary = RuntimeWineBinary.resolve(in: binFolder) {
+            existingPaths.contains($0)
+        }
+
         XCTAssertEqual(binary.lastPathComponent, "wine64")
     }
 
-    func testFallsBackToStandardWinePathForActionableLaunchFailure() {
+    func testReturnsWinePathForActionableLaunchFailureWhenNeitherExists() {
         let binary = RuntimeWineBinary.resolve(in: binFolder) { _ in false }
 
         XCTAssertEqual(binary.path, "/runtime/Libraries/Wine/bin/wine")

@@ -91,15 +91,15 @@ final class BottleVM: ObservableObject {
     }
 
     private func initializeWine(bottle: Bottle, winVersion: WinVersion) async throws -> SemanticVersion {
+        let runtime = try await runWineCreationProcess(phase: "preflight") {
+            try await Wine.preflightRuntime()
+        }
+        try Task.checkCancellation()
         _ = try await runWineCreationProcess(phase: "configuration") {
             try await Wine.changeWinVersion(bottle: bottle, win: winVersion)
         }
         try Task.checkCancellation()
-        let wineVersion = try await runWineCreationProcess(phase: "version") {
-            try await Wine.wineVersion()
-        }
-        try Task.checkCancellation()
-        guard let semanticWineVersion = WineSemanticVersion.parse(wineVersion) else {
+        guard let semanticWineVersion = WineSemanticVersion.parse(runtime.version) else {
             throw BottleCreationError.invalidWineVersion
         }
         return semanticWineVersion

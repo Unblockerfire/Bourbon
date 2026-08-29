@@ -141,6 +141,7 @@ jobs:
           RUNTIME_JSON="$RUNNER_TEMP/bourbon-runtime.json"
           RUNTIME_ARCHIVE="$RUNNER_TEMP/bourbon-runtime.tar.gz"
           RUNTIME_LISTING="$RUNNER_TEMP/bourbon-runtime-files.txt"
+          RUNTIME_EXTRACT="$RUNNER_TEMP/bourbon-runtime-extract"
 
           curl --fail --silent --show-error \
             https://api.getbourbon.app/runtime/latest \
@@ -162,14 +163,22 @@ jobs:
           printf '%s  %s\n' "$RUNTIME_SHA256" "$RUNTIME_ARCHIVE" | shasum -a 256 --check
 
           tar -tzf "$RUNTIME_ARCHIVE" > "$RUNTIME_LISTING"
-          grep -Fx 'Libraries/Wine/bin/wine' "$RUNTIME_LISTING"
           grep -Fx 'Libraries/Wine/bin/wineserver' "$RUNTIME_LISTING"
 
-          if grep -Fxq 'Libraries/Wine/bin/wine64' "$RUNTIME_LISTING"; then
-            echo 'Production runtime launcher: wine64'
+          if grep -Fxq 'Libraries/Wine/bin/wine' "$RUNTIME_LISTING"; then
+            SELECTED_LAUNCHER='Libraries/Wine/bin/wine'
+          elif grep -Fxq 'Libraries/Wine/bin/wine64' "$RUNTIME_LISTING"; then
+            SELECTED_LAUNCHER='Libraries/Wine/bin/wine64'
           else
-            echo 'Production runtime launcher: wine'
+            echo '::error::Production runtime contains neither wine nor wine64.'
+            exit 1
           fi
+
+          mkdir -p "$RUNTIME_EXTRACT"
+          tar -xzf "$RUNTIME_ARCHIVE" -C "$RUNTIME_EXTRACT" "$SELECTED_LAUNCHER"
+          test -x "$RUNTIME_EXTRACT/$SELECTED_LAUNCHER"
+
+          echo "Resolver-selected production runtime launcher: $SELECTED_LAUNCHER"
           echo "Production runtime Wine version: $RUNTIME_WINE_VERSION"
 
       - name: Run WhiskyKit tests
@@ -186,16 +195,55 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/bourbon-validation-logs"
+          DERIVED_DATA="$RUNNER_TEMP/BourbonDiagnosticDerivedData"
 
           xcodebuild \
             -project Whisky.xcodeproj \
             -scheme Bourbon \
             -configuration Release \
             -destination 'generic/platform=macOS' \
+            -derivedDataPath "$DERIVED_DATA" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build 2>&1 \
             | tee "$RUNNER_TEMP/bourbon-validation-logs/bourbon-release-build.log"
+
+      - name: Create non-production diagnostic DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DERIVED_DATA="$RUNNER_TEMP/BourbonDiagnosticDerivedData"
+          SOURCE_APP="$DERIVED_DATA/Build/Products/Release/Bourbon.app"
+          DIAGNOSTIC_ROOT="$RUNNER_TEMP/bourbon-diagnostic-root"
+          DIAGNOSTIC_OUTPUT="$RUNNER_TEMP/bourbon-diagnostic-dmg"
+          DIAGNOSTIC_APP="$DIAGNOSTIC_ROOT/Bourbon Diagnostic.app"
+          DIAGNOSTIC_DMG="$DIAGNOSTIC_OUTPUT/Bourbon-diagnostic-${GITHUB_SHA::12}.dmg"
+
+          test -d "$SOURCE_APP"
+          mkdir -p "$DIAGNOSTIC_ROOT" "$DIAGNOSTIC_OUTPUT"
+          ditto "$SOURCE_APP" "$DIAGNOSTIC_APP"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Bourbon Diagnostic' \
+            "$DIAGNOSTIC_APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Delete :SUFeedURL' \
+            "$DIAGNOSTIC_APP/Contents/Info.plist" 2>/dev/null || true
+          /usr/bin/codesign --force --deep --sign - "$DIAGNOSTIC_APP"
+
+          hdiutil create \
+            -volname 'Bourbon Diagnostic' \
+            -srcfolder "$DIAGNOSTIC_ROOT" \
+            -ov \
+            -format UDZO \
+            "$DIAGNOSTIC_DMG"
+          shasum -a 256 "$DIAGNOSTIC_DMG" > "$DIAGNOSTIC_DMG.sha256"
+
+      - name: Upload diagnostic DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: bourbon-diagnostic-dmg-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bourbon-diagnostic-dmg
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload validation evidence
         if: always()
