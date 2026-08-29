@@ -99,9 +99,13 @@ struct BottleCreationView: View {
             } catch is CancellationError {
                 creationError = "Bottle creation was cancelled."
             } catch {
-                creationError = Task.isCancelled
-                    ? "Bottle creation was cancelled."
-                    : "Bourbon couldn’t create this bottle. Try again."
+                if Task.isCancelled {
+                    creationError = "Bottle creation was cancelled."
+                } else if let preflightError = error as? WineRuntimePreflightError {
+                    creationError = preflightError.userFacingDiagnosticMessage
+                } else {
+                    creationError = "Bourbon couldn’t create this bottle. Try again."
+                }
             }
         }
     }

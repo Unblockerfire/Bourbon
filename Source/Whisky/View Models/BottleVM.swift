@@ -158,6 +158,9 @@ final class BottleVM: ObservableObject {
     }
 
     private func safeErrorDescription(_ error: Error) -> String {
+        if let preflightError = error as? WineRuntimePreflightError {
+            return preflightError.unifiedLogDescription
+        }
         if error is BottleCreationError {
             return "invalid_wine_version"
         }

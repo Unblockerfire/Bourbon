@@ -482,21 +482,21 @@ public class Wine {
     public static func preflightRuntime() async throws -> WineRuntimePreflightResult {
         let executableURL = resolveWineExecutable()
         let executablePath = executableURL.path(percentEncoded: false)
-        try validateRuntimeExecutable(executableURL)
 
         do {
+            try validateRuntimeExecutable(executableURL)
             let output = try await runWineCommand(
                 ["--version"],
                 bottle: nil,
                 phase: "preflight",
                 executableURL: executableURL
             )
-            let version = try preflightVersion(from: output)
+            let version = try preflightVersion(from: output, executablePath: executablePath)
             let result = WineRuntimePreflightResult(version: version)
             Logger.wineKit.info("Runtime preflight passed with Wine \(result.version, privacy: .public)")
             return result
         } catch let error as WineRuntimePreflightError {
-            Logger.wineKit.error("Runtime preflight failed: \(error.localizedDescription, privacy: .public)")
+            recordPreflightFailure(error, executableURL: executableURL)
             throw error
         } catch let error as WineProcessError {
             let classifiedError = WineDiagnosticSanitizer.classifiedFailure(
@@ -504,18 +504,14 @@ public class Wine {
                 executablePath: executablePath,
                 status: error.status
             )
-            Logger.wineKit.error(
-                "Runtime preflight failed: \(classifiedError.localizedDescription, privacy: .public)"
-            )
+            recordPreflightFailure(classifiedError, executableURL: executableURL)
             throw classifiedError
         } catch {
             let classifiedError = WineDiagnosticSanitizer.classifiedFailure(
                 details: String(describing: error) + "\n" + error.localizedDescription,
                 executablePath: executablePath
             )
-            Logger.wineKit.error(
-                "Runtime preflight failed: \(classifiedError.localizedDescription, privacy: .public)"
-            )
+            recordPreflightFailure(classifiedError, executableURL: executableURL)
             throw classifiedError
         }
     }
@@ -535,20 +531,55 @@ public class Wine {
             error = nil
         }
 
-        if let error {
-            Logger.wineKit.error("Runtime preflight failed: \(error.localizedDescription, privacy: .public)")
-            throw error
-        }
+        if let error { throw error }
     }
 
-    private static func preflightVersion(from output: String) throws -> String {
+    private static func preflightVersion(from output: String, executablePath: String) throws -> String {
         guard WineDiagnosticSanitizer.isValidVersionOutput(output),
               let version = try? WineSemanticVersion.requireVersionToken(from: output) else {
             throw WineRuntimePreflightError.invalidWineOutput(
+                path: executablePath,
                 details: WineDiagnosticSanitizer.excerpt(from: output)
             )
         }
         return version
+    }
+
+    static func recordPreflightFailure(
+        _ error: WineRuntimePreflightError,
+        executableURL: URL,
+        logsFolder: URL? = nil
+    ) {
+        let safeDescription = error.unifiedLogDescription
+        Logger.wineKit.error("Runtime preflight failed: \(safeDescription, privacy: .public)")
+
+        do {
+            let fileHandle = try makeFileHandle(in: logsFolder ?? Self.logsFolder)
+            fileHandle.writeApplicaitonInfo()
+            let environment = constructWineRuntimeEnvironment()
+            debugLogWineLaunch(
+                name: "phase=preflight command=--version",
+                args: ["--version"],
+                environment: environment,
+                executableURL: executableURL,
+                workingDirectory: executableURL.deletingLastPathComponent(),
+                fileHandle: fileHandle
+            )
+            fileHandle.write(line: """
+
+            [BourbonWine Diagnostic] Runtime preflight failure
+            Phase: preflight
+            Classification: \(error.diagnosticCode)
+            Safe description: \(safeDescription)
+
+            """)
+            try fileHandle.close()
+        } catch {
+            let description = WineDiagnosticSanitizer.redact(error.localizedDescription)
+            Logger.wineKit.error(
+                "Failed to write runtime preflight diagnostic log: \(description, privacy: .public)"
+            )
+        }
     }
 
     @discardableResult
@@ -725,10 +756,10 @@ private extension Wine {
         Executable is directory: \(isDirectory.boolValue)
         Executable is executable: \(isExecutable)
         Executable POSIX permissions: \(permissionText)
-        Rosetta installed: \(Rosetta2.isRosettaInstalled)
+        Bourbon process architecture: \(debugHostArchitecture); Rosetta installed: \(Rosetta2.isRosettaInstalled)
         file output: \(fileOutput)
         quarantine attribute: \(quarantineOutput)
-        linked libraries:
+        linked libraries / dylib inspection:
         \(linkedLibraries)
         Filtered child environment:
         \(filteredEnvironment)
@@ -779,6 +810,16 @@ private extension Wine {
         WineDiagnosticSanitizer.redactEnvironment(
             WineDiagnosticSanitizer.filteredRuntimeEnvironment(environment)
         )
+    }
+
+    static var debugHostArchitecture: String {
+        #if arch(arm64)
+        return "arm64"
+        #elseif arch(x86_64)
+        return "x86_64"
+        #else
+        return "unknown"
+        #endif
     }
 
     static func debugFileOutput(for url: URL) -> String {
@@ -1120,12 +1161,16 @@ extension Wine {
     )[0].appending(path: "Logs").appending(path: Bundle.whiskyBundleIdentifier)
 
     public static func makeFileHandle() throws -> FileHandle {
-        if !FileManager.default.fileExists(atPath: Self.logsFolder.path) {
-            try FileManager.default.createDirectory(at: Self.logsFolder, withIntermediateDirectories: true)
+        try makeFileHandle(in: Self.logsFolder)
+    }
+
+    static func makeFileHandle(in logsFolder: URL) throws -> FileHandle {
+        if !FileManager.default.fileExists(atPath: logsFolder.path) {
+            try FileManager.default.createDirectory(at: logsFolder, withIntermediateDirectories: true)
         }
 
-        let dateString = Date.now.ISO8601Format()
-        let fileURL = Self.logsFolder.appending(path: dateString).appendingPathExtension("log")
+        let dateString = "\(Date.now.ISO8601Format())-\(UUID().uuidString)"
+        let fileURL = logsFolder.appending(path: dateString).appendingPathExtension("log")
         try "".write(to: fileURL, atomically: true, encoding: .utf8)
         return try FileHandle(forWritingTo: fileURL)
     }

@@ -12,26 +12,87 @@ public struct WineRuntimePreflightResult: Sendable {
 public enum WineRuntimePreflightError: LocalizedError, Sendable {
     case executableMissing(path: String)
     case cannotExecute(path: String, details: String)
-    case rosettaUnavailable(details: String)
-    case runtimeLibraryFailure(details: String)
-    case processNonzero(status: Int32, details: String)
-    case invalidWineOutput(details: String)
+    case rosettaUnavailable(path: String, details: String)
+    case runtimeLibraryFailure(path: String, details: String)
+    case processNonzero(path: String, status: Int32, details: String)
+    case invalidWineOutput(path: String, details: String)
+
+    public var diagnosticCode: String {
+        switch self {
+        case .executableMissing: return "executable_missing"
+        case .cannotExecute: return "cannot_execute"
+        case .rosettaUnavailable: return "rosetta_unavailable"
+        case .runtimeLibraryFailure: return "runtime_library_failure"
+        case .processNonzero: return "process_nonzero"
+        case .invalidWineOutput: return "invalid_wine_output"
+        }
+    }
+
+    public var unifiedLogDescription: String {
+        var fields = [
+            "wine_runtime_preflight_\(diagnosticCode)",
+            "executable=\(safeExecutablePath)",
+            "arguments=--version"
+        ]
+        if let exitStatus { fields.append("exit_status=\(exitStatus)") }
+        fields.append("details=\(WineDiagnosticSanitizer.singleLine(safeDetails))")
+        return fields.joined(separator: " ")
+    }
+
+    public var userFacingDiagnosticMessage: String {
+        var message = "Wine runtime preflight failed (\(diagnosticCode)).\n"
+        message += "Executable: \(safeExecutablePath)\n"
+        message += "Arguments: --version\n"
+        if let exitStatus { message += "Exit status: \(exitStatus)\n" }
+        message += "Details: \(safeDetails)"
+        return message
+    }
 
     public var errorDescription: String? {
         switch self {
-        case .executableMissing(let path):
-            return "The BourbonWine executable is missing at \(path)."
-        case .cannotExecute(let path, let details):
-            return "Bourbon cannot execute Wine at \(path). \(details)"
-        case .rosettaUnavailable(let details):
+        case .executableMissing:
+            return "The BourbonWine executable is missing at \(safeExecutablePath)."
+        case .cannotExecute(_, let details):
+            return "Bourbon cannot execute Wine at \(safeExecutablePath). " +
+                WineDiagnosticSanitizer.excerpt(from: details)
+        case .rosettaUnavailable(_, let details):
             return "Wine could not start through Rosetta. \(details)"
-        case .runtimeLibraryFailure(let details):
+        case .runtimeLibraryFailure(_, let details):
             return "Wine could not load its runtime libraries. \(details)"
-        case .processNonzero(let status, let details):
+        case .processNonzero(_, let status, let details):
             return "Wine's runtime preflight exited with status \(status). \(details)"
-        case .invalidWineOutput(let details):
+        case .invalidWineOutput(_, let details):
             return "Wine started, but returned an invalid version response. \(details)"
         }
+    }
+
+    private var executablePath: String {
+        switch self {
+        case .executableMissing(let path), .cannotExecute(let path, _),
+             .rosettaUnavailable(let path, _), .runtimeLibraryFailure(let path, _),
+             .processNonzero(let path, _, _), .invalidWineOutput(let path, _):
+            return path
+        }
+    }
+
+    private var safeExecutablePath: String {
+        WineDiagnosticSanitizer.displayPath(executablePath)
+    }
+
+    private var safeDetails: String {
+        switch self {
+        case .executableMissing:
+            return "The selected executable does not exist."
+        case .cannotExecute(_, let details), .rosettaUnavailable(_, let details),
+             .runtimeLibraryFailure(_, let details), .processNonzero(_, _, let details),
+             .invalidWineOutput(_, let details):
+            return WineDiagnosticSanitizer.excerpt(from: details)
+        }
+    }
+
+    private var exitStatus: Int32? {
+        guard case .processNonzero(_, let status, _) = self else { return nil }
+        return status
     }
 }
 
@@ -47,6 +108,8 @@ enum WineDiagnosticSanitizer {
 
     static func redact(_ value: String) -> String {
         var result = value.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        result = replacing(pattern: #"(?i)(?:/Users|/home)/[^/\s]+"#, in: result, with: "~")
+        result = replacing(pattern: #"(?i)[A-Z]:\\Users\\[^\\\s]+"#, in: result, with: "~")
         result = replacing(
             pattern: #"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"#,
             in: result,
@@ -71,6 +134,21 @@ enum WineDiagnosticSanitizer {
             with: "[redacted-license-token]"
         )
         return result
+    }
+
+    static func displayPath(_ value: String) -> String {
+        let safePath = redact(value)
+        if let range = safePath.range(of: "Libraries/Wine/bin/", options: [.caseInsensitive]) {
+            return String(safePath[range.lowerBound...])
+        }
+        if safePath.hasPrefix("~/") || safePath.hasPrefix("~\\") { return safePath }
+        return URL(fileURLWithPath: safePath).lastPathComponent
+    }
+
+    static func singleLine(_ value: String) -> String {
+        redact(value)
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 
     static func redactEnvironment(_ environment: [String: String]) -> String {
@@ -109,7 +187,7 @@ enum WineDiagnosticSanitizer {
         if lowercased.contains("bad cpu type")
             || lowercased.contains("rosetta")
             || lowercased.contains("code signature supplement") {
-            return .rosettaUnavailable(details: excerpt)
+            return .rosettaUnavailable(path: executablePath, details: excerpt)
         }
 
         if lowercased.contains("library not loaded")
@@ -117,11 +195,11 @@ enum WineDiagnosticSanitizer {
             || lowercased.contains("dylib")
             || lowercased.contains("symbol not found")
             || lowercased.contains("image not found") {
-            return .runtimeLibraryFailure(details: excerpt)
+            return .runtimeLibraryFailure(path: executablePath, details: excerpt)
         }
 
         if let status {
-            return .processNonzero(status: status, details: excerpt)
+            return .processNonzero(path: executablePath, status: status, details: excerpt)
         }
         return .cannotExecute(path: executablePath, details: excerpt)
     }
