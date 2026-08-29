@@ -16,6 +16,7 @@
 //  If not, see https://www.gnu.org/licenses/.
 //
 
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import WhiskyKit
@@ -34,6 +35,7 @@ struct BottleCreationView: View {
     @State private var bottleType: BourbonBottleType = .applications
     @State private var isCreating = false
     @State private var creationError: String?
+    @State private var creationFailure: BottleCreationFailure?
     @State private var creationTask: Task<Void, Never>?
     @State private var newBottleURL: URL = UserDefaults.standard.url(forKey: "defaultBottleLocation")
                                            ?? BottleData.defaultBottleDir
@@ -78,6 +80,7 @@ struct BottleCreationView: View {
         let finalName = bottleName.isEmpty ? "My Bottle" : bottleName
         guard !isCreating else { return }
         creationError = nil
+        creationFailure = nil
         isCreating = true
         BottleCreationDiagnostics.record("bottle.create.submit")
         creationTask = Task { @MainActor in
@@ -98,6 +101,9 @@ struct BottleCreationView: View {
                 cancel()
             } catch is CancellationError {
                 creationError = "Bottle creation was cancelled."
+            } catch let failure as BottleCreationFailure {
+                creationFailure = failure
+                creationError = failure.userMessage
             } catch {
                 creationError = Task.isCancelled
                     ? "Bottle creation was cancelled."
@@ -238,6 +244,10 @@ struct BottleCreationView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+
+            if let creationFailure {
+                BottleCreationFailureDetails(failure: creationFailure)
+            }
         }
         .padding(.top, 18)
         .overlay(alignment: .top) {
@@ -289,6 +299,29 @@ struct BottleCreationView: View {
             .lastPathComponent
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "-", with: " ")
+    }
+}
+
+private struct BottleCreationFailureDetails: View {
+    let failure: BottleCreationFailure
+
+    var body: some View {
+        DisclosureGroup("Technical details") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(failure.diagnosticDetails)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button("Copy Diagnostics") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(failure.diagnosticDetails, forType: .string)
+                }
+                .buttonStyle(BourbonSecondaryButtonStyle())
+            }
+            .padding(.top, 8)
+        }
+        .font(.callout)
     }
 }
 
