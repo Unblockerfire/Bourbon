@@ -2,51 +2,52 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   Apple,
+  ArrowDown,
   BadgeCheck,
   Box,
-  Bug,
   ChevronRight,
   Cpu,
-  Folder,
+  FolderOpen,
   Gauge,
   MonitorDown,
-  TerminalSquare
+  ShieldCheck,
+  Sparkles
 } from "lucide-react";
 
 import { DownloadButton, ReleasesLink } from "@/components/DownloadButton";
 import { featureCards, siteConfig } from "@/lib/siteConfig";
 
 const facts = [
-  `${siteConfig.productName} ${siteConfig.currentVersion}`,
-  `macOS ${siteConfig.minimumMacOSVersion}+`,
-  "Apple Silicon",
-  "Native SwiftUI app"
+  { value: `v${siteConfig.currentVersion}`, label: "Latest release" },
+  { value: `macOS ${siteConfig.minimumMacOSVersion}+`, label: "System" },
+  { value: "Apple Silicon", label: "Architecture" },
+  { value: "Free", label: "Price" }
 ];
 
 const capabilities = [
   {
     icon: Box,
-    title: "Bottles keep apps tidy",
+    title: "One app, one bottle",
     description:
-      "Each Windows app can live in its own managed environment with separate settings, files, registry data, and dependencies."
+      "Keep every Windows app in a separate, managed environment with its own settings, files, registry, and dependencies."
   },
   {
     icon: MonitorDown,
-    title: "Drop in installers",
+    title: "Install without the terminal",
     description:
-      "Bourbon accepts common Windows installer formats and guides setup with macOS controls instead of terminal-first steps."
+      "Choose an installer and let Bourbon guide setup with familiar Mac controls and clear progress."
   },
   {
     icon: Gauge,
-    title: "Runtime updates are handled",
+    title: "Runtime care included",
     description:
-      "Sparkle appcasts and BourbonWine runtime metadata keep the app and compatibility stack moving together."
+      "Bourbon keeps its compatibility runtime organized and delivers signed updates through Sparkle."
   },
   {
-    icon: Bug,
-    title: "Reports with less noise",
+    icon: ShieldCheck,
+    title: "Diagnostics with boundaries",
     description:
-      "The built-in report flow redacts sensitive tokens and contact details before storing diagnostic reports."
+      "Built-in reports redact sensitive tokens and contact details before diagnostic information is stored."
   }
 ];
 
@@ -68,61 +69,126 @@ export default function HomePage() {
   };
 
   return (
-    <main id="main">
+    <main id="main" className="homePage">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
+
       <section className="heroSection">
-        <div className="heroCopy">
-          <Image
-            className="heroIcon"
-            src="/assets/bourbon-app-icon-20260809.png"
-            alt=""
-            width={132}
-            height={132}
-            priority
-          />
-          <p className="eyebrow">Bourbon for macOS</p>
+        <div className="heroCopy heroEntrance">
+          <div className="releasePill">
+            <BadgeCheck aria-hidden="true" size={16} />
+            <span>Bourbon {siteConfig.currentVersion} is available</span>
+            <ChevronRight aria-hidden="true" size={15} />
+          </div>
+          <p className="eyebrow">A native home for Windows apps</p>
           <h1>
-            Windows apps, poured into a{" "}
-            <span className="gradientText">native Mac home.</span>
+            Windows apps.
+            <span>At home on your Mac.</span>
           </h1>
           <p className="heroLead">
-            Bourbon gives Apple Silicon Macs a polished way to create bottles,
-            install Windows apps, manage runtimes, and keep compatibility work
-            approachable.
+            Bourbon makes Wine feel like part of macOS—create an isolated
+            bottle, choose an installer, and get back to the app you wanted to
+            run.
           </p>
           <div className="buttonRow">
             <DownloadButton />
             <ReleasesLink />
           </div>
-          <dl className="factPills" aria-label="Bourbon release facts">
-            {facts.map((fact) => (
-              <div key={fact}>
-                <dt className="srOnly">Fact</dt>
-                <dd>{fact}</dd>
-              </div>
-            ))}
-          </dl>
+          <p className="heroFinePrint">
+            <Apple aria-hidden="true" size={15} />
+            Built for Apple Silicon · Requires macOS{" "}
+            {siteConfig.minimumMacOSVersion}+
+          </p>
         </div>
+
+        <div
+          className="heroProduct heroEntrance"
+          aria-label="Bourbon app preview"
+        >
+          <div className="heroAura" aria-hidden="true" />
+          <div className="macWindow">
+            <div className="windowBar" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <p>Bourbon</p>
+            </div>
+            <Image
+              src="/assets/bourbon-create-bottle.png"
+              alt="Bourbon Create Bottle screen"
+              width={1478}
+              height={1628}
+              priority
+            />
+          </div>
+          <div className="floatingNote floatingNoteTop">
+            <Sparkles aria-hidden="true" size={17} />
+            <span>Native SwiftUI</span>
+          </div>
+          <div className="floatingNote floatingNoteBottom">
+            <BadgeCheck aria-hidden="true" size={17} />
+            <span>Ready to create</span>
+          </div>
+        </div>
+
+        <a
+          className="scrollCue"
+          href="#experience"
+          aria-label="Explore Bourbon"
+        >
+          <ArrowDown aria-hidden="true" size={17} />
+        </a>
       </section>
 
-      <section className="statementBand" aria-labelledby="statement-title">
-        <p className="eyebrow">Built for the Mac you already use</p>
-        <h2 id="statement-title">
-          No sprawling setup ritual. No mystery folders. A careful macOS wrapper
-          around the Wine pieces Bourbon needs.
+      <section
+        className="factRail"
+        aria-label="Bourbon release facts"
+        data-reveal
+      >
+        <dl>
+          {facts.map((fact) => (
+            <div key={fact.label}>
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section className="statementBand" id="experience" data-reveal>
+        <p className="eyebrow">Made to feel familiar</p>
+        <h2>
+          The compatibility layer stays behind the scenes.
+          <span>You stay in control.</span>
         </h2>
+        <p className="statementLead">
+          No sprawling setup ritual or mystery folders. Bourbon wraps the Wine
+          pieces you need in an interface that speaks Mac.
+        </p>
       </section>
 
-      <section className="featureGrid" aria-label="Bourbon feature previews">
+      <section className="featureShowcase" aria-label="Bourbon features">
         {featureCards.map((card, index) => (
-          <article
-            className={`featureCard featureCard${index + 1}`}
-            key={card.title}
-          >
-            <div className="featureImage">
+          <article className="featureStory" key={card.title} data-reveal>
+            <div className="featureStoryCopy">
+              <span className="featureNumber">0{index + 1}</span>
+              <p className="eyebrow">
+                {index === 0
+                  ? "Start clean"
+                  : index === 1
+                    ? "Stay organized"
+                    : "Launch with confidence"}
+              </p>
+              <h2>{card.title}</h2>
+              <p>{card.description}</p>
+              <Link className="textLink" href="/docs/getting-started">
+                Learn how it works
+                <ChevronRight aria-hidden="true" size={17} />
+              </Link>
+            </div>
+            <div className="featureStoryMedia">
               <Image
                 src={card.image}
                 alt={card.alt}
@@ -130,24 +196,31 @@ export default function HomePage() {
                 height={1628}
               />
             </div>
-            <div>
-              <h2>{card.title}</h2>
-              <p>{card.description}</p>
-            </div>
           </article>
         ))}
       </section>
-      <section className="capabilityBand" aria-labelledby="capability-title">
-        <div>
-          <p className="eyebrow">Bourbon in practice</p>
+
+      <section
+        className="capabilityBand"
+        aria-labelledby="capability-title"
+        data-reveal
+      >
+        <div className="capabilityIntro">
+          <p className="eyebrow">Thoughtful by default</p>
           <h2 id="capability-title">
-            A focused toolkit for running Windows software.
+            Power when you need it. Calm when you don&apos;t.
           </h2>
+          <p>
+            The technical work is still there. Bourbon simply puts it in the
+            right place, with the right amount of explanation.
+          </p>
         </div>
         <div className="capabilityGrid">
           {capabilities.map((item) => (
             <article key={item.title} className="capabilityItem">
-              <item.icon aria-hidden="true" size={24} />
+              <div className="capabilityIcon">
+                <item.icon aria-hidden="true" size={22} />
+              </div>
               <h3>{item.title}</h3>
               <p>{item.description}</p>
             </article>
@@ -155,20 +228,32 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="downloadPanel" aria-labelledby="download-title">
+      <section
+        className="downloadPanel"
+        aria-labelledby="download-title"
+        data-reveal
+      >
+        <div className="downloadIcon" aria-hidden="true">
+          <Image
+            src="/assets/bourbon-app-icon-20260809.png"
+            alt=""
+            width={96}
+            height={96}
+          />
+        </div>
         <div>
-          <p className="eyebrow">Ready when you are</p>
-          <h2 id="download-title">Download Bourbon for macOS.</h2>
+          <p className="eyebrow">Your next pour</p>
+          <h2 id="download-title">Bring your Windows apps home.</h2>
           <p>
-            Requires an Apple Silicon Mac running macOS{" "}
-            {siteConfig.minimumMacOSVersion} or later.
+            Download Bourbon {siteConfig.currentVersion} for an Apple Silicon
+            Mac running macOS {siteConfig.minimumMacOSVersion} or later.
           </p>
         </div>
         <div className="buttonRow">
           <DownloadButton />
           <Link className="button buttonSecondary" href="/download">
-            <ChevronRight aria-hidden="true" size={18} />
-            <span>Download options</span>
+            <FolderOpen aria-hidden="true" size={18} />
+            <span>More options</span>
           </Link>
         </div>
       </section>
@@ -185,16 +270,13 @@ export default function HomePage() {
         </div>
         <nav aria-label="Footer navigation">
           <Link href="/download">Downloads</Link>
+          <Link href="/docs">Documentation</Link>
           <Link href="/support">Support</Link>
           <Link href="/privacy">Privacy</Link>
-          <Link href="/acknowledgments">Acknowledgments</Link>
         </nav>
         <p>
-          <Apple aria-hidden="true" size={16} />
-          <Cpu aria-hidden="true" size={16} />
-          <Folder aria-hidden="true" size={16} />
-          <TerminalSquare aria-hidden="true" size={16} />
-          <BadgeCheck aria-hidden="true" size={16} />
+          <Cpu aria-hidden="true" size={15} />
+          Made for Apple Silicon
         </p>
       </footer>
     </main>

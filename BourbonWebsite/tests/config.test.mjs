@@ -18,9 +18,14 @@ test("public website config uses Bourbon production URLs", () => {
 });
 
 test("download configuration is explicit and non-empty", () => {
-  assert.match(
-    config,
-    /directDownloadUrl:\s*\n\s*"https:\/\/github\.com\/Unblockerfire\/Bourbon\/releases\/download\/v2\.0\.8\/Bourbon2\.0\.8\.dmg"/
+  const version = config.match(/currentVersion: "([^"]+)"/)?.[1];
+  const downloadVersion = config.match(
+    /directDownloadUrl:\s*\n\s*"https:\/\/github\.com\/Unblockerfire\/Bourbon\/releases\/download\/v([^/]+)\/Bourbon([^/]+)\.dmg"/
   );
+
+  assert.ok(version, "currentVersion must be configured");
+  assert.ok(downloadVersion, "directDownloadUrl must point to a Bourbon DMG");
+  assert.equal(downloadVersion[1], version);
+  assert.equal(downloadVersion[2], version);
   assert.match(config, /minimumMacOSVersion: "14\.0"/);
 });

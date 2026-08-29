@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
+import { MotionEnhancer } from "@/components/MotionEnhancer";
 import { SiteNav } from "@/components/SiteNav";
 import { siteConfig } from "@/lib/siteConfig";
 import "./globals.css";
@@ -75,6 +76,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <a className="skipLink" href="#main">
           Skip to content
         </a>
+        <MotionEnhancer />
         <SiteNav />
         {children}
       </body>
