@@ -78,13 +78,7 @@ struct WhiskyWineDownloadView: View {
 
         Task {
             do {
-                if let bundledRuntime = WhiskyWineInstaller.bundledDiagnosticRuntime() {
-                    runtimeVersion = bundledRuntime.info.runtimeVersion
-                    tarLocation = try WhiskyWineInstaller.persistLocalArchive(at: bundledRuntime.archive)
-                    downloadProgress = 1
-                    path.append(.whiskyWineInstall)
-                    return
-                }
+                if try loadBundledDiagnosticRuntime() { return }
 
                 let runtimeInfo = try await WhiskyWineInstaller.latestRuntimeInfo()
                 let sourceURL = runtimeInfo.archiveUrl
@@ -129,6 +123,18 @@ struct WhiskyWineDownloadView: View {
                 downloadError = error.localizedDescription
             }
         }
+    }
+
+    private func loadBundledDiagnosticRuntime() throws -> Bool {
+        guard let bundledRuntime = WhiskyWineInstaller.bundledDiagnosticRuntime() else {
+            return false
+        }
+
+        runtimeVersion = bundledRuntime.info.runtimeVersion
+        tarLocation = try WhiskyWineInstaller.persistLocalArchive(at: bundledRuntime.archive)
+        downloadProgress = 1
+        path.append(.whiskyWineInstall)
+        return true
     }
 
     private func chooseLocalArchive() {

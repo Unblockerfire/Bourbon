@@ -16,6 +16,8 @@
 //  If not, see https://www.gnu.org/licenses/.
 //
 
+// swiftlint:disable file_length
+
 import Foundation
 import SemanticVersion
 import os.log
@@ -140,6 +142,7 @@ public class WhiskyWineInstaller {
         return nil
     }
 
+    // swiftlint:disable:next function_body_length
     public static func install(from: URL, runtimeVersion: String? = nil) throws {
         let fileManager = FileManager.default
         var stagingRoot: URL?
