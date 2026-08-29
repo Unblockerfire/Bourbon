@@ -141,6 +141,37 @@ jobs:
       - name: Install SwiftLint
         run: brew install swiftlint
 
+      - name: Enforce BourbonWine macOS compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RUNTIME_JSON="$RUNNER_TEMP/bourbon-runtime.json"
+          RUNTIME_ARCHIVE="$RUNNER_TEMP/bourbon-runtime.tar.gz"
+          RUNTIME_ROOT="$RUNNER_TEMP/bourbon-runtime"
+          SUPPORTED_MACOS="$(bash Scripts/bourbon-minimum-macos.sh)"
+          mkdir -p "$RUNTIME_ROOT"
+
+          curl --fail --silent --show-error \
+            https://api.getbourbon.app/runtime/latest \
+            --output "$RUNTIME_JSON"
+          RUNTIME_URL="$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["archiveUrl"])' \
+            "$RUNTIME_JSON")"
+          RUNTIME_SHA="$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' \
+            "$RUNTIME_JSON")"
+          curl --fail --location --silent --show-error \
+            "$RUNTIME_URL" \
+            --output "$RUNTIME_ARCHIVE"
+          printf '%s  %s\n' "$RUNTIME_SHA" "$RUNTIME_ARCHIVE" | shasum -a 256 --check
+          tar -xzf "$RUNTIME_ARCHIVE" -C "$RUNTIME_ROOT"
+
+          python3 Scripts/validate-wine-runtime.py "$RUNTIME_ROOT/Libraries/Wine" \
+            --maximum-minimum "$SUPPORTED_MACOS" \
+            --report "$RUNNER_TEMP/bourbon-runtime-mach-o.tsv" \
+            --links-report "$RUNNER_TEMP/bourbon-runtime-links.txt"
+
       - name: Build Bourbon
         shell: bash
         run: |

@@ -11,6 +11,127 @@ on:
   workflow_dispatch:
 
 jobs:
+  prepare-compatible-runtime:
+    name: Prepare macOS 14 compatible BourbonWine
+    runs-on: macos-14
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Show minimum-OS environment
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      - name: Prepare corrected runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          OUTPUT_DIR="$RUNNER_TEMP/bourbon-corrected-runtime"
+          WORK_DIR="$RUNNER_TEMP/bourbon-runtime-work"
+          mkdir -p "$OUTPUT_DIR"
+          export BOURBON_MINIMUM_MACOS="$(bash Scripts/bourbon-minimum-macos.sh)"
+          bash Scripts/prepare-diagnostic-runtime.sh \
+            "$OUTPUT_DIR/BourbonWineDiagnosticRuntime.tar.gz" \
+            "$WORK_DIR"
+
+          tar -xOf "$OUTPUT_DIR/BourbonWineDiagnosticRuntime.tar.gz" \
+            Libraries/BourbonWineRuntime.json \
+            > "$OUTPUT_DIR/BourbonWineDiagnosticRuntime.json"
+
+      - name: Prove production runtime incompatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REPORT_DIR="$RUNNER_TEMP/bourbon-runtime-reports"
+          CURRENT_WINE="$RUNNER_TEMP/bourbon-runtime-work/current/Libraries/Wine"
+          SUPPORTED_MACOS="$(bash Scripts/bourbon-minimum-macos.sh)"
+          mkdir -p "$REPORT_DIR"
+
+          set +e
+          python3 Scripts/validate-wine-runtime.py "$CURRENT_WINE" \
+            --maximum-minimum "$SUPPORTED_MACOS" \
+            --report "$REPORT_DIR/current-runtime-mach-o.tsv" \
+            --links-report "$REPORT_DIR/current-runtime-links.txt" \
+            2>&1 | tee "$REPORT_DIR/current-runtime-failure.txt"
+          STATUS=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo '::error::The known-incompatible production runtime unexpectedly passed.'
+            exit 1
+          fi
+          grep -F 'lib/wine/x86_64-unix/ntdll.so requires macOS 27.0' \
+            "$REPORT_DIR/current-runtime-failure.txt"
+          grep -F 'lib/wine/x86_64-unix/ntdll.so references unsupported symbol(s): _pipe2' \
+            "$REPORT_DIR/current-runtime-failure.txt"
+
+      - name: Validate corrected runtime Mach-O contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          OUTPUT_DIR="$RUNNER_TEMP/bourbon-corrected-runtime"
+          REPORT_DIR="$RUNNER_TEMP/bourbon-runtime-reports"
+          EXTRACT_DIR="$RUNNER_TEMP/bourbon-corrected-runtime-extract"
+          SUPPORTED_MACOS="$(bash Scripts/bourbon-minimum-macos.sh)"
+          mkdir -p "$EXTRACT_DIR" "$REPORT_DIR"
+          tar -xzf "$OUTPUT_DIR/BourbonWineDiagnosticRuntime.tar.gz" -C "$EXTRACT_DIR"
+
+          python3 Scripts/validate-wine-runtime.py "$EXTRACT_DIR/Libraries/Wine" \
+            --maximum-minimum "$SUPPORTED_MACOS" \
+            --report "$REPORT_DIR/corrected-runtime-mach-o.tsv" \
+            --links-report "$REPORT_DIR/corrected-runtime-links.txt"
+
+          file \
+            "$EXTRACT_DIR/Libraries/Wine/bin/wine" \
+            "$EXTRACT_DIR/Libraries/Wine/bin/wineserver" \
+            "$EXTRACT_DIR/Libraries/Wine/lib/wine/x86_64-unix/ntdll.so" \
+            | tee "$REPORT_DIR/corrected-runtime-file.txt"
+          vtool -show-build "$EXTRACT_DIR/Libraries/Wine/bin/wine" \
+            | tee "$REPORT_DIR/corrected-wine-vtool.txt"
+          vtool -show-build "$EXTRACT_DIR/Libraries/Wine/bin/wineserver" \
+            | tee "$REPORT_DIR/corrected-wineserver-vtool.txt"
+          vtool -show-build "$EXTRACT_DIR/Libraries/Wine/lib/wine/x86_64-unix/ntdll.so" \
+            | tee "$REPORT_DIR/corrected-ntdll-vtool.txt"
+
+      - name: Execute corrected Wine on macOS 14
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ROOT="$RUNNER_TEMP/bourbon-corrected-runtime-extract/Libraries/Wine"
+          export PATH="$ROOT/bin:$PATH"
+          export DYLD_LIBRARY_PATH="$ROOT/lib"
+          export DYLD_FALLBACK_LIBRARY_PATH="$ROOT/lib"
+
+          "$ROOT/bin/wine" --version \
+            | tee "$RUNNER_TEMP/bourbon-runtime-reports/corrected-wine-version.txt"
+          "$ROOT/bin/wineserver" --version \
+            | tee "$RUNNER_TEMP/bourbon-runtime-reports/corrected-wineserver-version.txt"
+
+      - name: Upload corrected runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: bourbon-corrected-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bourbon-corrected-runtime
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload runtime verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bourbon-runtime-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bourbon-runtime-reports
+          if-no-files-found: warn
+          retention-days: 14
+
   inspect-production-release:
     name: Inspect production release DMG
     runs-on: macos-latest
@@ -106,7 +227,8 @@ jobs:
 
   validate-macos:
     name: Validate Bourbon on macOS
-    runs-on: macos-latest
+    needs: prepare-compatible-runtime
+    runs-on: macos-14
 
     steps:
       - name: Checkout repository
@@ -117,6 +239,12 @@ jobs:
           sw_vers
           xcodebuild -version
           swift --version
+
+      - name: Download corrected diagnostic runtime
+        uses: actions/download-artifact@v5
+        with:
+          name: bourbon-corrected-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bourbon-corrected-runtime
 
       - name: Install SwiftLint
         run: brew install swiftlint
@@ -252,6 +380,10 @@ jobs:
           test -d "$SOURCE_APP"
           mkdir -p "$DIAGNOSTIC_ROOT" "$DIAGNOSTIC_OUTPUT"
           ditto "$SOURCE_APP" "$DIAGNOSTIC_APP"
+          cp "$RUNNER_TEMP/bourbon-corrected-runtime/BourbonWineDiagnosticRuntime.tar.gz" \
+            "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.tar.gz"
+          cp "$RUNNER_TEMP/bourbon-corrected-runtime/BourbonWineDiagnosticRuntime.json" \
+            "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.json"
           /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Bourbon Diagnostic' \
             "$DIAGNOSTIC_APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c 'Delete :SUFeedURL' \
@@ -263,6 +395,8 @@ jobs:
           test "$DISPLAY_NAME" = 'Bourbon Diagnostic'
           test ! -e "$DIAGNOSTIC_ROOT/Bourbon.app"
           test -f "$DIAGNOSTIC_APP/Contents/Resources/BuildInfo.json"
+          test -f "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.tar.gz"
+          test -f "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.json"
           python3 - "$DIAGNOSTIC_APP/Contents/Resources/BuildInfo.json" "$GITHUB_SHA" <<'PY'
           import json
           import sys

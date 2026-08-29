@@ -60,6 +60,43 @@ public class WhiskyWineInstaller {
         public let expiresInSeconds: Int
     }
 
+    public struct BundledDiagnosticRuntimeInfo: Codable, Sendable, Equatable {
+        public let runtimeVersion: String
+        public let wineVersion: String
+        public let sourceRepository: String
+        public let sourceRelease: String
+        public let sourceAsset: String
+        public let sourceAssetSHA256: String
+        public let maximumMinimumMacOS: String
+    }
+
+    public static func bundledDiagnosticRuntime(
+        in bundle: Bundle = .main
+    ) -> (archive: URL, info: BundledDiagnosticRuntimeInfo)? {
+        guard let archive = bundle.url(
+            forResource: "BourbonWineDiagnosticRuntime",
+            withExtension: "tar.gz"
+        ), let metadata = bundle.url(
+            forResource: "BourbonWineDiagnosticRuntime",
+            withExtension: "json"
+        ) else {
+            return nil
+        }
+
+        do {
+            let data = try Data(contentsOf: metadata)
+            let info = try JSONDecoder().decode(BundledDiagnosticRuntimeInfo.self, from: data)
+            guard SemanticVersion(info.runtimeVersion) != nil else {
+                Logger.wineKit.error("Bundled diagnostic runtime has an invalid version.")
+                return nil
+            }
+            return (archive, info)
+        } catch {
+            Logger.wineKit.error("Failed to read bundled diagnostic runtime metadata: \(error)")
+            return nil
+        }
+    }
+
     public static func latestRuntimeInfo() async throws -> BourbonRuntimeInfo {
         let request = URLRequest(url: runtimeAPIBaseURL.appending(path: "runtime/latest"))
         let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
@@ -104,20 +141,60 @@ public class WhiskyWineInstaller {
     }
 
     public static func install(from: URL, runtimeVersion: String? = nil) throws {
+        let fileManager = FileManager.default
+        var stagingRoot: URL?
+        var backupLibraryFolder: URL?
+        defer {
+            if let stagingRoot {
+                try? fileManager.removeItem(at: stagingRoot)
+            }
+        }
+
         do {
             try validateArchive(at: from, sourceURL: nil)
 
-            if !FileManager.default.fileExists(atPath: applicationFolder.path) {
-                try FileManager.default.createDirectory(at: applicationFolder, withIntermediateDirectories: true)
-            } else {
-                // Recreate it
-                try FileManager.default.removeItem(at: applicationFolder)
-                try FileManager.default.createDirectory(at: applicationFolder, withIntermediateDirectories: true)
+            if !fileManager.fileExists(atPath: applicationFolder.path) {
+                try fileManager.createDirectory(at: applicationFolder, withIntermediateDirectories: true)
             }
 
-            try Tar.untar(tarBall: from, toURL: applicationFolder)
-            try writeInstalledVersionMarkerIfNeeded(runtimeVersion: runtimeVersion)
-            try FileManager.default.removeItem(at: from)
+            let staging = applicationFolder.appending(path: ".BourbonWineInstall-\(UUID().uuidString)")
+            stagingRoot = staging
+            try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+            try Tar.untar(tarBall: from, toURL: staging)
+
+            let stagedLibraries = staging.appending(path: "Libraries")
+            let stagedBinFolder = stagedLibraries.appending(path: "Wine").appending(path: "bin")
+            let stagedWine = RuntimeWineBinary.resolve(in: stagedBinFolder)
+            let stagedWineserver = stagedBinFolder.appending(path: "wineserver")
+            guard fileManager.isExecutableFile(atPath: stagedWine.path(percentEncoded: false)),
+                  fileManager.isExecutableFile(atPath: stagedWineserver.path(percentEncoded: false)) else {
+                throw WhiskyWineInstallerError.invalidArchiveLayout(nil, from)
+            }
+
+            if fileManager.fileExists(atPath: libraryFolder.path(percentEncoded: false)) {
+                let backup = applicationFolder.appending(path: ".BourbonWineBackup-\(UUID().uuidString)")
+                backupLibraryFolder = backup
+                try fileManager.moveItem(at: libraryFolder, to: backup)
+            }
+
+            do {
+                try fileManager.moveItem(at: stagedLibraries, to: libraryFolder)
+                try writeInstalledVersionMarkerIfNeeded(runtimeVersion: runtimeVersion)
+            } catch {
+                if fileManager.fileExists(atPath: libraryFolder.path(percentEncoded: false)) {
+                    try? fileManager.removeItem(at: libraryFolder)
+                }
+                if let backupLibraryFolder,
+                   fileManager.fileExists(atPath: backupLibraryFolder.path(percentEncoded: false)) {
+                    try? fileManager.moveItem(at: backupLibraryFolder, to: libraryFolder)
+                }
+                throw error
+            }
+
+            if let backupLibraryFolder {
+                try? fileManager.removeItem(at: backupLibraryFolder)
+            }
+            try fileManager.removeItem(at: from)
         } catch {
             Logger.wineKit.error("Failed to install BourbonWine from `\(from.path)`: \(error)")
             throw error
@@ -179,6 +256,17 @@ public class WhiskyWineInstaller {
 
     public static func shouldUpdateWhiskyWine() async -> (Bool, SemanticVersion) {
         let localVersion = whiskyWineVersion()
+        if let bundledRuntime = bundledDiagnosticRuntime(),
+           let bundledVersion = SemanticVersion(bundledRuntime.info.runtimeVersion) {
+            if let localVersion {
+                if localVersion < bundledVersion {
+                    return (true, bundledVersion)
+                }
+            } else {
+                return (true, bundledVersion)
+            }
+        }
+
         let remoteVersion = await remotewhiskyWineVersion()
 
         if let localVersion = localVersion, let remoteVersion = remoteVersion {

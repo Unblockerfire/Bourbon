@@ -78,6 +78,14 @@ struct WhiskyWineDownloadView: View {
 
         Task {
             do {
+                if let bundledRuntime = WhiskyWineInstaller.bundledDiagnosticRuntime() {
+                    runtimeVersion = bundledRuntime.info.runtimeVersion
+                    tarLocation = try WhiskyWineInstaller.persistLocalArchive(at: bundledRuntime.archive)
+                    downloadProgress = 1
+                    path.append(.whiskyWineInstall)
+                    return
+                }
+
                 let runtimeInfo = try await WhiskyWineInstaller.latestRuntimeInfo()
                 let sourceURL = runtimeInfo.archiveUrl
                 runtimeVersion = runtimeInfo.version
