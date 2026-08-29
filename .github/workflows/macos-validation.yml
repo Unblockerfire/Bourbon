@@ -133,6 +133,45 @@ jobs:
         working-directory: Source
         run: swiftlint lint --strict
 
+      - name: Validate production BourbonWine launcher contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RUNTIME_JSON="$RUNNER_TEMP/bourbon-runtime.json"
+          RUNTIME_ARCHIVE="$RUNNER_TEMP/bourbon-runtime.tar.gz"
+          RUNTIME_LISTING="$RUNNER_TEMP/bourbon-runtime-files.txt"
+
+          curl --fail --silent --show-error \
+            https://api.getbourbon.app/runtime/latest \
+            --output "$RUNTIME_JSON"
+
+          RUNTIME_URL="$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["archiveUrl"])' \
+            "$RUNTIME_JSON")"
+          RUNTIME_SHA256="$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' \
+            "$RUNTIME_JSON")"
+          RUNTIME_WINE_VERSION="$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["wineVersion"])' \
+            "$RUNTIME_JSON")"
+
+          curl --fail --location --silent --show-error \
+            "$RUNTIME_URL" \
+            --output "$RUNTIME_ARCHIVE"
+          printf '%s  %s\n' "$RUNTIME_SHA256" "$RUNTIME_ARCHIVE" | shasum -a 256 --check
+
+          tar -tzf "$RUNTIME_ARCHIVE" > "$RUNTIME_LISTING"
+          grep -Fx 'Libraries/Wine/bin/wine' "$RUNTIME_LISTING"
+          grep -Fx 'Libraries/Wine/bin/wineserver' "$RUNTIME_LISTING"
+
+          if grep -Fxq 'Libraries/Wine/bin/wine64' "$RUNTIME_LISTING"; then
+            echo 'Production runtime launcher: wine64'
+          else
+            echo 'Production runtime launcher: wine'
+          fi
+          echo "Production runtime Wine version: $RUNTIME_WINE_VERSION"
+
       - name: Run WhiskyKit tests
         shell: bash
         run: |

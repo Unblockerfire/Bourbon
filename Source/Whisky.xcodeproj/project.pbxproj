@@ -801,7 +801,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 100044;
+				CURRENT_PROJECT_VERSION = 100045;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Whisky/Preview Content\"";
 				DEVELOPMENT_TEAM = RCADVCXMWS;
@@ -815,13 +815,13 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "A Windows application is trying to access the camera.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © Bourbon ( Created from Whisky ©)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A Windows application is trying to access the microphone.";
-				INFOPLIST_KEY_SUFeedURL = "https://api.getbourbon.app/updates/pre/appcast.xml";
+				INFOPLIST_KEY_SUFeedURL = "https://api.getbourbon.app/updates/stable/appcast.xml";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.0.18;
+				MARKETING_VERSION = 2.0.19;
 				PRODUCT_BUNDLE_IDENTIFIER = com.unblockerfire.Bourbon;
 				PRODUCT_NAME = Bourbon;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -843,7 +843,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 100044;
+				CURRENT_PROJECT_VERSION = 100045;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Whisky/Preview Content\"";
 				DEVELOPMENT_TEAM = RCADVCXMWS;
@@ -857,13 +857,13 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "A Windows application is trying to access the camera.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © Bourbon ( Created from Whisky ©)";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "A Windows application is trying to access the microphone.";
-				INFOPLIST_KEY_SUFeedURL = "https://api.getbourbon.app/updates/pre/appcast.xml";
+				INFOPLIST_KEY_SUFeedURL = "https://api.getbourbon.app/updates/stable/appcast.xml";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.0.18;
+				MARKETING_VERSION = 2.0.19;
 				PRODUCT_BUNDLE_IDENTIFIER = com.unblockerfire.Bourbon;
 				PRODUCT_NAME = Bourbon;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -934,7 +934,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 100044;
+				CURRENT_PROJECT_VERSION = 100045;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = RCADVCXMWS;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -950,7 +950,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 2.0.18;
+				MARKETING_VERSION = 2.0.19;
 				PRODUCT_BUNDLE_IDENTIFIER = com.unblockerfire.Bourbon.WhiskyThumbnail;
 				PRODUCT_NAME = WhiskyThumbnail;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -970,7 +970,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 100044;
+				CURRENT_PROJECT_VERSION = 100045;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = RCADVCXMWS;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -986,7 +986,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 2.0.18;
+				MARKETING_VERSION = 2.0.19;
 				PRODUCT_BUNDLE_IDENTIFIER = com.unblockerfire.Bourbon.WhiskyThumbnail;
 				PRODUCT_NAME = WhiskyThumbnail;
 				PROVISIONING_PROFILE_SPECIFIER = "";

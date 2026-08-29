@@ -156,7 +156,7 @@ public class Wine {
 
     /// Path to the selected `wine` binary.
     public static var wineBinary: URL {
-        customWineRunner?.wine ?? WhiskyWineInstaller.binFolder.appending(path: "wine64")
+        customWineRunner?.wine ?? WhiskyWineInstaller.runtimeWineBinary()
     }
 
     /// Path to the selected `wineserver` binary.

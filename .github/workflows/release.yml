@@ -146,6 +146,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          UPDATE_FEED_CHANNEL="stable"
+          if [ -n "${{ steps.version.outputs.channel }}" ]; then
+            UPDATE_FEED_CHANNEL="pre"
+          fi
+
           xcodebuild \
             -project "$PROJECT_PATH" \
             -scheme "$SCHEME" \
@@ -155,7 +160,7 @@ jobs:
             -clonedSourcePackagesDirPath "$PACKAGE_CACHE" \
             CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION="${{ steps.version.outputs.version }}" \
-            INFOPLIST_KEY_SUFeedURL="https://api.getbourbon.app/updates/pre/appcast.xml" \
+            INFOPLIST_KEY_SUFeedURL="https://api.getbourbon.app/updates/$UPDATE_FEED_CHANNEL/appcast.xml" \
             build
 
       - name: Write build metadata

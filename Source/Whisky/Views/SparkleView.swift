@@ -481,8 +481,23 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
     private nonisolated func isSuccessfulNoUpdate(_ error: Error) -> Bool {
         var currentError: NSError? = error as NSError
         while let candidate = currentError {
-            let reason = candidate.userInfo[SPUNoUpdateFoundReasonKey] as? SPUNoUpdateFoundReason
-            if reason == .onLatestVersion || reason == .onNewerThanLatestVersion {
+            let reasonValue = candidate.userInfo[SPUNoUpdateFoundReasonKey]
+            let reasonRawValue: Int32?
+
+            if let number = reasonValue as? NSNumber {
+                // Sparkle publishes this NS_ENUM value through NSError.userInfo
+                // as NSNumber. A direct Swift enum cast can therefore fail and
+                // incorrectly turn the normal "already current" result into an
+                // update-failed alert.
+                reasonRawValue = number.int32Value
+            } else if let reason = reasonValue as? SPUNoUpdateFoundReason {
+                reasonRawValue = reason.rawValue
+            } else {
+                reasonRawValue = nil
+            }
+
+            if reasonRawValue == SPUNoUpdateFoundReason.onLatestVersion.rawValue ||
+                reasonRawValue == SPUNoUpdateFoundReason.onNewerThanLatestVersion.rawValue {
                 return true
             }
 
@@ -495,15 +510,21 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
     private func presentUpdaterError(_ error: Error) {
         pendingUpdateManager.clearPendingInstall()
         let message = sanitizedUpdaterError(error)
+        let installLocationMessage = installLocationGuidance(error)
         MainActor.assumeIsolated {
             let alert = NSAlert()
-            alert.messageText = "Bourbon update failed."
-            alert.informativeText = message
-            alert.alertStyle = .warning
+            alert.messageText = installLocationMessage == nil
+                ? "Bourbon update failed."
+                : "Move Bourbon to Applications first."
+            alert.informativeText = installLocationMessage ?? message
+            alert.alertStyle = installLocationMessage == nil ? .warning : .informational
             alert.addButton(withTitle: "OK")
-            alert.addButton(withTitle: "Report")
+            if installLocationMessage == nil {
+                alert.addButton(withTitle: "Report")
+            }
 
-            if alert.runModal() == .alertSecondButtonReturn {
+            let response = alert.runModal()
+            if installLocationMessage == nil && response == .alertSecondButtonReturn {
                 BourbonReportCenter.openUpdateReport(error)
             }
         }
@@ -525,6 +546,25 @@ final class BourbonPendingUpdateUserDriver: NSObject, SPUUserDriver {
             with: "[redacted URL]",
             options: .regularExpression
         )
+    }
+
+    private nonisolated func installLocationGuidance(_ error: Error) -> String? {
+        // Sparkle's public SUError values for a read-only disk image and App
+        // Translocation are 1003 and 1005. In both cases an update check cannot
+        // start until the downloaded application has been installed normally.
+        let installLocationErrorCodes: Set<Int> = [1003, 1005]
+        var currentError: NSError? = error as NSError
+
+        while let candidate = currentError {
+            if candidate.domain == SUSparkleErrorDomain,
+               installLocationErrorCodes.contains(candidate.code) {
+                return "Drag Bourbon.app from the downloaded DMG into the Applications folder, " +
+                    "eject the DMG, then open Bourbon from Applications and check again."
+            }
+            currentError = candidate.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+
+        return nil
     }
 
     func showDownloadInitiated(cancellation: @escaping () -> Void) {
