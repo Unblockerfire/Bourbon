@@ -66,10 +66,10 @@ jobs:
             echo '::error::The known-incompatible production runtime unexpectedly passed.'
             exit 1
           fi
-          grep -F 'lib/wine/x86_64-unix/ntdll.so requires macOS 27.0' \
-            "$REPORT_DIR/current-runtime-failure.txt"
           grep -F 'lib/wine/x86_64-unix/ntdll.so references unsupported symbol(s): _pipe2' \
             "$REPORT_DIR/current-runtime-failure.txt"
+          grep -F $'lib/wine/x86_64-unix/ntdll.so\tx86_64\tMACOS\t10.15\t26.5' \
+            "$REPORT_DIR/current-runtime-mach-o.tsv"
 
       - name: Validate corrected runtime Mach-O contract
         shell: bash

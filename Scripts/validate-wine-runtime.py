@@ -35,9 +35,6 @@ def is_macho(path: Path) -> bool:
 
 def build_versions(path: Path) -> list[tuple[str, str, str]]:
     result = run("/usr/bin/vtool", "-show-build", str(path), check=False)
-    if result.returncode != 0:
-        return []
-
     records: list[tuple[str, str, str]] = []
     platform = minos = sdk = None
     for line in result.stdout.splitlines():
@@ -51,7 +48,23 @@ def build_versions(path: Path) -> list[tuple[str, str, str]]:
         if platform and minos and sdk:
             records.append((platform, minos, sdk))
             platform = minos = sdk = None
-    return records
+    if records:
+        return records
+
+    legacy = run("/usr/bin/otool", "-l", str(path), check=False)
+    minimum = sdk = None
+    in_legacy_command = False
+    for line in legacy.stdout.splitlines():
+        stripped = line.strip()
+        if stripped == "cmd LC_VERSION_MIN_MACOSX":
+            in_legacy_command = True
+        elif in_legacy_command and stripped.startswith("version "):
+            minimum = stripped.split(maxsplit=1)[1]
+        elif in_legacy_command and stripped.startswith("sdk "):
+            sdk = stripped.split(maxsplit=1)[1]
+        if minimum and sdk:
+            return [("MACOS", minimum, sdk)]
+    return []
 
 
 def architectures(path: Path) -> str:
@@ -68,8 +81,6 @@ def linked_libraries(path: Path) -> list[str]:
 
 def undefined_symbols(path: Path) -> set[str]:
     result = run("/usr/bin/nm", "-u", str(path), check=False)
-    if result.returncode != 0:
-        return set()
     symbols = set()
     for line in result.stdout.splitlines():
         candidate = line.strip().split()[-1] if line.strip() else ""
