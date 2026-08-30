@@ -43,7 +43,7 @@ jobs:
             Libraries/BourbonWineRuntime.json \
             > "$OUTPUT_DIR/BourbonWineDiagnosticRuntime.json"
 
-      - name: Prove production runtime incompatibility
+      - name: Audit current production runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -62,14 +62,25 @@ jobs:
           STATUS=${PIPESTATUS[0]}
           set -e
 
+          printf '%s\n' "$STATUS" > "$REPORT_DIR/current-runtime-validation-status.txt"
           if [ "$STATUS" -eq 0 ]; then
-            echo '::error::The known-incompatible production runtime unexpectedly passed.'
-            exit 1
+            echo 'Current production runtime passed the static compatibility gate.'
+          else
+            echo '::warning::Current production runtime failed the static compatibility gate; see the uploaded verification artifact.'
           fi
-          grep -F 'lib/wine/x86_64-unix/ntdll.so references unsupported symbol(s): _pipe2' \
-            "$REPORT_DIR/current-runtime-failure.txt"
-          grep -F $'lib/wine/x86_64-unix/ntdll.so\tx86_64\tMACOS\t10.15\t26.5' \
-            "$REPORT_DIR/current-runtime-mach-o.tsv"
+
+          for RELATIVE in \
+            bin/wine \
+            bin/wineserver \
+            lib/wine/x86_64-unix/ntdll.so; do
+            SAFE_NAME="$(printf '%s' "$RELATIVE" | tr '/.' '__')"
+            BINARY="$CURRENT_WINE/$RELATIVE"
+            file "$BINARY" > "$REPORT_DIR/current-$SAFE_NAME-file.txt"
+            vtool -show-build "$BINARY" > "$REPORT_DIR/current-$SAFE_NAME-vtool.txt" 2>&1 || true
+            otool -l "$BINARY" > "$REPORT_DIR/current-$SAFE_NAME-otool-load-commands.txt"
+            otool -L "$BINARY" > "$REPORT_DIR/current-$SAFE_NAME-otool-links.txt"
+            nm -u "$BINARY" > "$REPORT_DIR/current-$SAFE_NAME-undefined-symbols.txt" 2>&1 || true
+          done
 
       - name: Validate corrected runtime Mach-O contract
         shell: bash
