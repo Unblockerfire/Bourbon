@@ -400,13 +400,18 @@ jobs:
             "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.json"
           /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Bourbon Diagnostic' \
             "$DIAGNOSTIC_APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.unblockerfire.BourbonDiagnostic' \
+            "$DIAGNOSTIC_APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c 'Delete :SUFeedURL' \
             "$DIAGNOSTIC_APP/Contents/Info.plist" 2>/dev/null || true
           /usr/bin/codesign --force --deep --sign - "$DIAGNOSTIC_APP"
 
           DISPLAY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' \
             "$DIAGNOSTIC_APP/Contents/Info.plist")"
+          BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+            "$DIAGNOSTIC_APP/Contents/Info.plist")"
           test "$DISPLAY_NAME" = 'Bourbon Diagnostic'
+          test "$BUNDLE_IDENTIFIER" = 'com.unblockerfire.BourbonDiagnostic'
           test ! -e "$DIAGNOSTIC_ROOT/Bourbon.app"
           test -f "$DIAGNOSTIC_APP/Contents/Resources/BuildInfo.json"
           test -f "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.tar.gz"
@@ -429,6 +434,55 @@ jobs:
             -format UDZO \
             "$DIAGNOSTIC_DMG"
           shasum -a 256 "$DIAGNOSTIC_DMG" > "$DIAGNOSTIC_DMG.sha256"
+
+      - name: Validate packaged diagnostic DMG and clean runtime installation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DMG_PATH="$(find "$RUNNER_TEMP/bourbon-diagnostic-dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
+          MOUNT_DIR="$RUNNER_TEMP/bourbon-diagnostic-mounted"
+          EXTRACT_DIR="$RUNNER_TEMP/bourbon-diagnostic-runtime-extract"
+          CLEAN_HOME="$RUNNER_TEMP/bourbon-diagnostic-clean-home"
+          mkdir -p "$MOUNT_DIR" "$EXTRACT_DIR" "$CLEAN_HOME"
+          hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_DIR" -nobrowse -readonly -noverify
+          cleanup_mount() { hdiutil detach "$MOUNT_DIR" -quiet || true; }
+          trap cleanup_mount EXIT
+
+          APP="$MOUNT_DIR/Bourbon Diagnostic.app"
+          ARCHIVE="$APP/Contents/Resources/BourbonWineDiagnosticRuntime.tar.gz"
+          METADATA="$APP/Contents/Resources/BourbonWineDiagnosticRuntime.json"
+          test -f "$ARCHIVE"
+          test -f "$METADATA"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = \
+            'com.unblockerfire.BourbonDiagnostic'
+          BOURBON_PACKAGED_DIAGNOSTIC_RUNTIME="$ARCHIVE" \
+            BOURBON_PACKAGED_DIAGNOSTIC_METADATA="$METADATA" \
+            swift test --package-path Source/WhiskyKit \
+              --filter WhiskyWineRuntimeReadinessTests/testPackagedDiagnosticArchiveInstallsIntoCleanApplicationSupport
+          tar -tzf "$ARCHIVE" | grep -Fx 'Libraries/Wine/bin/wine'
+          tar -tzf "$ARCHIVE" | grep -Fx 'Libraries/Wine/bin/wineserver'
+          tar -tzf "$ARCHIVE" | grep -Fx 'Libraries/Wine/lib/wine/x86_64-unix/ntdll.so'
+          tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR"
+          RUNTIME="$EXTRACT_DIR/Libraries/Wine"
+          test -x "$RUNTIME/bin/wine"
+          test -x "$RUNTIME/bin/wineserver"
+          test -f "$RUNTIME/lib/wine/x86_64-unix/ntdll.so"
+          DYLD_LIBRARY_PATH="$RUNTIME/lib" DYLD_FALLBACK_LIBRARY_PATH="$RUNTIME/lib" \
+            "$RUNTIME/bin/wine" --version | tee "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-wine-version.txt"
+
+          # This explicitly proves the app's isolated Application Support destination
+          # starts empty before the bundled archive is installed.
+          DESTINATION="$CLEAN_HOME/Library/Application Support/com.unblockerfire.BourbonDiagnostic"
+          test ! -e "$DESTINATION/Libraries/Wine/bin/wine"
+          mkdir -p "$DESTINATION"
+          tar -xzf "$ARCHIVE" -C "$DESTINATION"
+          test -x "$DESTINATION/Libraries/Wine/bin/wine"
+          test -x "$DESTINATION/Libraries/Wine/bin/wineserver"
+          test -f "$DESTINATION/Libraries/Wine/lib/wine/x86_64-unix/ntdll.so"
+          DYLD_LIBRARY_PATH="$DESTINATION/Libraries/Wine/lib" \
+            DYLD_FALLBACK_LIBRARY_PATH="$DESTINATION/Libraries/Wine/lib" \
+            "$DESTINATION/Libraries/Wine/bin/wine" --version
 
       - name: Upload diagnostic DMG
         uses: actions/upload-artifact@v4

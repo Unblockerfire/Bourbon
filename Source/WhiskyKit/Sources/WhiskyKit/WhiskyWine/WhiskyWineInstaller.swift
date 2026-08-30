@@ -120,14 +120,18 @@ public class WhiskyWineInstaller {
     public static let binFolder: URL = libraryFolder.appending(path: "Wine").appending(path: "bin")
 
     public static func isWhiskyWineInstalled() -> Bool {
-        whiskyWineVersion() != nil || runtimeBinariesInstalled()
+        runtimeReadiness(in: applicationFolder).isReady
     }
 
     public static func runtimeBinariesInstalled() -> Bool {
-        let wine = RuntimeWineBinary.resolve(in: binFolder)
-        let wineserver = binFolder.appending(path: "wineserver")
-        return FileManager.default.fileExists(atPath: wine.path(percentEncoded: false))
-            && FileManager.default.fileExists(atPath: wineserver.path(percentEncoded: false))
+        runtimeReadiness(in: applicationFolder).hasRequiredFiles
+    }
+
+    /// The only authoritative statement that a runtime is ready.  A version marker is
+    /// deliberately not sufficient: it is written last and is checked against the
+    /// manifest shipped inside the runtime itself.
+    public static func runtimeReadiness(in applicationFolder: URL) -> RuntimeReadiness {
+        RuntimeReadiness.validate(applicationFolder: applicationFolder)
     }
 
     public static func legacyRuntimeMarkerURL() -> URL? {
@@ -143,8 +147,13 @@ public class WhiskyWineInstaller {
     }
 
     // swiftlint:disable:next function_body_length
-    public static func install(from: URL, runtimeVersion: String? = nil) throws {
+    public static func install(
+        from: URL,
+        runtimeVersion: String? = nil,
+        into destinationApplicationFolder: URL = applicationFolder
+    ) throws {
         let fileManager = FileManager.default
+        let destinationLibraryFolder = destinationApplicationFolder.appending(path: "Libraries")
         var stagingRoot: URL?
         var backupLibraryFolder: URL?
         defer {
@@ -156,40 +165,45 @@ public class WhiskyWineInstaller {
         do {
             try validateArchive(at: from, sourceURL: nil)
 
-            if !fileManager.fileExists(atPath: applicationFolder.path) {
-                try fileManager.createDirectory(at: applicationFolder, withIntermediateDirectories: true)
+            if !fileManager.fileExists(atPath: destinationApplicationFolder.path) {
+                try fileManager.createDirectory(at: destinationApplicationFolder, withIntermediateDirectories: true)
             }
 
-            let staging = applicationFolder.appending(path: ".BourbonWineInstall-\(UUID().uuidString)")
+            let staging = destinationApplicationFolder.appending(path: ".BourbonWineInstall-\(UUID().uuidString)")
             stagingRoot = staging
             try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
             try Tar.untar(tarBall: from, toURL: staging)
 
-            let stagedLibraries = staging.appending(path: "Libraries")
-            let stagedBinFolder = stagedLibraries.appending(path: "Wine").appending(path: "bin")
-            let stagedWine = RuntimeWineBinary.resolve(in: stagedBinFolder)
-            let stagedWineserver = stagedBinFolder.appending(path: "wineserver")
-            guard fileManager.isExecutableFile(atPath: stagedWine.path(percentEncoded: false)),
-                  fileManager.isExecutableFile(atPath: stagedWineserver.path(percentEncoded: false)) else {
-                throw WhiskyWineInstallerError.invalidArchiveLayout(nil, from)
-            }
+            let stagedReadiness = RuntimeReadiness.validate(
+                applicationFolder: staging,
+                expectedRuntimeVersion: runtimeVersion,
+                requireVersionMarker: false
+            )
+            guard stagedReadiness.isReady else { throw WhiskyWineInstallerError.runtimeNotReady(stagedReadiness) }
 
-            if fileManager.fileExists(atPath: libraryFolder.path(percentEncoded: false)) {
-                let backup = applicationFolder.appending(path: ".BourbonWineBackup-\(UUID().uuidString)")
+            if fileManager.fileExists(atPath: destinationLibraryFolder.path(percentEncoded: false)) {
+                let backup = destinationApplicationFolder.appending(path: ".BourbonWineBackup-\(UUID().uuidString)")
                 backupLibraryFolder = backup
-                try fileManager.moveItem(at: libraryFolder, to: backup)
+                try fileManager.moveItem(at: destinationLibraryFolder, to: backup)
             }
 
             do {
-                try fileManager.moveItem(at: stagedLibraries, to: libraryFolder)
-                try writeInstalledVersionMarkerIfNeeded(runtimeVersion: runtimeVersion)
+                try fileManager.moveItem(at: staging.appending(path: "Libraries"), to: destinationLibraryFolder)
+                try writeInstalledVersionMarkerIfNeeded(runtimeVersion: runtimeVersion, in: destinationLibraryFolder)
+                let installedReadiness = RuntimeReadiness.validate(
+                    applicationFolder: destinationApplicationFolder,
+                    expectedRuntimeVersion: runtimeVersion
+                )
+                guard installedReadiness.isReady else {
+                    throw WhiskyWineInstallerError.runtimeNotReady(installedReadiness)
+                }
             } catch {
-                if fileManager.fileExists(atPath: libraryFolder.path(percentEncoded: false)) {
-                    try? fileManager.removeItem(at: libraryFolder)
+                if fileManager.fileExists(atPath: destinationLibraryFolder.path(percentEncoded: false)) {
+                    try? fileManager.removeItem(at: destinationLibraryFolder)
                 }
                 if let backupLibraryFolder,
                    fileManager.fileExists(atPath: backupLibraryFolder.path(percentEncoded: false)) {
-                    try? fileManager.moveItem(at: backupLibraryFolder, to: libraryFolder)
+                    try? fileManager.moveItem(at: backupLibraryFolder, to: destinationLibraryFolder)
                 }
                 throw error
             }
@@ -309,7 +323,7 @@ public class WhiskyWineInstaller {
         return nil
     }
 
-    private static func writeInstalledVersionMarkerIfNeeded(runtimeVersion: String?) throws {
+    private static func writeInstalledVersionMarkerIfNeeded(runtimeVersion: String?, in libraryFolder: URL) throws {
         let marker = libraryFolder
             .appending(path: "BourbonWineVersion")
             .appendingPathExtension("plist")
@@ -317,10 +331,6 @@ public class WhiskyWineInstaller {
         guard let runtimeVersion,
               SemanticVersion(runtimeVersion) != nil else {
             return
-        }
-
-        if !FileManager.default.fileExists(atPath: libraryFolder.path(percentEncoded: false)) {
-            try FileManager.default.createDirectory(at: libraryFolder, withIntermediateDirectories: true)
         }
 
         guard let data = try installedVersionMarkerData(runtimeVersion: runtimeVersion) else {
@@ -458,12 +468,122 @@ struct WhiskyWineVersionInfo: Codable {
     }
 }
 
+/// Result of validating an installed BourbonWine runtime. This is intentionally
+/// filesystem-and-process based so a leftover directory or plist cannot suppress
+/// setup after an interrupted migration or extraction.
+public struct RuntimeReadiness: Sendable, Equatable {
+    public let failures: [String]
+    public let wineVersion: String?
+
+    public var isReady: Bool { failures.isEmpty }
+    public var hasRequiredFiles: Bool {
+        !failures.contains(where: { $0.hasPrefix("missing:") || $0.hasPrefix("not_executable:") })
+    }
+
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
+    static func validate(
+        applicationFolder: URL,
+        expectedRuntimeVersion: String? = nil,
+        requireVersionMarker: Bool = true,
+        fileManager: FileManager = .default
+    ) -> RuntimeReadiness {
+        let libraries = applicationFolder.appending(path: "Libraries")
+        let wineRoot = libraries.appending(path: "Wine")
+        let wine = wineRoot.appending(path: "bin/wine")
+        let wineserver = wineRoot.appending(path: "bin/wineserver")
+        let ntdll = wineRoot.appending(path: "lib/wine/x86_64-unix/ntdll.so")
+        let vulkan = wineRoot.appending(path: "lib/libvulkan.1.dylib")
+        var failures: [String] = []
+
+        for item in [wine, wineserver, ntdll, vulkan] where !fileManager.fileExists(atPath: item.path) {
+            failures.append("missing:\(item.path)")
+        }
+        for executable in [wine, wineserver]
+        where fileManager.fileExists(atPath: executable.path)
+            && !fileManager.isExecutableFile(atPath: executable.path) {
+            failures.append("not_executable:\(executable.path)")
+        }
+
+        let manifestURL = libraries.appending(path: "BourbonWineRuntime.json")
+        var manifest: InstalledRuntimeManifest?
+        do {
+            manifest = try JSONDecoder().decode(InstalledRuntimeManifest.self, from: Data(contentsOf: manifestURL))
+            if SemanticVersion(manifest?.runtimeVersion ?? "") == nil {
+                failures.append("invalid_manifest_version")
+            }
+        } catch {
+            failures.append("missing_or_invalid_manifest")
+        }
+
+        if let expectedRuntimeVersion, manifest?.runtimeVersion != expectedRuntimeVersion {
+            failures.append("runtime_version_mismatch")
+        }
+
+        if requireVersionMarker {
+            let markerURL = libraries.appending(path: "BourbonWineVersion.plist")
+            do {
+                let marker = try PropertyListDecoder().decode(
+                    WhiskyWineVersionInfo.self,
+                    from: Data(contentsOf: markerURL)
+                )
+                if marker.version.map(String.init(describing:)) != manifest?.runtimeVersion {
+                    failures.append("installed_version_marker_mismatch")
+                }
+            } catch {
+                failures.append("missing_or_invalid_installed_version_marker")
+            }
+        }
+
+        guard failures.isEmpty else { return RuntimeReadiness(failures: failures, wineVersion: nil) }
+        do {
+            let version = try wineVersion(at: wine, wineRoot: wineRoot)
+            guard WineSemanticVersion.versionToken(from: version) != nil else {
+                return RuntimeReadiness(failures: ["invalid_wine_version_output"], wineVersion: nil)
+            }
+            if let expectedWineVersion = manifest?.wineVersion,
+               !version.lowercased().contains(expectedWineVersion.lowercased()) {
+                return RuntimeReadiness(failures: ["wine_version_mismatch"], wineVersion: version)
+            }
+            return RuntimeReadiness(failures: [], wineVersion: version)
+        } catch {
+            return RuntimeReadiness(failures: ["wine_version_failed"], wineVersion: nil)
+        }
+    }
+
+    private static func wineVersion(at executable: URL, wineRoot: URL) throws -> String {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = executable
+        process.arguments = ["--version"]
+        process.currentDirectoryURL = executable.deletingLastPathComponent()
+        process.environment = [
+            "PATH": wineRoot.appending(path: "bin").path + ":/usr/bin:/bin:/usr/sbin:/sbin",
+            "DYLD_LIBRARY_PATH": wineRoot.appending(path: "lib").path,
+            "DYLD_FALLBACK_LIBRARY_PATH": wineRoot.appending(path: "lib").path
+        ]
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        let data = try output.fileHandleForReading.readToEnd() ?? Data()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { throw WhiskyWineInstallerError.wineVersionFailed }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
+private struct InstalledRuntimeManifest: Codable {
+    let runtimeVersion: String
+    let wineVersion: String
+}
+
 enum WhiskyWineInstallerError: LocalizedError {
     case missingHTTPResponse(URL)
     case badHTTPStatus(URL, Int)
     case invalidContentType(URL, String)
     case invalidArchive(URL?, URL, String?)
     case invalidArchiveLayout(URL?, URL)
+    case runtimeNotReady(RuntimeReadiness)
+    case wineVersionFailed
 
     var errorDescription: String? {
         switch self {
@@ -483,6 +603,10 @@ enum WhiskyWineInstallerError: LocalizedError {
         case .invalidArchiveLayout(let sourceURL, let savedURL):
             let source = sourceURL?.absoluteString ?? "local file"
             return "BourbonWine archive does not contain a Libraries folder: \(source) saved at \(savedURL.path)"
+        case .runtimeNotReady(let readiness):
+            return "BourbonWine runtime validation failed: \(readiness.failures.joined(separator: ", "))"
+        case .wineVersionFailed:
+            return "BourbonWine wine --version failed during runtime validation."
         }
     }
 }
