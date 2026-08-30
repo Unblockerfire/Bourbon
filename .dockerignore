@@ -14,3 +14,7 @@ Scripts
 *.xcodeproj
 .codex
 .agents
+.vscode
+diagnostic-artifact-*/
+runtime-verification-*/
+validation-artifact*/
