@@ -62,3 +62,16 @@ export function ReleasesLink() {
     </a>
   );
 }
+
+export function DevelopmentDownloadButton() {
+  return (
+    <a
+      className="button buttonSecondary"
+      href={siteConfig.developmentDownloadUrl}
+      aria-label={`Download the development ${siteConfig.productName} DMG`}
+    >
+      <Download aria-hidden="true" size={18} />
+      <span>Development DMG</span>
+    </a>
+  );
+}

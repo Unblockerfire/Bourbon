@@ -7,7 +7,11 @@ import {
   Terminal
 } from "lucide-react";
 
-import { DownloadButton, ReleasesLink } from "@/components/DownloadButton";
+import {
+  DevelopmentDownloadButton,
+  DownloadButton,
+  ReleasesLink
+} from "@/components/DownloadButton";
 import { siteConfig } from "@/lib/siteConfig";
 
 export const metadata: Metadata = {
@@ -34,8 +38,13 @@ export default function DownloadPage() {
           Bourbon 2.0.8 restores the production license connection and is
           available through Bourbon&apos;s normal in-app updater.
         </p>
+        <p>
+          The Development DMG is a diagnostic test build and does not replace
+          the current stable release.
+        </p>
         <div className="buttonRow">
           <DownloadButton />
+          <DevelopmentDownloadButton />
           <ReleasesLink />
         </div>
       </section>

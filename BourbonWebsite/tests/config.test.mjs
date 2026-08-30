@@ -27,5 +27,9 @@ test("download configuration is explicit and non-empty", () => {
   assert.ok(downloadVersion, "directDownloadUrl must point to a Bourbon DMG");
   assert.equal(downloadVersion[1], version);
   assert.equal(downloadVersion[2], version);
+  assert.match(
+    config,
+    /developmentDownloadUrl:\s*\n\s*"https:\/\/github\.com\/Unblockerfire\/Bourbon\/releases\/download\/development-97639d8f\/Bourbon-diagnostic-97639d8f0777\.dmg"/
+  );
   assert.match(config, /minimumMacOSVersion: "14\.0"/);
 });

@@ -9,6 +9,8 @@ export const siteConfig = {
   releasesPageUrl: "https://github.com/Unblockerfire/Bourbon/releases",
   directDownloadUrl:
     "https://github.com/Unblockerfire/Bourbon/releases/download/v2.0.19/Bourbon2.0.19.dmg",
+  developmentDownloadUrl:
+    "https://github.com/Unblockerfire/Bourbon/releases/download/development-97639d8f/Bourbon-diagnostic-97639d8f0777.dmg",
   documentationUrl: "/docs",
   supportUrl: "/support",
   privacyUrl: "/privacy",

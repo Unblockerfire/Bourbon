@@ -14,7 +14,11 @@ import {
   Sparkles
 } from "lucide-react";
 
-import { DownloadButton, ReleasesLink } from "@/components/DownloadButton";
+import {
+  DevelopmentDownloadButton,
+  DownloadButton,
+  ReleasesLink
+} from "@/components/DownloadButton";
 import { featureCards, siteConfig } from "@/lib/siteConfig";
 
 const facts = [
@@ -94,6 +98,7 @@ export default function HomePage() {
           </p>
           <div className="buttonRow">
             <DownloadButton />
+            <DevelopmentDownloadButton />
             <ReleasesLink />
           </div>
           <p className="heroFinePrint">
