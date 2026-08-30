@@ -482,7 +482,10 @@ private struct BourbonWineRuntimeUpdateView: View {
                 .foregroundStyle(completed ? .green : .accent)
             Text("New Version of BourbonWine Available")
                 .font(.title2.bold())
-            Text("BourbonWine \(WhiskyWineInstaller.whiskyWineVersion().map(String.init(describing:)) ?? "0.0.0") is installed. BourbonWine \(availableVersion) is available.")
+            Text(
+                "BourbonWine \(installedVersion) is installed. " +
+                    "BourbonWine \(availableVersion) is available."
+            )
                 .multilineTextAlignment(.center)
             if isUpdating {
                 ProgressView()
@@ -500,7 +503,7 @@ private struct BourbonWineRuntimeUpdateView: View {
             HStack {
                 Button(completed ? "Close" : "Cancel", action: close)
                     .disabled(isUpdating)
-                Button(completed ? "Done" : "Update") {
+                Button("Update") {
                     update()
                 }
                 .buttonStyle(.borderedProminent)
@@ -527,18 +530,28 @@ private struct BourbonWineRuntimeUpdateView: View {
                     throw NSError(
                         domain: "BourbonWineUpdate",
                         code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "The runtime install completed but BourbonWine readiness validation did not pass."]
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "The runtime install completed but BourbonWine readiness validation did not pass."
+                        ]
                     )
                 }
                 completed = true
                 status = "BourbonWine \(installedVersion) installed successfully."
             } catch {
                 let safeError = error.localizedDescription.replacingOccurrences(of: "\n", with: " ")
-                WhiskyWineInstaller.recordUpdateEvent("runtime.update.failed", detail: "stage=update error=\(safeError)")
+                WhiskyWineInstaller.recordUpdateEvent(
+                    "runtime.update.failed",
+                    detail: "stage=update error=\(safeError)"
+                )
                 failure = "BourbonWine update failed: \(safeError)"
             }
             isUpdating = false
         }
+    }
+
+    private var installedVersion: String {
+        WhiskyWineInstaller.whiskyWineVersion().map(String.init(describing:)) ?? "0.0.0"
     }
 }
 

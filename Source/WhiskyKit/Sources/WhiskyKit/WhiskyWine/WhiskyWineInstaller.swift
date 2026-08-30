@@ -117,7 +117,11 @@ public class WhiskyWineInstaller {
         recordUpdateEvent("runtime.update.verification.started")
         try validateArchive(at: archive, sourceURL: nil)
         recordUpdateEvent("runtime.update.verification.completed")
-        try install(from: archive, runtimeVersion: bundledRuntime.info.runtimeVersion, into: destinationApplicationFolder)
+        try install(
+            from: archive,
+            runtimeVersion: bundledRuntime.info.runtimeVersion,
+            into: destinationApplicationFolder
+        )
         return bundledRuntime.info.runtimeVersion
     }
 
