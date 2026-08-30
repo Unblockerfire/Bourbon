@@ -103,6 +103,7 @@ jobs:
             "$EXTRACT_DIR/Libraries/Wine/bin/wine" \
             "$EXTRACT_DIR/Libraries/Wine/bin/wineserver" \
             "$EXTRACT_DIR/Libraries/Wine/lib/wine/x86_64-unix/ntdll.so" \
+            "$EXTRACT_DIR/Libraries/Wine/lib/libvulkan.1.dylib" \
             | tee "$REPORT_DIR/corrected-runtime-file.txt"
           vtool -show-build "$EXTRACT_DIR/Libraries/Wine/bin/wine" \
             | tee "$REPORT_DIR/corrected-wine-vtool.txt"
@@ -110,6 +111,8 @@ jobs:
             | tee "$REPORT_DIR/corrected-wineserver-vtool.txt"
           vtool -show-build "$EXTRACT_DIR/Libraries/Wine/lib/wine/x86_64-unix/ntdll.so" \
             | tee "$REPORT_DIR/corrected-ntdll-vtool.txt"
+          vtool -show-build "$EXTRACT_DIR/Libraries/Wine/lib/libvulkan.1.dylib" \
+            | tee "$REPORT_DIR/corrected-vulkan-loader-vtool.txt"
 
       - name: Execute corrected Wine on macOS 14
         shell: bash
