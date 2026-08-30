@@ -21,6 +21,7 @@
 import Foundation
 import SemanticVersion
 import os.log
+import CryptoKit
 
 // swiftlint:disable:next type_body_length
 public class WhiskyWineInstaller {
@@ -99,6 +100,77 @@ public class WhiskyWineInstaller {
         }
     }
 
+    /// Installs the runtime embedded in a diagnostic Bourbon app. The archive is
+    /// first copied out of the read-only app bundle, so installation retains the
+    /// same transactional staging and rollback behavior as a downloaded archive.
+    public static func installBundledDiagnosticRuntime(
+        in bundle: Bundle = .main,
+        into destinationApplicationFolder: URL = applicationFolder
+    ) throws -> String {
+        guard let bundledRuntime = bundledDiagnosticRuntime(in: bundle) else {
+            throw WhiskyWineInstallerError.missingBundledDiagnosticRuntime
+        }
+
+        recordUpdateEvent("runtime.update.download.started", detail: "source=bundled_diagnostic_runtime")
+        let archive = try persistLocalArchive(at: bundledRuntime.archive)
+        recordUpdateEvent("runtime.update.download.completed", detail: "source=bundled_diagnostic_runtime")
+        recordUpdateEvent("runtime.update.verification.started")
+        try validateArchive(at: archive, sourceURL: nil)
+        recordUpdateEvent("runtime.update.verification.completed")
+        try install(from: archive, runtimeVersion: bundledRuntime.info.runtimeVersion, into: destinationApplicationFolder)
+        return bundledRuntime.info.runtimeVersion
+    }
+
+    /// Updates from the diagnostic archive when it is packaged in this app;
+    /// production builds use the runtime manifest's signed/checksummed archive.
+    public static func installLatestRuntimeUpdate(
+        in bundle: Bundle = .main,
+        into destinationApplicationFolder: URL = applicationFolder
+    ) async throws -> String {
+        if bundledDiagnosticRuntime(in: bundle) != nil {
+            return try await Task.detached(priority: .userInitiated) {
+                try installBundledDiagnosticRuntime(in: bundle, into: destinationApplicationFolder)
+            }.value
+        }
+
+        let runtimeInfo = try await latestRuntimeInfo()
+        guard SemanticVersion(runtimeInfo.version) != nil else {
+            throw WhiskyWineInstallerError.invalidRuntimeVersion(runtimeInfo.version)
+        }
+
+        recordUpdateEvent("runtime.update.download.started", detail: "source=runtime_manifest")
+        recordUpdateEvent("runtime.update.download.progress", detail: "percent=0")
+        let request = URLRequest(url: runtimeInfo.archiveUrl)
+        let (temporaryURL, response) = try await URLSession(configuration: .ephemeral).download(for: request)
+        let archive = try persistDownloadedArchive(
+            at: temporaryURL,
+            response: response,
+            sourceURL: runtimeInfo.archiveUrl
+        )
+        recordUpdateEvent("runtime.update.download.progress", detail: "percent=100")
+        recordUpdateEvent("runtime.update.download.completed", detail: "source=runtime_manifest")
+        recordUpdateEvent("runtime.update.verification.started")
+        try validateArchiveSHA256(at: archive, expected: runtimeInfo.sha256)
+        recordUpdateEvent("runtime.update.verification.completed")
+        try await Task.detached(priority: .userInitiated) {
+            try install(from: archive, runtimeVersion: runtimeInfo.version, into: destinationApplicationFolder)
+        }.value
+        return runtimeInfo.version
+    }
+
+    /// Logs user-visible update lifecycle markers without emitting private paths
+    /// or network credentials into the diagnostic log.
+    public static func recordUpdateEvent(_ event: String, detail: String? = nil) {
+        let safeDetail = detail?.replacingOccurrences(of: "\n", with: " ") ?? ""
+        if safeDetail.isEmpty {
+            Logger.wineKit.notice("\(event, privacy: .public)")
+            print(event)
+        } else {
+            Logger.wineKit.notice("\(event, privacy: .public) \(safeDetail, privacy: .public)")
+            print("\(event) \(safeDetail)")
+        }
+    }
+
     public static func latestRuntimeInfo() async throws -> BourbonRuntimeInfo {
         let request = URLRequest(url: runtimeAPIBaseURL.appending(path: "runtime/latest"))
         let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
@@ -172,7 +244,9 @@ public class WhiskyWineInstaller {
             let staging = destinationApplicationFolder.appending(path: ".BourbonWineInstall-\(UUID().uuidString)")
             stagingRoot = staging
             try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+            recordUpdateEvent("runtime.update.extraction.started")
             try Tar.untar(tarBall: from, toURL: staging)
+            recordUpdateEvent("runtime.update.extraction.completed")
 
             let stagedReadiness = RuntimeReadiness.validate(
                 applicationFolder: staging,
@@ -188,8 +262,10 @@ public class WhiskyWineInstaller {
             }
 
             do {
+                recordUpdateEvent("runtime.update.install.started")
                 try fileManager.moveItem(at: staging.appending(path: "Libraries"), to: destinationLibraryFolder)
                 try writeInstalledVersionMarkerIfNeeded(runtimeVersion: runtimeVersion, in: destinationLibraryFolder)
+                recordUpdateEvent("runtime.update.preflight.started")
                 let installedReadiness = RuntimeReadiness.validate(
                     applicationFolder: destinationApplicationFolder,
                     expectedRuntimeVersion: runtimeVersion
@@ -197,6 +273,8 @@ public class WhiskyWineInstaller {
                 guard installedReadiness.isReady else {
                     throw WhiskyWineInstallerError.runtimeNotReady(installedReadiness)
                 }
+                recordUpdateEvent("runtime.update.preflight.completed")
+                recordUpdateEvent("runtime.update.install.completed")
             } catch {
                 if fileManager.fileExists(atPath: destinationLibraryFolder.path(percentEncoded: false)) {
                     try? fileManager.removeItem(at: destinationLibraryFolder)
@@ -426,6 +504,24 @@ public class WhiskyWineInstaller {
         }
     }
 
+    private static func validateArchiveSHA256(at archive: URL, expected: String) throws {
+        let normalizedExpected = expected.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedExpected.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
+            throw WhiskyWineInstallerError.invalidArchiveChecksum
+        }
+
+        let handle = try FileHandle(forReadingFrom: archive)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let data = try handle.read(upToCount: 1_048_576), !data.isEmpty {
+            hasher.update(data: data)
+        }
+        let actual = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        guard actual == normalizedExpected else {
+            throw WhiskyWineInstallerError.archiveChecksumMismatch
+        }
+    }
+
     private static func isKnownNonArchiveContentType(_ contentType: String?) -> Bool {
         guard let contentType = contentType?.lowercased() else { return false }
         return contentType.hasPrefix("text/")
@@ -577,6 +673,10 @@ private struct InstalledRuntimeManifest: Codable {
 }
 
 enum WhiskyWineInstallerError: LocalizedError {
+    case missingBundledDiagnosticRuntime
+    case invalidRuntimeVersion(String)
+    case invalidArchiveChecksum
+    case archiveChecksumMismatch
     case missingHTTPResponse(URL)
     case badHTTPStatus(URL, Int)
     case invalidContentType(URL, String)
@@ -587,6 +687,14 @@ enum WhiskyWineInstallerError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .missingBundledDiagnosticRuntime:
+            return "This diagnostic Bourbon build does not include its required BourbonWine runtime archive."
+        case .invalidRuntimeVersion:
+            return "BourbonWine update metadata contains an invalid runtime version."
+        case .invalidArchiveChecksum:
+            return "BourbonWine update metadata contains an invalid archive checksum."
+        case .archiveChecksumMismatch:
+            return "The downloaded BourbonWine archive did not match its expected checksum."
         case .missingHTTPResponse(let url):
             return "BourbonWine download did not return an HTTP response: \(url.absoluteString)"
         case .badHTTPStatus(let url, let statusCode):

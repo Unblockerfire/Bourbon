@@ -287,6 +287,34 @@ jobs:
           ! grep -En 'Color\.black|\.foregroundStyle\(\.(black|white)\)|\.foregroundColor\(\.(black|white)\)' \
             "$INSTALLER_VIEW" "$DRAG_VIEW"
 
+      - name: Validate BourbonWine update interaction contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONTENT_VIEW="Source/Whisky/Views/ContentView.swift"
+          INSTALLER="Source/WhiskyKit/Sources/WhiskyKit/WhiskyWine/WhiskyWineInstaller.swift"
+
+          grep -Fq 'BourbonWineRuntimeUpdateView' "$CONTENT_VIEW"
+          grep -Fq 'runtime.update.button.clicked' "$CONTENT_VIEW"
+          grep -Fq 'installLatestRuntimeUpdate' "$CONTENT_VIEW"
+          ! grep -A4 -F 'runtime.update.button.clicked' "$CONTENT_VIEW" | grep -Fq 'WhiskyWineInstaller.uninstall()'
+          for event in \
+            runtime.update.started \
+            runtime.update.download.started \
+            runtime.update.download.progress \
+            runtime.update.download.completed \
+            runtime.update.verification.started \
+            runtime.update.verification.completed \
+            runtime.update.extraction.started \
+            runtime.update.extraction.completed \
+            runtime.update.install.started \
+            runtime.update.install.completed \
+            runtime.update.preflight.started \
+            runtime.update.preflight.completed \
+            runtime.update.failed; do
+            grep -Fq "$event" "$CONTENT_VIEW" "$INSTALLER"
+          done
+
       - name: Validate production BourbonWine launcher contract
         shell: bash
         run: |

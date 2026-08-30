@@ -38,7 +38,7 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         XCTAssertFalse(WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder).isReady)
     }
 
-    func testSuccessfulRuntimeReplacementIsTransactionalAndRunsWine() throws {
+    func testRuntimeUpdaterInstallLifecycleReplacesOldRuntimeAndRunsWine() throws {
         let fixture = try RuntimeFixture()
         defer { fixture.remove() }
         try fixture.makeRuntime(version: "0.9.0")

@@ -54,6 +54,8 @@ struct ContentView: View {
     @State private var homeSubtitle = BourbonHomeCopy.randomSubtitle()
     @State private var showAdminUnlock = false
     @State private var previousPageBeforeCreation: MainContentPage? = .home
+    @State private var runtimeUpdateVersion: SemanticVersion?
+    @State private var showRuntimeUpdate = false
 
     @State private var bottleFilter = ""
 
@@ -88,6 +90,13 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showAdminUnlock) {
             AdminUnlockView()
+        }
+        .sheet(isPresented: $showRuntimeUpdate) {
+            if let runtimeUpdateVersion {
+                BourbonWineRuntimeUpdateView(availableVersion: runtimeUpdateVersion) {
+                    showRuntimeUpdate = false
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .bourbonOpenAdminLogin)) { _ in
             openAdminLogin()
@@ -192,23 +201,8 @@ struct ContentView: View {
             }
             let updateInfo = await task.value
             if updateInfo.0 {
-                let alert = NSAlert()
-                alert.messageText = String(localized: "update.bourbonwine.title")
-                alert.informativeText = String(
-                    format: "BourbonWine %@ is installed. BourbonWine %@ is available.",
-                    String(WhiskyWineInstaller.whiskyWineVersion() ?? SemanticVersion(0, 0, 0)),
-                    String(updateInfo.1)
-                )
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: String(localized: "update.bourbonwine.update"))
-                alert.addButton(withTitle: String(localized: "button.removeAlert.cancel"))
-
-                let response = alert.runModal()
-
-                if response == .alertFirstButtonReturn {
-                    WhiskyWineInstaller.uninstall()
-                    showSetup = true
-                }
+                runtimeUpdateVersion = updateInfo.1
+                showRuntimeUpdate = true
             }
         }
     }
@@ -469,6 +463,82 @@ struct ContentView: View {
             warnings: [],
             strikes: 0
         )
+    }
+}
+
+private struct BourbonWineRuntimeUpdateView: View {
+    let availableVersion: SemanticVersion
+    let close: () -> Void
+
+    @State private var isUpdating = false
+    @State private var status = "Ready to install the available runtime."
+    @State private var failure: String?
+    @State private var completed = false
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: completed ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+                .font(.system(size: 42))
+                .foregroundStyle(completed ? .green : .accent)
+            Text("New Version of BourbonWine Available")
+                .font(.title2.bold())
+            Text("BourbonWine \(WhiskyWineInstaller.whiskyWineVersion().map(String.init(describing:)) ?? "0.0.0") is installed. BourbonWine \(availableVersion) is available.")
+                .multilineTextAlignment(.center)
+            if isUpdating {
+                ProgressView()
+                Text(status)
+                    .foregroundStyle(.secondary)
+            } else if let failure {
+                Text(failure)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text(completed ? "BourbonWine is installed and ready. You can create a Bottle now." : status)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            HStack {
+                Button(completed ? "Close" : "Cancel", action: close)
+                    .disabled(isUpdating)
+                Button(completed ? "Done" : "Update") {
+                    update()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isUpdating || completed)
+            }
+        }
+        .padding(28)
+        .frame(width: 480)
+        .interactiveDismissDisabled(isUpdating)
+    }
+
+    private func update() {
+        WhiskyWineInstaller.recordUpdateEvent("runtime.update.button.clicked")
+        isUpdating = true
+        failure = nil
+        status = "Starting BourbonWine update…"
+        Task {
+            do {
+                WhiskyWineInstaller.recordUpdateEvent("runtime.update.started", detail: "target=\(availableVersion)")
+                status = "Verifying and installing BourbonWine \(availableVersion)…"
+                let installedVersion = try await WhiskyWineInstaller.installLatestRuntimeUpdate()
+                guard installedVersion == String(availableVersion),
+                      WhiskyWineInstaller.runtimeReadiness(in: WhiskyWineInstaller.applicationFolder).isReady else {
+                    throw NSError(
+                        domain: "BourbonWineUpdate",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "The runtime install completed but BourbonWine readiness validation did not pass."]
+                    )
+                }
+                completed = true
+                status = "BourbonWine \(installedVersion) installed successfully."
+            } catch {
+                let safeError = error.localizedDescription.replacingOccurrences(of: "\n", with: " ")
+                WhiskyWineInstaller.recordUpdateEvent("runtime.update.failed", detail: "stage=update error=\(safeError)")
+                failure = "BourbonWine update failed: \(safeError)"
+            }
+            isUpdating = false
+        }
     }
 }
 
