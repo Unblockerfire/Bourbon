@@ -242,7 +242,7 @@ jobs:
   validate-macos:
     name: Validate Bourbon on macOS
     needs: prepare-compatible-runtime
-    runs-on: macos-14
+    runs-on: macos-latest
 
     steps:
       - name: Checkout repository
