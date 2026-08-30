@@ -479,7 +479,7 @@ private struct BourbonWineRuntimeUpdateView: View {
         VStack(spacing: 18) {
             Image(systemName: completed ? "checkmark.circle.fill" : "arrow.down.circle.fill")
                 .font(.system(size: 42))
-                .foregroundStyle(completed ? .green : .accent)
+                .foregroundStyle(completed ? .green : .accentColor)
             Text("New Version of BourbonWine Available")
                 .font(.title2.bold())
             Text(
