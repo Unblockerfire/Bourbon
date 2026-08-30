@@ -49,7 +49,7 @@ jobs:
           set -euo pipefail
 
           REPORT_DIR="$RUNNER_TEMP/bourbon-runtime-reports"
-          CURRENT_WINE="$RUNNER_TEMP/bourbon-runtime-work/current/Libraries/Wine"
+          CURRENT_WINE="$RUNNER_TEMP/bourbon-runtime-work/production/Libraries/Wine"
           SUPPORTED_MACOS="$(bash Scripts/bourbon-minimum-macos.sh)"
           mkdir -p "$REPORT_DIR"
 

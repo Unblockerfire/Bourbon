@@ -19,7 +19,11 @@ VULKAN_LOADER_COMMIT="a9e72c66d5cb79911eb9a9063bf4016dd0a3a123"
 VULKAN_HEADERS_COMMIT="8864cdc896bbc2a9b6eb36b3218fc9ef57908d77"
 
 rm -rf "$WORK_DIRECTORY"
-mkdir -p "$WORK_DIRECTORY/current" "$WORK_DIRECTORY/upstream" "$(dirname "$OUTPUT_ARCHIVE")"
+mkdir -p \
+  "$WORK_DIRECTORY/production" \
+  "$WORK_DIRECTORY/corrected" \
+  "$WORK_DIRECTORY/upstream" \
+  "$(dirname "$OUTPUT_ARCHIVE")"
 
 RUNTIME_JSON="$WORK_DIRECTORY/current-runtime.json"
 CURRENT_ARCHIVE="$WORK_DIRECTORY/current-runtime.tar.gz"
@@ -37,7 +41,8 @@ CURRENT_URL="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["
 CURRENT_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$RUNTIME_JSON")"
 curl --fail --location --silent --show-error "$CURRENT_URL" --output "$CURRENT_ARCHIVE"
 printf '%s  %s\n' "$CURRENT_SHA" "$CURRENT_ARCHIVE" | shasum -a 256 --check
-tar -xzf "$CURRENT_ARCHIVE" -C "$WORK_DIRECTORY/current"
+tar -xzf "$CURRENT_ARCHIVE" -C "$WORK_DIRECTORY/production"
+ditto "$WORK_DIRECTORY/production" "$WORK_DIRECTORY/corrected"
 
 curl --fail --location --silent --show-error "$WINE_ASSET_URL" --output "$UPSTREAM_ARCHIVE"
 printf '%s  %s\n' "$WINE_ASSET_SHA256" "$UPSTREAM_ARCHIVE" | shasum -a 256 --check
@@ -48,8 +53,8 @@ test -x "$UPSTREAM_WINE/bin/wine"
 test -x "$UPSTREAM_WINE/bin/wineserver"
 test -f "$UPSTREAM_WINE/lib/wine/x86_64-unix/ntdll.so"
 
-rm -rf "$WORK_DIRECTORY/current/Libraries/Wine"
-ditto "$UPSTREAM_WINE" "$WORK_DIRECTORY/current/Libraries/Wine"
+rm -rf "$WORK_DIRECTORY/corrected/Libraries/Wine"
+ditto "$UPSTREAM_WINE" "$WORK_DIRECTORY/corrected/Libraries/Wine"
 
 # The upstream Wine archive currently bundles Vulkan Loader dylibs built with
 # a macOS 26 deployment target. Rebuild that open-source component on the
@@ -80,17 +85,17 @@ cmake -S "$VULKAN_LOADER_SOURCE" -B "$VULKAN_LOADER_BUILD" \
   -D BUILD_TESTS=OFF
 cmake --build "$VULKAN_LOADER_BUILD" --target install --parallel 2
 
-WINE_LIB="$WORK_DIRECTORY/current/Libraries/Wine/lib"
+WINE_LIB="$WORK_DIRECTORY/corrected/Libraries/Wine/lib"
 rm -f "$WINE_LIB"/libvulkan*.dylib
 cp -a "$VULKAN_LOADER_INSTALL/lib"/libvulkan*.dylib "$WINE_LIB/"
 test -f "$WINE_LIB/libvulkan.1.dylib"
 test -f "$WINE_LIB/libvulkan.dylib"
 
-VULKAN_LICENSE_DIR="$WORK_DIRECTORY/current/Libraries/Wine/share/licenses/vulkan-loader"
+VULKAN_LICENSE_DIR="$WORK_DIRECTORY/corrected/Libraries/Wine/share/licenses/vulkan-loader"
 mkdir -p "$VULKAN_LICENSE_DIR"
 cp "$VULKAN_LOADER_SOURCE/LICENSE.txt" "$VULKAN_LICENSE_DIR/LICENSE.txt"
 
-python3 - "$WORK_DIRECTORY/current/Libraries" <<PY
+python3 - "$WORK_DIRECTORY/corrected/Libraries" <<PY
 import json
 import plistlib
 import sys
@@ -118,6 +123,6 @@ with (libraries / "BourbonWineRuntime.json").open("w", encoding="utf-8") as dest
     destination.write("\n")
 PY
 
-tar -czf "$OUTPUT_ARCHIVE" -C "$WORK_DIRECTORY/current" Libraries
+tar -czf "$OUTPUT_ARCHIVE" -C "$WORK_DIRECTORY/corrected" Libraries
 shasum -a 256 "$OUTPUT_ARCHIVE" > "$OUTPUT_ARCHIVE.sha256"
 echo "Prepared corrected BourbonWine $RUNTIME_VERSION with Wine $WINE_RELEASE at $OUTPUT_ARCHIVE"
