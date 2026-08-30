@@ -32,15 +32,19 @@ struct DiagnosticDragTarget: View {
                     onAccepted()
                 }
         }
-        .background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 24))
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 24)
+        )
     }
 
     private var sourceIcon: some View {
         VStack(spacing: 10) {
             DiagnosticAppIcon(image: NSApp.applicationIconImage, size: 86)
-                .shadow(color: .black.opacity(0.35), radius: 14, y: 8)
+                .shadow(color: .primary.opacity(0.24), radius: 14, y: 8)
             Text("Bourbon Diagnostic.app")
                 .font(.caption.weight(.medium))
+                .foregroundStyle(.primary)
         }
         .frame(width: 180)
         .contentShape(Rectangle())
@@ -54,6 +58,7 @@ struct DiagnosticDragTarget: View {
                 .scaleEffect(isOverApplications ? 1.08 : 1)
             Text("Applications")
                 .font(.caption.weight(.medium))
+                .foregroundStyle(.primary)
         }
         .frame(width: 170)
         .animation(.easeOut(duration: 0.15), value: isOverApplications)

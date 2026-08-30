@@ -210,12 +210,7 @@ struct DiagnosticAppInstallerView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [Color(red: 0.10, green: 0.08, blue: 0.06), Color.black],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
 
             Group {
                 switch coordinator.phase {
@@ -233,6 +228,7 @@ struct DiagnosticAppInstallerView: View {
                     failureScreen(message)
                 }
             }
+            .foregroundStyle(.primary)
             .padding(48)
         }
         .frame(minWidth: 720, minHeight: 520)
@@ -337,6 +333,7 @@ struct DiagnosticAppInstallerView: View {
         VStack(spacing: 10) {
             Text(title)
                 .font(.largeTitle.bold())
+                .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
             Text(subtitle)
                 .font(.title3)
@@ -362,7 +359,10 @@ struct DiagnosticAppInstallerView: View {
         }
         .padding(18)
         .frame(width: 245, alignment: .leading)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 16)
+        )
     }
 }
 

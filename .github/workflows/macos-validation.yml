@@ -275,6 +275,18 @@ jobs:
         working-directory: Source
         run: swiftlint lint --strict
 
+      - name: Validate diagnostic installer appearance contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          INSTALLER_VIEW='Source/Whisky/Views/DiagnosticAppInstallerView.swift'
+          DRAG_VIEW='Source/Whisky/Views/DiagnosticAppInstallerDragView.swift'
+          grep -F 'Color(nsColor: .windowBackgroundColor)' "$INSTALLER_VIEW"
+          grep -F 'Color(nsColor: .controlBackgroundColor)' "$INSTALLER_VIEW" "$DRAG_VIEW"
+          ! grep -En 'Color\.black|\.foregroundStyle\(\.(black|white)\)|\.foregroundColor\(\.(black|white)\)' \
+            "$INSTALLER_VIEW" "$DRAG_VIEW"
+
       - name: Validate production BourbonWine launcher contract
         shell: bash
         run: |
