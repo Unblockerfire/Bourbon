@@ -1577,7 +1577,6 @@ private enum BourbonWindowHierarchyDiagnostics {
 
     private static let maximumViews = 256
 
-    // swiftlint:disable:next function_body_length
     static func capture(stage: String) -> Snapshot {
         let windows = NSApp.windows.filter(\.isVisible)
         var state = CaptureState(lines: ["stage=\(safe(stage)) visible_windows=\(windows.count)"])
@@ -1628,7 +1627,6 @@ private enum BourbonWindowHierarchyDiagnostics {
         return Snapshot(code: code, report: state.lines.joined(separator: "\n"))
     }
 
-    // swiftlint:disable:next function_body_length
     private static func visit(
         _ view: NSView,
         depth: Int,

@@ -22,6 +22,8 @@ import ServiceManagement
 import SwiftUI
 import WhiskyKit
 
+// swiftlint:disable file_length
+
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -60,7 +62,6 @@ private enum BourbonLaunchContextDiagnostics {
         category: "LaunchLifecycle"
     )
 
-    // swiftlint:disable:next function_body_length
     static func record(notification: Notification) {
         let userInfo = notification.userInfo
         let loginItemLaunch = boolValue(userInfo, key: "NSApplicationLaunchIsLoginItemKey")
