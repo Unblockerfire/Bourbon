@@ -16,6 +16,7 @@
 //  If not, see https://www.gnu.org/licenses/.
 //
 
+import Foundation
 import SwiftUI
 import WhiskyKit
 
@@ -86,9 +87,20 @@ struct WhiskyWineInstallView: View {
                             runtimeVersion: installedRuntimeVersion
                         )
                     }.value
-                    installing = false
-                    try await Task.sleep(nanoseconds: 2_000_000_000)
-                    proceed()
+                    let runtimeReady = await Task.detached(priority: .userInitiated) {
+                        WhiskyWineInstaller.isWhiskyWineInstalled()
+                    }.value
+                    guard runtimeReady else {
+                        throw NSError(
+                            domain: "BourbonWineInstall",
+                            code: 1,
+                            userInfo: [
+                                NSLocalizedDescriptionKey:
+                                    "BourbonWine was installed, but its readiness check did not pass. Try again."
+                            ]
+                        )
+                    }
+                    proceed(runtimeReady: runtimeReady)
                 } catch {
                     errorMessage = error.localizedDescription
                     installing = false
@@ -97,8 +109,9 @@ struct WhiskyWineInstallView: View {
         }
     }
 
-    func proceed() {
-        hasInstalledDependencies = WhiskyWineInstaller.isWhiskyWineInstalled()
+    func proceed(runtimeReady: Bool) {
+        hasInstalledDependencies = runtimeReady
+        installing = false
         path.removeAll()
     }
 }

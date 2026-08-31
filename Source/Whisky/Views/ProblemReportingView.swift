@@ -368,7 +368,7 @@ enum BourbonReportBuilder {
         let logs = draft.includeLogs ? BourbonDiagnosticsCollector.recentLogs() : nil
         let build = BourbonBuildDiagnostics.current
         let contact = draft.contactEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-        let license = LicenseKeychainStore.currentLicense()?.publicLicenseId
+        let license = LicenseKeychainStore.currentPublicLicenseID()
 
         return BourbonSubmittedReport(
             id: UUID(),

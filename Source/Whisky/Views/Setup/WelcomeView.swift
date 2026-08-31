@@ -17,12 +17,27 @@
 //
 
 import AppKit
+import OSLog
 import Security
 import SwiftUI
 import UniformTypeIdentifiers
 import WhiskyKit
 
 // swiftlint:disable file_length
+
+enum BourbonLicenseDiagnostics {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? BourbonLicenseStoragePolicy.productionBundleIdentifier,
+        category: "LicenseLifecycle"
+    )
+
+    static func record(_ event: String, detail: String? = nil) {
+        let message = detail.map { "\(event) \($0)" } ?? event
+        logger.notice("\(message, privacy: .public)")
+        print(message)
+    }
+}
+
 // swiftlint:disable:next type_body_length
 struct WelcomeView: View {
     private enum OnboardingStep {
@@ -44,6 +59,8 @@ struct WelcomeView: View {
     @State private var accountError: String?
     @State private var isCreatingAccount = false
     @State private var activatedLicenseKey: String?
+    @State private var hasUsableLicense = false
+    @State private var installStatusRequestID = UUID()
     @Binding var path: [SetupStage]
     @Binding var showSetup: Bool
     @Binding var showBottleCreation: Bool
@@ -87,6 +104,9 @@ struct WelcomeView: View {
         .onAppear {
             migrateLegacyOnboardingFlags()
             checkInstallStatus()
+        }
+        .task {
+            await refreshLicenseState()
         }
         .onChange(of: shouldCheckInstallStatus) {
             checkInstallStatus()
@@ -462,8 +482,21 @@ struct WelcomeView: View {
 
     func checkInstallStatus() {
         rosettaInstalled = Rosetta2.isRosettaInstalled
-        whiskyWineInstalled = WhiskyWineInstaller.isWhiskyWineInstalled()
-        hasInstalledDependencies = dependenciesInstalled
+        installStatusRequestID = UUID()
+        let requestID = installStatusRequestID
+        WhiskyWineInstaller.recordRuntimeEvent("runtime.bootstrap.setup_check.started")
+        Task {
+            let installed = await Task.detached(priority: .userInitiated) {
+                WhiskyWineInstaller.isWhiskyWineInstalled()
+            }.value
+            guard requestID == installStatusRequestID, !Task.isCancelled else { return }
+            whiskyWineInstalled = installed
+            hasInstalledDependencies = rosettaInstalled == true && installed
+            WhiskyWineInstaller.recordRuntimeEvent(
+                "runtime.bootstrap.setup_check.completed",
+                detail: "ready=\(installed)"
+            )
+        }
     }
 
     private var dependenciesInstalled: Bool {
@@ -486,7 +519,7 @@ struct WelcomeView: View {
         if !hasAcceptedLegalDocuments {
             return .legal
         }
-        if !hasCreatedLicense || LicenseKeychainStore.currentLicense() == nil {
+        if !hasCreatedLicense || !hasUsableLicense {
             return .license
         }
         return .welcomeHome
@@ -502,8 +535,7 @@ struct WelcomeView: View {
     }
 
     private var dependenciesAvailable: Bool {
-        dependenciesInstalled
-        || (hasInstalledDependencies && Rosetta2.isRosettaInstalled && WhiskyWineInstaller.isWhiskyWineInstalled())
+        dependenciesInstalled || (hasInstalledDependencies && rosettaInstalled == true && whiskyWineInstalled == true)
     }
 
     private func continueFromDependencies() {
@@ -537,7 +569,7 @@ struct WelcomeView: View {
         if legacyAcceptedLegalTerms {
             hasAcceptedLegalDocuments = true
         }
-        if legacyCreatedFreeLicense || LicenseKeychainStore.currentLicense() != nil {
+        if legacyCreatedFreeLicense {
             hasCreatedLicense = true
         }
         acceptedTerms = hasAcceptedLegalDocuments
@@ -553,9 +585,10 @@ struct WelcomeView: View {
                 let record = try await BourbonLicenseAPI.activateFreeLicense(
                     displayName: sanitizedDisplayName
                 )
-                try LicenseKeychainStore.save(record)
+                try await LicenseKeychainStore.saveAsync(record)
                 await MainActor.run {
                     activatedLicenseKey = record.licenseKey ?? "\(record.publicLicenseId).\(record.licenseToken)"
+                    hasUsableLicense = true
                     isCreatingAccount = false
                 }
             } catch {
@@ -564,6 +597,15 @@ struct WelcomeView: View {
                     accountError = "Could not create your free account. Check your connection and try again."
                 }
             }
+        }
+    }
+
+    private func refreshLicenseState() async {
+        let record = await LicenseKeychainStore.currentLicenseAsync()
+        guard !Task.isCancelled else { return }
+        hasUsableLicense = record != nil
+        if hasUsableLicense {
+            hasCreatedLicense = true
         }
     }
 }
@@ -767,7 +809,7 @@ struct SetupStatusRow<Accessory: View>: View {
     }
 }
 
-struct BourbonLicenseRecord: Codable {
+struct BourbonLicenseRecord: Codable, Sendable {
     let publicLicenseId: String
     let licenseToken: String
     let licenseKey: String?
@@ -935,14 +977,9 @@ enum BourbonLicenseAPI {
     }
 
     static func validateCurrentLicense() async throws -> LicenseValidationResult {
-        guard let license = LicenseKeychainStore.currentLicense(),
-              !license.publicLicenseId.isEmpty else {
-            throw LicenseActivationError.missingToken
-        }
-
-        guard let token = LicenseKeychainStore.readLicenseToken() else {
-            throw LicenseActivationError.missingToken
-        }
+        let credential = try await LicenseKeychainStore.validationCredential()
+        let license = credential.record
+        let token = credential.token
 
         var request = URLRequest(url: BourbonAPIConfiguration.licenseValidationURL)
         request.httpMethod = "POST"
@@ -960,7 +997,7 @@ enum BourbonLicenseAPI {
             throw LicenseActivationError.invalidResponse
         }
         if httpResponse.statusCode == 401 || httpResponse.statusCode == 404 {
-            LicenseKeychainStore.clearObsoleteLicenseState()
+            await LicenseKeychainStore.clearObsoleteLicenseState()
             throw LicenseActivationError.licenseReset
         }
         guard 200..<300 ~= httpResponse.statusCode else {
@@ -1078,9 +1115,8 @@ enum BourbonLicenseAPI {
     }
 
     static func submitAppeal(for result: LicenseValidationResult) async throws {
-        guard let token = LicenseKeychainStore.readLicenseToken() else {
-            throw LicenseActivationError.invalidResponse
-        }
+        let credential = try await LicenseKeychainStore.validationCredential()
+        let token = credential.token
 
         var request = URLRequest(url: BourbonAPIConfiguration.licenseAppealURL)
         request.httpMethod = "POST"
@@ -1262,11 +1298,17 @@ enum BourbonAPIConfiguration {
     }
 }
 
+struct BourbonLicenseCredential: Sendable {
+    let record: BourbonLicenseRecord
+    let token: String
+}
+
+// swiftlint:disable:next type_body_length
 enum LicenseKeychainStore {
     private static let service = "com.unblockerfire.Bourbon.license"
     private static let legacyLicenseAccount = "license-record"
-    private static let licenseTokenAccount = "license-token"
     private static var defaults: UserDefaults { .standard }
+    private static var bundleIdentifier: String? { Bundle.main.bundleIdentifier }
 
     private enum DefaultsKey {
         static let publicLicenseId = "bourbon.publicLicenseId"
@@ -1280,24 +1322,40 @@ enum LicenseKeychainStore {
     }
 
     static func save(_ record: BourbonLicenseRecord) throws {
-        try updateLicenseToken(record.licenseToken)
-        guard readLicenseToken() == record.licenseToken else {
+        let account = BourbonLicenseStoragePolicy.tokenAccount(
+            for: bundleIdentifier ?? BourbonLicenseStoragePolicy.productionBundleIdentifier
+        )
+        try updateLicenseToken(record.licenseToken, account: account)
+        guard try readLicenseToken(account: account) == record.licenseToken else {
             throw LicenseActivationError.keychain(errSecDecode)
         }
         savePublicMetadata(record)
     }
 
-    static func currentLicense() -> BourbonLicenseRecord? {
-        if let record = publicMetadataRecord() {
-            guard readLicenseToken() != nil else {
-                clearObsoleteLicenseState()
-                return nil
-            }
-            return record
-        }
+    static func saveAsync(_ record: BourbonLicenseRecord) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try save(record)
+        }.value
+    }
 
-        delete(account: legacyLicenseAccount)
-        return nil
+    static func currentLicense() -> BourbonLicenseRecord? {
+        (try? credential())?.record
+    }
+
+    static func currentPublicLicenseID() -> String? {
+        selectedPublicMetadata()?.record.publicLicenseId
+    }
+
+    static func currentLicenseAsync() async -> BourbonLicenseRecord? {
+        await Task.detached(priority: .userInitiated) {
+            currentLicense()
+        }.value
+    }
+
+    static func validationCredential() async throws -> BourbonLicenseCredential {
+        try await Task.detached(priority: .userInitiated) {
+            try credential()
+        }.value
     }
 
     static func installID() throws -> String {
@@ -1311,68 +1369,65 @@ enum LicenseKeychainStore {
         return newID
     }
 
-    static func readLicenseToken() -> String? {
-        guard let data = data(account: licenseTokenAccount, logDescription: "license token"),
-              let token = String(data: data, encoding: .utf8),
-              !token.isEmpty else {
+    static func clearObsoleteLicenseState() async {
+        await Task.detached(priority: .utility) {
+            performObsoleteStateCleanup()
+        }.value
+    }
+
+    private static func performObsoleteStateCleanup() {
+        let isDiagnostic = BourbonLicenseStoragePolicy.isDiagnostic(bundleIdentifier: bundleIdentifier)
+        let metadataIdentifier = isDiagnostic
+            ? BourbonLicenseStoragePolicy.diagnosticBundleIdentifier
+            : BourbonLicenseStoragePolicy.productionBundleIdentifier
+        let account = BourbonLicenseStoragePolicy.tokenAccount(for: metadataIdentifier)
+        delete(account: account)
+        if BourbonLicenseStoragePolicy.mayMutateProductionState(bundleIdentifier: bundleIdentifier) {
+            delete(account: legacyLicenseAccount)
+        } else {
+            BourbonLicenseDiagnostics.record(
+                "license.production_state.preserved",
+                detail: "reason=diagnostic_cleanup_blocked"
+            )
+        }
+        removePublicMetadata(from: defaults)
+    }
+
+    private static func credential() throws -> BourbonLicenseCredential {
+        guard let metadata = selectedPublicMetadata() else {
+            throw LicenseActivationError.missingToken
+        }
+        let account = BourbonLicenseStoragePolicy.tokenAccount(for: metadata.bundleIdentifier)
+        let token = try readLicenseToken(account: account)
+        BourbonLicenseDiagnostics.record(
+            "license.storage.resolved",
+            detail: "metadata=\(metadata.bundleIdentifier) token_account=\(account)"
+        )
+        return BourbonLicenseCredential(record: metadata.record, token: token)
+    }
+
+    private static func selectedPublicMetadata() -> (bundleIdentifier: String, record: BourbonLicenseRecord)? {
+        let identifiers = BourbonLicenseStoragePolicy.metadataBundleIdentifiers(for: bundleIdentifier)
+        var records: [String: BourbonLicenseRecord] = [:]
+        for identifier in identifiers {
+            let candidateDefaults: UserDefaults?
+            if identifier == bundleIdentifier {
+                candidateDefaults = defaults
+            } else {
+                candidateDefaults = UserDefaults(suiteName: identifier)
+            }
+            if let candidateDefaults,
+               let record = publicMetadataRecord(from: candidateDefaults) {
+                records[identifier] = record
+            }
+        }
+        guard let selectedIdentifier = BourbonLicenseStoragePolicy.resolvedMetadataBundleIdentifier(
+            for: bundleIdentifier,
+            availableBundleIdentifiers: Set(records.keys)
+        ), let record = records[selectedIdentifier] else {
             return nil
         }
-
-        print("License token found in Keychain")
-        return token
-    }
-
-    static func updateLicenseToken(_ token: String) throws {
-        guard !token.isEmpty else { return }
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: licenseTokenAccount
-        ]
-
-        let attributes: [String: Any] = [
-            kSecValueData as String: Data(token.utf8),
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        ]
-
-        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if status == errSecSuccess {
-            print("License token updated")
-        } else if status == errSecItemNotFound {
-            print("License token missing, creating new token")
-            try add(Data(token.utf8), account: licenseTokenAccount)
-        } else {
-            print("License token update failed, replacing Bourbon token: \(status)")
-            deleteLicenseToken()
-            try add(Data(token.utf8), account: licenseTokenAccount)
-        }
-    }
-
-    static func deleteLicenseToken() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: licenseTokenAccount
-        ]
-
-        SecItemDelete(query as CFDictionary)
-    }
-
-    static func clearObsoleteLicenseState() {
-        deleteLicenseToken()
-        delete(account: legacyLicenseAccount)
-        for key in [
-            DefaultsKey.publicLicenseId,
-            DefaultsKey.licenseDisplayName,
-            DefaultsKey.licenseStatus,
-            DefaultsKey.licenseMessages,
-            DefaultsKey.licensePermissions,
-            DefaultsKey.licenseWarnings,
-            DefaultsKey.licenseStrikes
-        ] {
-            defaults.removeObject(forKey: key)
-        }
+        return (selectedIdentifier, record)
     }
 
     private static func savePublicMetadata(_ record: BourbonLicenseRecord) {
@@ -1386,7 +1441,21 @@ enum LicenseKeychainStore {
         defaults.set(record.strikes, forKey: DefaultsKey.licenseStrikes)
     }
 
-    private static func publicMetadataRecord() -> BourbonLicenseRecord? {
+    private static func removePublicMetadata(from defaults: UserDefaults) {
+        for key in [
+            DefaultsKey.publicLicenseId,
+            DefaultsKey.licenseDisplayName,
+            DefaultsKey.licenseStatus,
+            DefaultsKey.licenseMessages,
+            DefaultsKey.licensePermissions,
+            DefaultsKey.licenseWarnings,
+            DefaultsKey.licenseStrikes
+        ] {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
+    private static func publicMetadataRecord(from defaults: UserDefaults) -> BourbonLicenseRecord? {
         guard let publicLicenseId = defaults.string(forKey: DefaultsKey.publicLicenseId),
               !publicLicenseId.isEmpty else {
             return nil
@@ -1407,9 +1476,55 @@ enum LicenseKeychainStore {
         )
     }
 
+    private static func readLicenseToken(account: String) throws -> String {
+        var query = baseQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data,
+                  let token = String(data: data, encoding: .utf8),
+                  !token.isEmpty else {
+                throw LicenseActivationError.keychain(errSecDecode)
+            }
+            return token
+        case errSecItemNotFound:
+            throw LicenseActivationError.missingToken
+        default:
+            BourbonLicenseDiagnostics.record(
+                "license.keychain.read.failed",
+                detail: "status=\(status) authentication_ui=disabled"
+            )
+            throw LicenseActivationError.keychain(status)
+        }
+    }
+
+    private static func updateLicenseToken(_ token: String, account: String) throws {
+        guard !token.isEmpty else { return }
+        var query = baseQuery(account: account)
+        query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        let attributes: [String: Any] = [
+            kSecValueData as String: Data(token.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecSuccess {
+            return
+        }
+        if status == errSecItemNotFound {
+            try add(Data(token.utf8), account: account)
+            return
+        }
+        throw LicenseActivationError.keychain(status)
+    }
+
     private static func add(_ data: Data, account: String) throws {
         var addQuery = baseQuery(account: account)
-
         addQuery[kSecValueData as String] = data
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
@@ -1419,28 +1534,17 @@ enum LicenseKeychainStore {
         }
     }
 
-    private static func data(account: String, logDescription: String) -> Data? {
-        var query = baseQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        let messageSubject = logDescription == "license token" ? "License token" : logDescription
-        switch status {
-        case errSecSuccess:
-            return result as? Data
-        case errSecItemNotFound:
-            print("\(messageSubject) missing in Keychain")
-            return nil
-        default:
-            print("\(messageSubject) read failed: \(status)")
-            return nil
-        }
-    }
-
     private static func delete(account: String) {
-        SecItemDelete(baseQuery(account: account) as CFDictionary)
+        var query = baseQuery(account: account)
+        query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            BourbonLicenseDiagnostics.record(
+                "license.keychain.delete.failed",
+                detail: "status=\(status) authentication_ui=disabled"
+            )
+            return
+        }
     }
 
     private static func baseQuery(account: String) -> [String: Any] {

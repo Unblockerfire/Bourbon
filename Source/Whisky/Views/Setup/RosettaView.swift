@@ -67,7 +67,7 @@ struct RosettaView: View {
                                 installing = true
                                 successful = true
 
-                                Task.detached {
+                                Task {
                                     await checkOrInstall()
                                 }
                             }
@@ -79,7 +79,7 @@ struct RosettaView: View {
         }
         .navigationTitle("Rosetta")
         .onAppear {
-            Task.detached {
+            Task {
                 await checkOrInstall()
             }
         }
@@ -88,14 +88,12 @@ struct RosettaView: View {
     func checkOrInstall() async {
         if Rosetta2.isRosettaInstalled {
             installing = false
-            sleep(2)
-            proceed()
+            await proceed()
         } else {
             do {
                 successful = try await Rosetta2.installRosetta()
                 installing = false
-                try await Task.sleep(for: .seconds(2))
-                proceed()
+                await proceed()
             } catch {
                 successful = false
                 installing = false
@@ -103,9 +101,16 @@ struct RosettaView: View {
         }
     }
 
-    @MainActor
-    func proceed() {
-        if !WhiskyWineInstaller.isWhiskyWineInstalled() {
+    func proceed() async {
+        WhiskyWineInstaller.recordRuntimeEvent("runtime.bootstrap.rosetta_followup.started")
+        let runtimeReady = await Task.detached(priority: .userInitiated) {
+            WhiskyWineInstaller.isWhiskyWineInstalled()
+        }.value
+        WhiskyWineInstaller.recordRuntimeEvent(
+            "runtime.bootstrap.rosetta_followup.completed",
+            detail: "ready=\(runtimeReady)"
+        )
+        if !runtimeReady {
             path.append(.whiskyWineDownload)
             return
         }

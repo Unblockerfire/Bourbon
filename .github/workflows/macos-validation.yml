@@ -287,6 +287,32 @@ jobs:
           ! grep -En 'Color\.black|\.foregroundStyle\(\.(black|white)\)|\.foregroundColor\(\.(black|white)\)' \
             "$INSTALLER_VIEW" "$DRAG_VIEW"
 
+      - name: Validate diagnostic license lifecycle contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          INTRO='Source/Whisky/Views/Setup/BourbonIntroVideoView.swift'
+          LICENSE='Source/Whisky/Views/Setup/WelcomeView.swift'
+          POLICY='Source/WhiskyKit/Sources/WhiskyKit/Licensing/BourbonLicenseStoragePolicy.swift'
+
+          for event in \
+            license.ui.opened \
+            license.validation.started \
+            license.validation.completed \
+            license.validation.failed \
+            license.overlay.presented \
+            license.overlay.dismissed \
+            license.ui.responsive; do
+            grep -Fq "$event" "$INTRO" "$LICENSE"
+          done
+
+          grep -Fq 'if let player, !licenseGate.presentsBlockingOverlay' "$INTRO"
+          grep -Fq 'kSecUseAuthenticationUIFail' "$LICENSE"
+          grep -Fq 'diagnosticTokenAccount = "license-token-diagnostic"' "$POLICY"
+          grep -Fq 'return [diagnosticBundleIdentifier, productionBundleIdentifier]' "$POLICY"
+          grep -Fq '!isDiagnostic(bundleIdentifier: bundleIdentifier)' "$POLICY"
+
       - name: Validate BourbonWine update interaction contract
         shell: bash
         run: |

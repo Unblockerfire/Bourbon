@@ -56,6 +56,7 @@ struct ContentView: View {
     @State private var previousPageBeforeCreation: MainContentPage? = .home
     @State private var runtimeUpdateVersion: SemanticVersion?
     @State private var showRuntimeUpdate = false
+    @State private var resolvedAccountLicense: BourbonLicenseRecord?
 
     @State private var bottleFilter = ""
 
@@ -187,8 +188,13 @@ struct ContentView: View {
             bottleVM.loadBottles()
             print("bottle.list.refresh.completed")
 
-            let runtimeReadiness = WhiskyWineInstaller.runtimeReadiness(
-                in: WhiskyWineInstaller.applicationFolder
+            WhiskyWineInstaller.recordRuntimeEvent("runtime.bootstrap.content_check.started")
+            let runtimeReadiness = await Task.detached(priority: .userInitiated) {
+                WhiskyWineInstaller.runtimeReadiness(in: WhiskyWineInstaller.applicationFolder)
+            }.value
+            WhiskyWineInstaller.recordRuntimeEvent(
+                "runtime.bootstrap.content_check.completed",
+                detail: "ready=\(runtimeReadiness.isReady)"
             )
             if !runtimeReadiness.isReady {
                 WhiskyWineInstaller.recordRuntimeEvent(
@@ -215,6 +221,8 @@ struct ContentView: View {
                 runtimeUpdateVersion = updateInfo.1
                 showRuntimeUpdate = true
             }
+
+            resolvedAccountLicense = await LicenseKeychainStore.currentLicenseAsync()
         }
     }
 
@@ -462,7 +470,7 @@ struct ContentView: View {
     }
 
     private var accountLicense: BourbonLicenseRecord {
-        LicenseKeychainStore.currentLicense() ?? BourbonLicenseRecord(
+        resolvedAccountLicense ?? BourbonLicenseRecord(
             publicLicenseId: "BRBN-00000001",
             licenseToken: "",
             licenseKey: nil,
@@ -536,8 +544,11 @@ private struct BourbonWineRuntimeUpdateView: View {
                 WhiskyWineInstaller.recordUpdateEvent("runtime.update.started", detail: "target=\(availableVersion)")
                 status = "Verifying and installing BourbonWine \(availableVersion)…"
                 let installedVersion = try await WhiskyWineInstaller.installLatestRuntimeUpdate()
+                let runtimeReady = await Task.detached(priority: .userInitiated) {
+                    WhiskyWineInstaller.runtimeReadiness(in: WhiskyWineInstaller.applicationFolder).isReady
+                }.value
                 guard installedVersion == String(availableVersion),
-                      WhiskyWineInstaller.runtimeReadiness(in: WhiskyWineInstaller.applicationFolder).isReady else {
+                      runtimeReady else {
                     throw NSError(
                         domain: "BourbonWineUpdate",
                         code: 1,
