@@ -295,6 +295,7 @@ jobs:
           INTRO='Source/Whisky/Views/Setup/BourbonIntroVideoView.swift'
           LICENSE='Source/Whisky/Views/Setup/WelcomeView.swift'
           POLICY='Source/WhiskyKit/Sources/WhiskyKit/Licensing/BourbonLicenseStoragePolicy.swift'
+          FAILURE_POLICY='Source/WhiskyKit/Sources/WhiskyKit/Licensing/BourbonLicenseServiceFailure.swift'
 
           for event in \
             license.ui.opened \
@@ -303,15 +304,58 @@ jobs:
             license.validation.failed \
             license.overlay.presented \
             license.overlay.dismissed \
+            license.validation.request.started \
+            license.validation.request.failed \
+            license.validation.response.received \
+            license.validation.decoding.started \
+            license.validation.decoding.completed \
+            license.validation.decoding.failed \
+            license.ui.surface.audit \
             license.ui.responsive; do
             grep -Fq "$event" "$INTRO" "$LICENSE"
           done
 
           grep -Fq 'if let player, !licenseGate.presentsBlockingOverlay' "$INTRO"
+          grep -Fq 'license.player.created", detail: "stage=validation_succeeded' "$INTRO"
+          ! grep -A8 -F '.onAppear {' "$INTRO" | grep -Fq 'AVPlayer(url:'
+          ! sed -n '1,220p' "$INTRO" | grep -Fq 'ProgressView()'
+          grep -Fq 'configuration.timeoutIntervalForRequest = 30' "$LICENSE"
+          grep -Fq 'configuration.timeoutIntervalForResource = 45' "$LICENSE"
+          grep -Fq 'transport_timeout' "$FAILURE_POLICY"
           grep -Fq 'kSecUseAuthenticationUIFail' "$LICENSE"
           grep -Fq 'diagnosticTokenAccount = "license-token-diagnostic"' "$POLICY"
           grep -Fq 'return [diagnosticBundleIdentifier, productionBundleIdentifier]' "$POLICY"
           grep -Fq '!isDiagnostic(bundleIdentifier: bundleIdentifier)' "$POLICY"
+
+      - name: Probe license service transport and response contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$RUNNER_TEMP/bourbon-validation-logs"
+          RESPONSE="$RUNNER_TEMP/bourbon-validation-logs/license-service-probe.json"
+          METRICS="$RUNNER_TEMP/bourbon-validation-logs/license-service-probe.txt"
+          STATUS="$(curl \
+            --silent \
+            --show-error \
+            --connect-timeout 15 \
+            --max-time 45 \
+            --header 'Content-Type: application/json' \
+            --data '{"licenseId":"diagnostic-probe","licenseToken":"diagnostic-probe"}' \
+            --output "$RESPONSE" \
+            --write-out '%{http_code}' \
+            https://api.getbourbon.app/license/validate)"
+
+          printf 'host=api.getbourbon.app path=/license/validate status=%s bytes=%s\n' \
+            "$STATUS" "$(wc -c < "$RESPONSE")" | tee "$METRICS"
+          test "$STATUS" = "400"
+          python3 - "$RESPONSE" <<'PY'
+          import json
+          import sys
+
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert payload == {"ok": False, "error": "Invalid license validation request"}
+          PY
 
       - name: Validate BourbonWine update interaction contract
         shell: bash

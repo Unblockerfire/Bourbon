@@ -19,6 +19,9 @@ struct BourbonIntroVideoView: View {
     @State private var finishPendingAfterValidation = false
     @State private var licenseActivity = BourbonLicenseActivityState()
     @State private var licenseTask: Task<Void, Never>?
+    @State private var licenseFailureCode: String?
+    @State private var surfaceDiagnosticCode = "surface_pending"
+    @State private var didStartReturningUserUpdateCheck = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -76,35 +79,6 @@ struct BourbonIntroVideoView: View {
             BourbonLicenseDiagnostics.record("license.ui.opened")
             reportResponsive(stage: "opened")
             startLicenseValidation()
-            guard player == nil else { return }
-
-            guard let url = Bundle.main.url(forResource: "BourbonIntro", withExtension: "mov") else {
-                finishIntro()
-                return
-            }
-
-            let player = AVPlayer(url: url)
-            self.player = player
-            player.play()
-            startReturningUserUpdateCheck()
-
-            if let duration = player.currentItem?.asset.duration.seconds,
-               duration.isFinite,
-               duration > 1 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + duration - 3.0) {
-                    showButton = true
-                }
-            } else {
-                playbackObserver = NotificationCenter.default.addObserver(
-                    forName: .AVPlayerItemDidPlayToEndTime,
-                    object: player.currentItem,
-                    queue: .main
-                ) { _ in
-                    Task { @MainActor in
-                        showButton = true
-                    }
-                }
-            }
         }
         .onDisappear {
             licenseTask?.cancel()
@@ -118,6 +92,8 @@ struct BourbonIntroVideoView: View {
             }
             if let newValue {
                 BourbonLicenseDiagnostics.record("license.overlay.presented", detail: "kind=\(newValue)")
+                cleanupPlayer(reason: "blocking_license_overlay")
+                reportSurfaceOwnership(stage: "overlay_presented")
             }
             reportResponsive(stage: "overlay_changed")
         }
@@ -148,13 +124,15 @@ struct BourbonIntroVideoView: View {
                 onSupport: openSupport,
                 onStartFreshActivation: startFreshActivation,
                 allowsRecovery: true,
-                allowsFreshActivation: allowsFreshActivation
+                allowsFreshActivation: allowsFreshActivation,
+                diagnosticCode: licenseFailureCode,
+                surfaceDiagnosticCode: surfaceDiagnosticCode
             )
-        case .checkingAfterFinish:
+        case .checking, .checkingAfterFinish:
             checkingLicenseView
         case .recovering:
             recoveringLicenseView
-        case .idle, .checking, .valid:
+        case .idle, .valid:
             EmptyView()
         }
     }
@@ -163,8 +141,9 @@ struct BourbonIntroVideoView: View {
         BourbonBackground {
             BourbonGlassCard(maxWidth: 420) {
                 VStack(spacing: 14) {
-                    ProgressView()
-                        .controlSize(.large)
+                    Image(systemName: "checkmark.shield")
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(BourbonStyle.amber)
                     Text("Checking your license…")
                         .font(.title2.bold())
                     Text("This usually only takes a moment.")
@@ -180,8 +159,9 @@ struct BourbonIntroVideoView: View {
         BourbonBackground {
             BourbonGlassCard(maxWidth: 420) {
                 VStack(spacing: 14) {
-                    ProgressView()
-                        .controlSize(.large)
+                    Image(systemName: "key.horizontal")
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(BourbonStyle.amber)
                     Text("Restoring your license…")
                         .font(.title2.bold())
                     Text("Bourbon will return to the license screen if restoration cannot complete.")
@@ -233,6 +213,7 @@ struct BourbonIntroVideoView: View {
         }
 
         licenseGate = .checking
+        licenseFailureCode = nil
         licenseTask?.cancel()
         let requestID = licenseActivity.begin()
         BourbonLicenseDiagnostics.record("license.validation.started")
@@ -251,6 +232,8 @@ struct BourbonIntroVideoView: View {
                             licenseGate = .valid
                             if finishPendingAfterValidation {
                                 completeIntro()
+                            } else {
+                                prepareIntroPlayerIfNeeded()
                             }
                         } else {
                             player?.pause()
@@ -266,6 +249,7 @@ struct BourbonIntroVideoView: View {
                 BourbonLicenseDiagnostics.record("license.validation.failed", detail: "code=missing_token")
                 await MainActor.run {
                     guard licenseActivity.finish(requestID) else { return }
+                    licenseFailureCode = "missing_token"
                     player?.pause()
                     licenseGate = .unavailable(
                         "Bourbon could not find a usable license on this Mac. " +
@@ -278,6 +262,7 @@ struct BourbonIntroVideoView: View {
                 BourbonLicenseDiagnostics.record("license.validation.failed", detail: "code=license_reset")
                 await MainActor.run {
                     guard licenseActivity.finish(requestID) else { return }
+                    licenseFailureCode = "license_reset"
                     player?.pause()
                     licenseGate = .unavailable(
                         "This installation used an older Bourbon license that is no longer available. " +
@@ -293,6 +278,7 @@ struct BourbonIntroVideoView: View {
                 )
                 await MainActor.run {
                     guard licenseActivity.finish(requestID) else { return }
+                    licenseFailureCode = "blocked_\(result.status.rawValue)"
                     player?.pause()
                     licenseGate = .blocked(result)
                     reportResponsive(stage: "validation_failed")
@@ -304,6 +290,7 @@ struct BourbonIntroVideoView: View {
                 )
                 await MainActor.run {
                     guard licenseActivity.finish(requestID) else { return }
+                    licenseFailureCode = "keychain_\(status)"
                     player?.pause()
                     licenseGate = .unavailable(
                         "Bourbon Diagnostic found license metadata, but macOS did not allow non-interactive " +
@@ -313,10 +300,22 @@ struct BourbonIntroVideoView: View {
                     )
                     reportResponsive(stage: "validation_failed")
                 }
+            } catch let failure as BourbonLicenseServiceFailure {
+                BourbonLicenseDiagnostics.record(
+                    "license.validation.failed",
+                    detail: "code=\(failure.diagnosticCode)"
+                )
+                await MainActor.run {
+                    guard licenseActivity.finish(requestID) else { return }
+                    licenseFailureCode = failure.diagnosticCode
+                    licenseGate = .unavailable(failure.userMessage, false)
+                    reportResponsive(stage: "validation_failed_\(failure.diagnosticCode)")
+                }
             } catch is CancellationError {
                 BourbonLicenseDiagnostics.record("license.validation.failed", detail: "code=cancelled")
                 await MainActor.run {
                     guard licenseActivity.finish(requestID) else { return }
+                    licenseFailureCode = "cancelled"
                     licenseGate = .unavailable(
                         "License validation was cancelled. Try again when you are ready.",
                         false
@@ -324,13 +323,14 @@ struct BourbonIntroVideoView: View {
                     reportResponsive(stage: "validation_cancelled")
                 }
             } catch {
-                BourbonLicenseDiagnostics.record("license.validation.failed", detail: "code=service_unavailable")
+                BourbonLicenseDiagnostics.record("license.validation.failed", detail: "code=unexpected")
                 await MainActor.run {
                     guard licenseActivity.finish(requestID) else { return }
+                    licenseFailureCode = "unexpected"
                     player?.pause()
                     licenseGate = .unavailable(
-                        "Bourbon could not reach the license service. " +
-                        "Try again when your connection is available.",
+                        "Bourbon could not complete license validation. " +
+                        "Select Try Again and send the diagnostic code if it continues.",
                         false
                     )
                     reportResponsive(stage: "validation_failed")
@@ -345,7 +345,6 @@ struct BourbonIntroVideoView: View {
         licenseActivity.cancel()
         finishPendingAfterValidation = false
         licenseGate = .idle
-        player?.play()
         startLicenseValidation()
     }
 
@@ -353,6 +352,8 @@ struct BourbonIntroVideoView: View {
         licenseGate = .valid
         if finishPendingAfterValidation {
             completeIntro()
+        } else {
+            prepareIntroPlayerIfNeeded()
         }
     }
 
@@ -375,6 +376,8 @@ struct BourbonIntroVideoView: View {
                         licenseGate = .valid
                         if finishPendingAfterValidation {
                             completeIntro()
+                        } else {
+                            prepareIntroPlayerIfNeeded()
                         }
                     } else {
                         licenseGate = .warning(outcome.validation)
@@ -453,7 +456,49 @@ struct BourbonIntroVideoView: View {
         NSWorkspace.shared.open(url)
     }
 
-    private func cleanupPlayer() {
+    private func prepareIntroPlayerIfNeeded() {
+        guard player == nil else {
+            player?.play()
+            return
+        }
+        guard let url = Bundle.main.url(forResource: "BourbonIntro", withExtension: "mov") else {
+            completeIntro()
+            return
+        }
+
+        showButton = false
+        let player = AVPlayer(url: url)
+        self.player = player
+        player.play()
+        BourbonLicenseDiagnostics.record("license.player.created", detail: "stage=validation_succeeded")
+        if !didStartReturningUserUpdateCheck {
+            didStartReturningUserUpdateCheck = true
+            startReturningUserUpdateCheck()
+        }
+
+        if let duration = player.currentItem?.asset.duration.seconds,
+           duration.isFinite,
+           duration > 1 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration - 3.0) {
+                guard self.player === player else { return }
+                showButton = true
+            }
+        } else {
+            playbackObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: player.currentItem,
+                queue: .main
+            ) { _ in
+                Task { @MainActor in
+                    guard self.player === player else { return }
+                    showButton = true
+                }
+            }
+        }
+    }
+
+    private func cleanupPlayer(reason: String = "view_disappeared") {
+        let hadPlayerSurface = player != nil || playbackObserver != nil
         if let playbackObserver {
             NotificationCenter.default.removeObserver(playbackObserver)
             self.playbackObserver = nil
@@ -461,6 +506,33 @@ struct BourbonIntroVideoView: View {
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         player = nil
+        if hadPlayerSurface {
+            BourbonLicenseDiagnostics.record("license.player.destroyed", detail: "reason=\(reason)")
+        }
+    }
+
+    private func reportSurfaceOwnership(stage: String) {
+        Task { @MainActor in
+            await Task.yield()
+            let visibleWindows = NSApp.windows.filter(\.isVisible)
+            let playerViewCount = visibleWindows.reduce(into: 0) { count, window in
+                if let contentView = window.contentView {
+                    count += descendantPlayerViewCount(in: contentView)
+                }
+            }
+            surfaceDiagnosticCode = "surface_w\(visibleWindows.count)_p\(playerViewCount)"
+            BourbonLicenseDiagnostics.record(
+                "license.ui.surface.audit",
+                detail: "stage=\(stage) code=\(surfaceDiagnosticCode)"
+            )
+        }
+    }
+
+    private func descendantPlayerViewCount(in view: NSView) -> Int {
+        let currentCount = view is AVPlayerView ? 1 : 0
+        return currentCount + view.subviews.reduce(0) { count, subview in
+            count + descendantPlayerViewCount(in: subview)
+        }
     }
 
     private func reportResponsive(stage: String) {
@@ -489,7 +561,7 @@ private enum IntroLicenseGate {
 
     var overlayDiagnosticName: String? {
         switch self {
-        case .checkingAfterFinish:
+        case .checking, .checkingAfterFinish:
             return "validation"
         case .recovering:
             return "recovery"
@@ -499,7 +571,7 @@ private enum IntroLicenseGate {
             return "blocked"
         case .unavailable:
             return "unavailable"
-        case .idle, .checking, .valid:
+        case .idle, .valid:
             return nil
         }
     }
@@ -661,6 +733,8 @@ private struct LicenseUnavailableView: View {
     let onStartFreshActivation: () -> Void
     let allowsRecovery: Bool
     let allowsFreshActivation: Bool
+    let diagnosticCode: String?
+    let surfaceDiagnosticCode: String
     @State private var licenseKey = ""
     @State private var showingKeyInput = false
     @State private var showingSupport = false
@@ -722,6 +796,13 @@ private struct LicenseUnavailableView: View {
                         }
                         Button("Try Again") { onTryAgain() }
                             .buttonStyle(BourbonSecondaryButtonStyle())
+                    }
+
+                    if let diagnosticCode {
+                        Text("Diagnostic code: \(diagnosticCode) · \(surfaceDiagnosticCode)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
                     }
                 }
                 .multilineTextAlignment(.center)

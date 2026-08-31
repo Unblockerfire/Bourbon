@@ -981,7 +981,8 @@ enum BourbonLicenseAPI {
         let license = credential.record
         let token = credential.token
 
-        var request = URLRequest(url: BourbonAPIConfiguration.licenseValidationURL)
+        let validationURL = BourbonAPIConfiguration.licenseValidationURL
+        var request = URLRequest(url: validationURL)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(LicenseValidationRequest(
@@ -990,22 +991,74 @@ enum BourbonLicenseAPI {
         ))
 
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 12
-        let (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        // The Fly service may start from zero machines. Its configured health-check
+        // grace period is 15 seconds, so a 12-second client timeout can expire after
+        // the server accepts the request but before the response reaches Bourbon.
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 45
+        BourbonLicenseDiagnostics.record(
+            "license.validation.request.started",
+            detail: "host=\(validationURL.host ?? "unknown") path=\(validationURL.path) timeout=30"
+        )
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        } catch {
+            let failure = BourbonLicenseServiceFailure.classifyTransportError(error)
+            BourbonLicenseDiagnostics.record(
+                "license.validation.request.failed",
+                detail: "stage=transport code=\(failure.diagnosticCode)"
+            )
+            throw failure
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw LicenseActivationError.invalidResponse
+            BourbonLicenseDiagnostics.record(
+                "license.validation.request.failed",
+                detail: "stage=response code=response_not_http bytes=\(data.count)"
+            )
+            throw BourbonLicenseServiceFailure.invalidHTTPResponse
         }
+        BourbonLicenseDiagnostics.record(
+            "license.validation.response.received",
+            detail: "status=\(httpResponse.statusCode) bytes=\(data.count)"
+        )
         if httpResponse.statusCode == 401 || httpResponse.statusCode == 404 {
             await LicenseKeychainStore.clearObsoleteLicenseState()
             throw LicenseActivationError.licenseReset
         }
         guard 200..<300 ~= httpResponse.statusCode else {
-            throw LicenseActivationError.invalidResponse
+            throw BourbonLicenseServiceFailure.httpStatus(httpResponse.statusCode)
         }
 
         let decoder = BourbonLicenseAPI.decoder()
-        return try decoder.decode(LicenseValidationResult.self, from: data)
+        BourbonLicenseDiagnostics.record(
+            "license.validation.decoding.started",
+            detail: "bytes=\(data.count)"
+        )
+        do {
+            let result = try decoder.decode(LicenseValidationResult.self, from: data)
+            BourbonLicenseDiagnostics.record(
+                "license.validation.decoding.completed",
+                detail: "status=\(result.status.rawValue)"
+            )
+            return result
+        } catch let error as DecodingError {
+            let stage = decodingFailureStage(error)
+            BourbonLicenseDiagnostics.record(
+                "license.validation.decoding.failed",
+                detail: "stage=\(stage) bytes=\(data.count)"
+            )
+            throw BourbonLicenseServiceFailure.invalidPayload(stage)
+        } catch {
+            BourbonLicenseDiagnostics.record(
+                "license.validation.decoding.failed",
+                detail: "stage=unknown bytes=\(data.count)"
+            )
+            throw BourbonLicenseServiceFailure.invalidPayload("unknown")
+        }
     }
 
     static func recoverLicense(key: String) async throws -> LicenseRecoveryOutcome {
@@ -1099,6 +1152,21 @@ enum BourbonLicenseAPI {
             )
         }
         return decoder
+    }
+
+    private static func decodingFailureStage(_ error: DecodingError) -> String {
+        switch error {
+        case .keyNotFound(let key, _):
+            return "missing_\(key.stringValue)"
+        case .typeMismatch(_, let context):
+            return "type_\(context.codingPath.last?.stringValue ?? "root")"
+        case .valueNotFound(_, let context):
+            return "value_\(context.codingPath.last?.stringValue ?? "root")"
+        case .dataCorrupted(let context):
+            return "data_\(context.codingPath.last?.stringValue ?? "root")"
+        @unknown default:
+            return "unknown"
+        }
     }
 
     private static func normalizeRecoveryKey(_ value: String) -> String {
