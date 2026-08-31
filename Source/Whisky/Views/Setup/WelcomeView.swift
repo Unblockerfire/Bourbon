@@ -918,6 +918,7 @@ struct LicenseValidationResult: Codable {
     }
 }
 
+// swiftlint:disable:next type_body_length
 enum BourbonLicenseAPI {
     private static let acceptedLegalVersion = "2026-06-27"
 
@@ -976,6 +977,7 @@ enum BourbonLicenseAPI {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     static func validateCurrentLicense() async throws -> LicenseValidationResult {
         let credential = try await LicenseKeychainStore.validationCredential()
         let license = credential.record

@@ -3,7 +3,6 @@
 //  WhiskyKitTests
 //
 
-
 import Foundation
 @testable import WhiskyKit
 import XCTest

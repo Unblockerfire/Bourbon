@@ -3,7 +3,6 @@
 //  WhiskyKit
 //
 
-
 import Foundation
 
 /// A privacy-safe classification of failures returned while contacting the
