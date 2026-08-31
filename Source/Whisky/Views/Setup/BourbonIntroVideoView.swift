@@ -307,7 +307,8 @@ struct BourbonIntroVideoView: View {
                     player?.pause()
                     licenseGate = .unavailable(
                         "Bourbon Diagnostic found license metadata, but macOS did not allow non-interactive " +
-                        "access to its secure token. Restore a saved key or try again after opening production Bourbon.",
+                        "access to its secure token. Restore a saved key or try again after opening " +
+                        "production Bourbon.",
                         false
                     )
                     reportResponsive(stage: "validation_failed")

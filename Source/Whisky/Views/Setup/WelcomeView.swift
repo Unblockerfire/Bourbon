@@ -1303,7 +1303,6 @@ struct BourbonLicenseCredential: Sendable {
     let token: String
 }
 
-// swiftlint:disable:next type_body_length
 enum LicenseKeychainStore {
     private static let service = "com.unblockerfire.Bourbon.license"
     private static let legacyLicenseAccount = "license-record"
