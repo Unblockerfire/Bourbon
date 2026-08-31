@@ -254,7 +254,7 @@ public class WhiskyWineInstaller {
         return nil
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     public static func install(
         from: URL,
         runtimeVersion: String? = nil,

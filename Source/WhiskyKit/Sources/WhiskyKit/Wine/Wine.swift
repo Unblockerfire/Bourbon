@@ -424,6 +424,7 @@ public class Wine {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     private static func runWineCommand(
         _ args: [String],
         bottle: Bottle?,
@@ -502,6 +503,7 @@ public class Wine {
         return try WineSemanticVersion.requireVersionToken(from: output)
     }
 
+    // swiftlint:disable:next function_body_length
     public static func preflightRuntime(
         executableURL selectedExecutableURL: URL? = nil
     ) async throws -> WineRuntimePreflightResult {
