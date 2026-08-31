@@ -918,7 +918,7 @@ struct LicenseValidationResult: Codable {
     }
 }
 
-// swiftlint:disable:next type_body_length
+// swiftlint:disable type_body_length
 enum BourbonLicenseAPI {
     private static let acceptedLegalVersion = "2026-06-27"
 
@@ -977,7 +977,7 @@ enum BourbonLicenseAPI {
         )
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable function_body_length
     static func validateCurrentLicense() async throws -> LicenseValidationResult {
         let credential = try await LicenseKeychainStore.validationCredential()
         let license = credential.record
@@ -1062,6 +1062,7 @@ enum BourbonLicenseAPI {
             throw BourbonLicenseServiceFailure.invalidPayload("unknown")
         }
     }
+    // swiftlint:enable function_body_length
 
     static func recoverLicense(key: String) async throws -> LicenseRecoveryOutcome {
         let normalizedKey = normalizeRecoveryKey(key)
@@ -1224,6 +1225,7 @@ enum BourbonLicenseAPI {
         #endif
     }
 }
+// swiftlint:enable type_body_length
 
 private struct LicenseActivationRequest: Encodable {
     let displayName: String
