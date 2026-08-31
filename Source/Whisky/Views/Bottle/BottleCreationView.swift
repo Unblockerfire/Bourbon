@@ -32,7 +32,7 @@ struct BottleCreationView: View {
     @State private var newBottleName: String = ""
     @State private var newBottleVersion: WinVersion = .win10
     @State private var bottleType: BourbonBottleType = .applications
-    @State private var isCreating = false
+    @State private var creationState = BottleCreationActivityState()
     @State private var creationError: String?
     @State private var creationTask: Task<Void, Never>?
     @State private var newBottleURL: URL = UserDefaults.standard.url(forKey: "defaultBottleLocation")
@@ -76,14 +76,17 @@ struct BottleCreationView: View {
 
         let bottleName = newBottleName.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalName = bottleName.isEmpty ? "My Bottle" : bottleName
-        guard !isCreating else { return }
+        guard creationState.begin() else { return }
         creationError = nil
-        isCreating = true
         BottleCreationDiagnostics.record("bottle.create.submit")
         creationTask = Task { @MainActor in
+            var outcome = BottleCreationActivityState.Outcome.cancelled
             defer {
-                isCreating = false
+                creationState.finish(outcome)
                 creationTask = nil
+                BottleCreationDiagnostics.record(
+                    "bottle.create.ui.finalized outcome=\(String(describing: outcome)) busy=false"
+                )
             }
 
             do {
@@ -93,25 +96,33 @@ struct BottleCreationView: View {
                     bottleURL: newBottleURL
                 )
                 newlyCreatedBottleURL = url
-                creationTask = nil
+                outcome = .succeeded
                 created(url)
                 cancel()
             } catch is CancellationError {
-                creationError = "Bottle creation was cancelled."
+                outcome = .cancelled
+                creationError = "Bottle creation was cancelled. You can try again."
             } catch {
                 if Task.isCancelled {
-                    creationError = "Bottle creation was cancelled."
+                    outcome = .cancelled
+                    creationError = "Bottle creation was cancelled. You can try again."
                 } else if let preflightError = error as? WineRuntimePreflightError {
+                    outcome = .failed
                     creationError = preflightError.userFacingDiagnosticMessage
                 } else {
+                    outcome = .failed
                     creationError = "Bourbon couldn’t create this bottle. Try again."
                 }
             }
         }
     }
 
+    private var isCreating: Bool {
+        creationState.isBusy
+    }
+
     private var canCreate: Bool {
-        !isCreating
+        creationState.canStart
     }
 
     private var headerSection: some View {
@@ -219,8 +230,11 @@ struct BottleCreationView: View {
             HStack(spacing: 12) {
                 Button(isCreating ? "Cancel Creation" : "Cancel") {
                     BottleCreationDiagnostics.record("bottle.create.cancel.requested")
-                    creationTask?.cancel()
-                    cancel()
+                    if isCreating {
+                        creationTask?.cancel()
+                    } else {
+                        cancel()
+                    }
                 }
                 .buttonStyle(BourbonSecondaryButtonStyle())
                 .keyboardShortcut(.cancelAction)

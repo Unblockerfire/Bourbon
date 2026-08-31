@@ -433,8 +433,10 @@ public class Wine {
     ) async throws -> String {
         let processReference = ProcessReference()
         return try await withTaskCancellationHandler(operation: {
-            var result: [String] = []
+            var standardOutput: [String] = []
+            var standardError: [String] = []
             var terminationStatus: Int32 = 0
+            var terminationReason = "not_started"
             let fileHandle = try makeFileHandle()
             fileHandle.writeApplicaitonInfo()
             var environment = constructWineRuntimeEnvironment(environment)
@@ -457,18 +459,39 @@ public class Wine {
                 switch output {
                 case .started(let process):
                     processReference.register(process)
+                    if phase == "preflight" {
+                        WhiskyWineInstaller.recordRuntimeEvent(
+                            "runtime.preflight.process.started",
+                            detail: "pid=\(process.processIdentifier)"
+                        )
+                    }
                 case .terminated(let process):
                     terminationStatus = process.terminationStatus
+                    terminationReason = process.terminationReason.runtimeDiagnosticDescription
                     processReference.clear(process)
-                case .message(let message), .error(let message):
-                    result.append(message)
+                    if phase == "preflight" {
+                        WhiskyWineInstaller.recordRuntimeEvent(
+                            "runtime.preflight.process.terminated",
+                            detail: "reason=\(terminationReason) exit_status=\(terminationStatus)"
+                        )
+                    }
+                case .message(let message):
+                    standardOutput.append(message)
+                case .error(let message):
+                    standardError.append(message)
                 }
             }
 
             guard terminationStatus == 0 else {
-                throw WineProcessError(command: args, status: terminationStatus, output: result.joined())
+                throw WineProcessError(
+                    command: args,
+                    status: terminationStatus,
+                    standardOutput: standardOutput.joined(),
+                    standardError: standardError.joined(),
+                    terminationReason: terminationReason
+                )
             }
-            return result.joined()
+            return standardOutput.joined() + standardError.joined()
         }, onCancel: {
             processReference.cancel()
         })
@@ -479,9 +502,30 @@ public class Wine {
         return try WineSemanticVersion.requireVersionToken(from: output)
     }
 
-    public static func preflightRuntime() async throws -> WineRuntimePreflightResult {
-        let executableURL = resolveWineExecutable()
+    public static func preflightRuntime(
+        executableURL selectedExecutableURL: URL? = nil
+    ) async throws -> WineRuntimePreflightResult {
+        let executableURL = selectedExecutableURL ?? resolveWineExecutable()
         let executablePath = executableURL.path(percentEncoded: false)
+        let executableContext = runtimeExecutableContext(executableURL)
+
+        WhiskyWineInstaller.recordRuntimeEvent("runtime.preflight.started", detail: "arguments=--version")
+        WhiskyWineInstaller.recordRuntimeEvent(
+            "runtime.executable.resolved",
+            detail: "path=\(WineDiagnosticSanitizer.redact(executablePath))"
+        )
+        WhiskyWineInstaller.recordRuntimeEvent(
+            "runtime.executable.exists",
+            detail: "value=\(executableContext.exists)"
+        )
+        WhiskyWineInstaller.recordRuntimeEvent(
+            "runtime.executable.permissions",
+            detail: "executable=\(executableContext.isExecutable) mode=\(executableContext.permissions)"
+        )
+        WhiskyWineInstaller.recordRuntimeEvent(
+            "runtime.executable.architecture",
+            detail: "value=\(executableContext.architecture)"
+        )
 
         do {
             try validateRuntimeExecutable(executableURL)
@@ -493,16 +537,32 @@ public class Wine {
             )
             let version = try preflightVersion(from: output, executablePath: executablePath)
             let result = WineRuntimePreflightResult(version: version)
+            WhiskyWineInstaller.recordRuntimeEvent(
+                "runtime.preflight.completed",
+                detail: "wine_version=\(WineDiagnosticSanitizer.singleLine(result.version))"
+            )
             Logger.wineKit.info("Runtime preflight passed with Wine \(result.version, privacy: .public)")
             return result
         } catch let error as WineRuntimePreflightError {
+            recordStructuredPreflightFailure(error, context: executableContext)
             recordPreflightFailure(error, executableURL: executableURL)
             throw error
         } catch let error as WineProcessError {
+            let processDetails = """
+            termination_reason=\(error.terminationReason)
+            stdout=\(WineDiagnosticSanitizer.excerpt(from: error.standardOutput))
+            stderr=\(WineDiagnosticSanitizer.excerpt(from: error.standardError))
+            """
             let classifiedError = WineDiagnosticSanitizer.classifiedFailure(
-                details: error.output,
+                details: processDetails,
                 executablePath: executablePath,
                 status: error.status
+            )
+            recordStructuredPreflightFailure(
+                classifiedError,
+                context: executableContext,
+                launchError: nil,
+                processError: error
             )
             recordPreflightFailure(classifiedError, executableURL: executableURL)
             throw classifiedError
@@ -511,9 +571,58 @@ public class Wine {
                 details: String(describing: error) + "\n" + error.localizedDescription,
                 executablePath: executablePath
             )
+            recordStructuredPreflightFailure(
+                classifiedError,
+                context: executableContext,
+                launchError: error.localizedDescription
+            )
             recordPreflightFailure(classifiedError, executableURL: executableURL)
             throw classifiedError
         }
+    }
+
+    private static func runtimeExecutableContext(_ executableURL: URL) -> RuntimeExecutableContext {
+        let path = executableURL.path(percentEncoded: false)
+        let fileManager = FileManager.default
+        let exists = fileManager.fileExists(atPath: path)
+        let attributes = try? fileManager.attributesOfItem(atPath: path)
+        let permissions = (attributes?[.posixPermissions] as? NSNumber)
+            .map { String(format: "%03o", $0.intValue) } ?? "unavailable"
+        let architecture = exists
+            ? WineDiagnosticSanitizer.singleLine(debugFileOutput(for: executableURL))
+            : "unavailable"
+        return RuntimeExecutableContext(
+            path: WineDiagnosticSanitizer.redact(path),
+            exists: exists,
+            isExecutable: fileManager.isExecutableFile(atPath: path),
+            permissions: permissions,
+            architecture: architecture
+        )
+    }
+
+    private static func recordStructuredPreflightFailure(
+        _ error: WineRuntimePreflightError,
+        context: RuntimeExecutableContext,
+        launchError: String? = nil,
+        processError: WineProcessError? = nil
+    ) {
+        let launch = WineDiagnosticSanitizer.singleLine(launchError ?? "none")
+        let stdout = WineDiagnosticSanitizer.singleLine(
+            WineDiagnosticSanitizer.excerpt(from: processError?.standardOutput ?? "")
+        )
+        let stderr = WineDiagnosticSanitizer.singleLine(
+            WineDiagnosticSanitizer.excerpt(from: processError?.standardError ?? "")
+        )
+        WhiskyWineInstaller.recordRuntimeEvent(
+            "runtime.preflight.failed",
+            detail: """
+            check=\(error.failedCheck) path=\(context.path) exists=\(context.exists) \
+            executable=\(context.isExecutable) architecture=\(context.architecture) \
+            launch_error=\(launch) termination_reason=\(processError?.terminationReason ?? "not_started") \
+            exit_status=\(processError.map { String($0.status) } ?? "unavailable") \
+            stdout=\(stdout) stderr=\(stderr)
+            """
+        )
     }
 
     private static func validateRuntimeExecutable(_ executableURL: URL) throws {
@@ -698,10 +807,34 @@ private final class ProcessReference: @unchecked Sendable {
     }
 }
 
+private struct RuntimeExecutableContext {
+    let path: String
+    let exists: Bool
+    let isExecutable: Bool
+    let permissions: String
+    let architecture: String
+}
+
+private extension Process.TerminationReason {
+    var runtimeDiagnosticDescription: String {
+        switch self {
+        case .exit: return "exit"
+        case .uncaughtSignal: return "uncaught_signal"
+        @unknown default: return "unknown"
+        }
+    }
+}
+
 public struct WineProcessError: LocalizedError {
     public let command: [String]
     public let status: Int32
-    public let output: String
+    public let standardOutput: String
+    public let standardError: String
+    public let terminationReason: String
+
+    public var output: String {
+        standardOutput + standardError
+    }
 
     public var errorDescription: String? {
         let excerpt = WineDiagnosticSanitizer.excerpt(from: output)

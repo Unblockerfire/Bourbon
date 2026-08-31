@@ -66,6 +66,17 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
         }
     }
 
+    var failedCheck: String {
+        switch self {
+        case .executableMissing: return "executable_exists"
+        case .cannotExecute: return "executable_permission_or_launch"
+        case .rosettaUnavailable: return "process_architecture_launch"
+        case .runtimeLibraryFailure: return "runtime_library_loading"
+        case .processNonzero: return "process_exit_status"
+        case .invalidWineOutput: return "wine_version_output"
+        }
+    }
+
     private var executablePath: String {
         switch self {
         case .executableMissing(let path), .cannotExecute(let path, _),

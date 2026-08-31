@@ -165,6 +165,21 @@ final class WineRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertTrue(log.contains("Executable exists: false"))
     }
 
+    func testMissingExecutableProducesExactPreflightFailure() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let executable = root.appending(path: "Libraries/Wine/bin/wine")
+
+        do {
+            _ = try await Wine.preflightRuntime(executableURL: executable)
+            XCTFail("Expected missing executable preflight to fail")
+        } catch let error as WineRuntimePreflightError {
+            XCTAssertEqual(error.diagnosticCode, "executable_missing")
+            XCTAssertTrue(error.unifiedLogDescription.contains("executable=Libraries/Wine/bin/wine"))
+            XCTAssertTrue(error.userFacingDiagnosticMessage.contains("The selected executable does not exist."))
+        }
+    }
+
     func testNonExecutableFailureCreatesCommandLog() throws {
         let logsFolder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: logsFolder) }

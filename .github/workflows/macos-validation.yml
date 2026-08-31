@@ -315,6 +315,25 @@ jobs:
             grep -Fq "$event" "$CONTENT_VIEW" "$INSTALLER"
           done
 
+          WINE='Source/WhiskyKit/Sources/WhiskyKit/Wine/Wine.swift'
+          for event in \
+            runtime.bundle.archive.found \
+            runtime.bundle.manifest.loaded \
+            runtime.install.required \
+            runtime.install.destination \
+            runtime.extract.started \
+            runtime.extract.completed \
+            runtime.extract.failed \
+            runtime.executable.resolved \
+            runtime.executable.exists \
+            runtime.executable.permissions \
+            runtime.preflight.started \
+            runtime.preflight.process.started \
+            runtime.preflight.process.terminated \
+            runtime.preflight.failed; do
+            grep -Fq "$event" "$CONTENT_VIEW" "$INSTALLER" "$WINE"
+          done
+
       - name: Validate production BourbonWine launcher contract
         shell: bash
         run: |
@@ -498,8 +517,9 @@ jobs:
             'com.unblockerfire.BourbonDiagnostic'
           BOURBON_PACKAGED_DIAGNOSTIC_RUNTIME="$ARCHIVE" \
             BOURBON_PACKAGED_DIAGNOSTIC_METADATA="$METADATA" \
+            BOURBON_PACKAGED_DIAGNOSTIC_APP="$APP" \
             swift test --package-path Source/WhiskyKit \
-              --filter WhiskyWineRuntimeReadinessTests/testPackagedDiagnosticArchiveInstallsIntoCleanApplicationSupport
+              --filter WhiskyWineRuntimeReadinessTests/testPackagedDiagnostic
           tar -tzf "$ARCHIVE" | grep -Fx 'Libraries/Wine/bin/wine'
           tar -tzf "$ARCHIVE" | grep -Fx 'Libraries/Wine/bin/wineserver'
           tar -tzf "$ARCHIVE" | grep -Fx 'Libraries/Wine/lib/wine/x86_64-unix/ntdll.so'
@@ -508,6 +528,19 @@ jobs:
           test -x "$RUNTIME/bin/wine"
           test -x "$RUNTIME/bin/wineserver"
           test -f "$RUNTIME/lib/wine/x86_64-unix/ntdll.so"
+          file \
+            "$RUNTIME/bin/wine" \
+            "$RUNTIME/bin/wineserver" \
+            "$RUNTIME/lib/wine/x86_64-unix/ntdll.so" \
+            | tee "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-runtime-file.txt"
+          lipo -archs "$RUNTIME/bin/wine" \
+            | tee "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-wine-architectures.txt"
+          otool -l "$RUNTIME/bin/wine" \
+            | tee "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-wine-load-commands.txt"
+          xattr -l "$ARCHIVE" \
+            > "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-archive-xattrs.txt" 2>&1 || true
+          xattr -l "$RUNTIME/bin/wine" \
+            > "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-extracted-wine-xattrs.txt" 2>&1 || true
           DYLD_LIBRARY_PATH="$RUNTIME/lib" DYLD_FALLBACK_LIBRARY_PATH="$RUNTIME/lib" \
             "$RUNTIME/bin/wine" --version | tee "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-wine-version.txt"
 

@@ -2,6 +2,35 @@ import XCTest
 @testable import WhiskyKit
 
 final class WhiskyWineRuntimeReadinessTests: XCTestCase {
+    func testExpectedRuntimeDestinationUsesBundleIdentifier() {
+        let root = URL(fileURLWithPath: "/isolated/Application Support")
+        let destination = WhiskyWineInstaller.applicationFolder(
+            bundleIdentifier: "com.unblockerfire.BourbonDiagnostic",
+            applicationSupportRoot: root
+        )
+
+        XCTAssertEqual(
+            destination.path,
+            "/isolated/Application Support/com.unblockerfire.BourbonDiagnostic"
+        )
+    }
+
+    func testProductionAndDiagnosticBundleIdentifiersResolveDistinctDestinations() {
+        let root = URL(fileURLWithPath: "/isolated/Application Support")
+        let production = WhiskyWineInstaller.applicationFolder(
+            bundleIdentifier: "com.unblockerfire.Bourbon",
+            applicationSupportRoot: root
+        )
+        let diagnostic = WhiskyWineInstaller.applicationFolder(
+            bundleIdentifier: "com.unblockerfire.BourbonDiagnostic",
+            applicationSupportRoot: root
+        )
+
+        XCTAssertNotEqual(production, diagnostic)
+        XCTAssertEqual(production.lastPathComponent, "com.unblockerfire.Bourbon")
+        XCTAssertEqual(diagnostic.lastPathComponent, "com.unblockerfire.BourbonDiagnostic")
+    }
+
     func testCompletelyMissingRuntimeIsNotReady() throws {
         let fixture = try RuntimeFixture()
         defer { fixture.remove() }
@@ -49,6 +78,57 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         let readiness = WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder)
         XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
         XCTAssertEqual(readiness.wineVersion?.trimmingCharacters(in: .whitespacesAndNewlines), "wine-11.16")
+    }
+
+    func testFreshRuntimeExtractionPreservesExecutablePermissions() throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        let archive = try fixture.archiveRuntime(version: "1.0.2")
+
+        try WhiskyWineInstaller.install(
+            from: archive,
+            runtimeVersion: "1.0.2",
+            into: fixture.applicationFolder
+        )
+
+        let wine = fixture.applicationFolder.appending(path: "Libraries/Wine/bin/wine")
+        let wineserver = fixture.applicationFolder.appending(path: "Libraries/Wine/bin/wineserver")
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: wine.path))
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: wineserver.path))
+    }
+
+    func testIncompleteExtractionNeverWritesInstalledMarker() throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        let archive = try fixture.archiveRuntime(version: "1.0.2", includeNTDLL: false)
+
+        XCTAssertThrowsError(
+            try WhiskyWineInstaller.install(
+                from: archive,
+                runtimeVersion: "1.0.2",
+                into: fixture.applicationFolder
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: fixture.applicationFolder.appending(path: "Libraries/BourbonWineVersion.plist").path
+        ))
+    }
+
+    func testRuntimeInstallIsIdempotent() throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+
+        for _ in 0..<2 {
+            let archive = try fixture.archiveRuntime(version: "1.0.2")
+            try WhiskyWineInstaller.install(
+                from: archive,
+                runtimeVersion: "1.0.2",
+                into: fixture.applicationFolder
+            )
+        }
+
+        let readiness = WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder)
+        XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
     }
 
     func testDiagnosticAndProductionRuntimeStateCanCoexist() throws {
@@ -100,6 +180,30 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
             atPath: fixture.applicationFolder.appending(path: "Libraries/Wine/bin/wine").path
         ))
     }
+
+    func testPackagedDiagnosticBundleBootstrapsFreshRuntime() throws {
+        guard let appPath = ProcessInfo.processInfo.environment["BOURBON_PACKAGED_DIAGNOSTIC_APP"] else {
+            throw XCTSkip("Runs only when CI mounts the packaged diagnostic DMG.")
+        }
+        let appURL = URL(fileURLWithPath: appPath)
+        let bundle = try XCTUnwrap(Bundle(url: appURL))
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+
+        XCTAssertEqual(bundle.bundleIdentifier, "com.unblockerfire.BourbonDiagnostic")
+        XCTAssertNil(WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder))
+        let installedVersion = try WhiskyWineInstaller.installBundledDiagnosticRuntime(
+            in: bundle,
+            into: fixture.applicationFolder
+        )
+
+        XCTAssertEqual(installedVersion, "1.0.2")
+        let readiness = WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder)
+        XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
+        XCTAssertTrue(FileManager.default.isExecutableFile(
+            atPath: fixture.applicationFolder.appending(path: "Libraries/Wine/bin/wine").path
+        ))
+    }
 }
 
 private final class RuntimeFixture {
@@ -143,9 +247,12 @@ private final class RuntimeFixture {
         try marker.write(to: libraries.appending(path: "BourbonWineVersion.plist"))
     }
 
-    func archiveRuntime(version: String) throws -> URL {
+    func archiveRuntime(version: String, includeNTDLL: Bool = true) throws -> URL {
         let source = root.appending(path: "archive-source")
-        try makeRuntime(in: source, version: version)
+        if FileManager.default.fileExists(atPath: source.path) {
+            try FileManager.default.removeItem(at: source)
+        }
+        try makeRuntime(in: source, version: version, includeNTDLL: includeNTDLL)
         let archive = root.appending(path: "runtime.tar.gz")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")

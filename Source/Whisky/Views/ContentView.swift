@@ -187,7 +187,18 @@ struct ContentView: View {
             bottleVM.loadBottles()
             print("bottle.list.refresh.completed")
 
-            if !WhiskyWineInstaller.isWhiskyWineInstalled() {
+            let runtimeReadiness = WhiskyWineInstaller.runtimeReadiness(
+                in: WhiskyWineInstaller.applicationFolder
+            )
+            if !runtimeReadiness.isReady {
+                WhiskyWineInstaller.recordRuntimeEvent(
+                    "runtime.install.required",
+                    detail: "reason=readiness_failed"
+                )
+                WhiskyWineInstaller.recordRuntimeEvent(
+                    "runtime.install.destination",
+                    detail: "bundle_identifier=\(Bundle.whiskyBundleIdentifier)"
+                )
                 showSetup = true
             }
 

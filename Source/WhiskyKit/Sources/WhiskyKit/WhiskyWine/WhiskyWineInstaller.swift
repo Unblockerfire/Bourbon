@@ -86,6 +86,11 @@ public class WhiskyWineInstaller {
             return nil
         }
 
+        recordRuntimeEvent(
+            "runtime.bundle.archive.found",
+            detail: "resource=\(archive.lastPathComponent)"
+        )
+
         do {
             let data = try Data(contentsOf: metadata)
             let info = try JSONDecoder().decode(BundledDiagnosticRuntimeInfo.self, from: data)
@@ -93,6 +98,10 @@ public class WhiskyWineInstaller {
                 Logger.wineKit.error("Bundled diagnostic runtime has an invalid version.")
                 return nil
             }
+            recordRuntimeEvent(
+                "runtime.bundle.manifest.loaded",
+                detail: "runtime_version=\(info.runtimeVersion) wine_version=\(info.wineVersion)"
+            )
             return (archive, info)
         } catch {
             Logger.wineKit.error("Failed to read bundled diagnostic runtime metadata: \(error)")
@@ -110,6 +119,15 @@ public class WhiskyWineInstaller {
         guard let bundledRuntime = bundledDiagnosticRuntime(in: bundle) else {
             throw WhiskyWineInstallerError.missingBundledDiagnosticRuntime
         }
+
+        recordRuntimeEvent(
+            "runtime.install.required",
+            detail: "runtime_version=\(bundledRuntime.info.runtimeVersion)"
+        )
+        recordRuntimeEvent(
+            "runtime.install.destination",
+            detail: "path=\(WineDiagnosticSanitizer.redact(destinationApplicationFolder.path))"
+        )
 
         recordUpdateEvent("runtime.update.download.started", detail: "source=bundled_diagnostic_runtime")
         let archive = try persistLocalArchive(at: bundledRuntime.archive)
@@ -175,6 +193,10 @@ public class WhiskyWineInstaller {
         }
     }
 
+    public static func recordRuntimeEvent(_ event: String, detail: String? = nil) {
+        recordUpdateEvent(event, detail: detail)
+    }
+
     public static func latestRuntimeInfo() async throws -> BourbonRuntimeInfo {
         let request = URLRequest(url: runtimeAPIBaseURL.appending(path: "runtime/latest"))
         let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
@@ -185,9 +207,19 @@ public class WhiskyWineInstaller {
     }
 
     /// The Whisky application folder
-    public static let applicationFolder = FileManager.default.urls(
-        for: .applicationSupportDirectory, in: .userDomainMask
-        )[0].appending(path: Bundle.whiskyBundleIdentifier)
+    public static let applicationFolder = applicationFolder(
+        bundleIdentifier: Bundle.whiskyBundleIdentifier
+    )
+
+    public static func applicationFolder(
+        bundleIdentifier: String,
+        applicationSupportRoot: URL = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        )[0]
+    ) -> URL {
+        applicationSupportRoot.appending(path: bundleIdentifier)
+    }
 
     /// The folder of all the libfrary files
     public static let libraryFolder = applicationFolder.appending(path: "Libraries")
@@ -240,6 +272,10 @@ public class WhiskyWineInstaller {
 
         do {
             try validateArchive(at: from, sourceURL: nil)
+            recordRuntimeEvent(
+                "runtime.install.destination",
+                detail: "path=\(WineDiagnosticSanitizer.redact(destinationApplicationFolder.path))"
+            )
 
             if !fileManager.fileExists(atPath: destinationApplicationFolder.path) {
                 try fileManager.createDirectory(at: destinationApplicationFolder, withIntermediateDirectories: true)
@@ -249,7 +285,15 @@ public class WhiskyWineInstaller {
             stagingRoot = staging
             try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
             recordUpdateEvent("runtime.update.extraction.started")
-            try Tar.untar(tarBall: from, toURL: staging)
+            recordRuntimeEvent("runtime.extract.started")
+            do {
+                try Tar.untar(tarBall: from, toURL: staging)
+            } catch {
+                let safeError = WineDiagnosticSanitizer.singleLine(error.localizedDescription)
+                recordRuntimeEvent("runtime.extract.failed", detail: "error=\(safeError)")
+                throw error
+            }
+            recordRuntimeEvent("runtime.extract.completed")
             recordUpdateEvent("runtime.update.extraction.completed")
 
             let stagedReadiness = RuntimeReadiness.validate(
@@ -257,7 +301,16 @@ public class WhiskyWineInstaller {
                 expectedRuntimeVersion: runtimeVersion,
                 requireVersionMarker: false
             )
-            guard stagedReadiness.isReady else { throw WhiskyWineInstallerError.runtimeNotReady(stagedReadiness) }
+            guard stagedReadiness.isReady else {
+                let failures = stagedReadiness.failures
+                    .map(WineDiagnosticSanitizer.redact)
+                    .joined(separator: ",")
+                recordRuntimeEvent(
+                    "runtime.extract.failed",
+                    detail: "check=staging_readiness failures=\(failures)"
+                )
+                throw WhiskyWineInstallerError.runtimeNotReady(stagedReadiness)
+            }
 
             if fileManager.fileExists(atPath: destinationLibraryFolder.path(percentEncoded: false)) {
                 let backup = destinationApplicationFolder.appending(path: ".BourbonWineBackup-\(UUID().uuidString)")
@@ -378,7 +431,11 @@ public class WhiskyWineInstaller {
     }
 
     public static func whiskyWineVersion() -> SemanticVersion? {
-        guard let versionPlist = installedVersionPlistURL() else {
+        whiskyWineVersion(in: applicationFolder)
+    }
+
+    public static func whiskyWineVersion(in applicationFolder: URL) -> SemanticVersion? {
+        guard let versionPlist = installedVersionPlistURL(in: applicationFolder) else {
             return nil
         }
 
@@ -393,7 +450,8 @@ public class WhiskyWineInstaller {
         }
     }
 
-    private static func installedVersionPlistURL() -> URL? {
+    private static func installedVersionPlistURL(in applicationFolder: URL) -> URL? {
+        let libraryFolder = applicationFolder.appending(path: "Libraries")
         for name in ["BourbonWineVersion", "whiskyWineVersion", "GPTKVersion"] {
             let versionPlist = libraryFolder
                 .appending(path: name)
