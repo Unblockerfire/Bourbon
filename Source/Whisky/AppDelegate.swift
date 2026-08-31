@@ -17,9 +17,12 @@
 //
 
 import Foundation
+import OSLog
+import ServiceManagement
 import SwiftUI
 import WhiskyKit
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         // Test if automatic window tabbing is enabled
@@ -32,6 +35,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        BourbonLaunchContextDiagnostics.record(notification: notification)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             BourbonInstallationGuard.runLaunchChecks()
         }
@@ -47,6 +51,82 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+}
+
+@MainActor
+private enum BourbonLaunchContextDiagnostics {
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "Bourbon",
+        category: "LaunchLifecycle"
+    )
+
+    // swiftlint:disable:next function_body_length
+    static func record(notification: Notification) {
+        let userInfo = notification.userInfo
+        let loginItemLaunch = boolValue(userInfo, key: "NSApplicationLaunchIsLoginItemKey")
+        let sessionRestoreLaunch = boolValue(userInfo, key: "NSApplicationLaunchIsSessionRestoreKey")
+        let defaultLaunch = boolValue(userInfo, key: "NSApplicationLaunchIsDefaultLaunchKey")
+        let launchReason = reason(
+            loginItem: loginItemLaunch,
+            sessionRestore: sessionRestoreLaunch,
+            defaultLaunch: defaultLaunch
+        )
+        let loginStatus = loginItemStatusName(SMAppService.mainApp.status)
+        let embeddedLoginItems = FileManager.default.fileExists(
+            atPath: Bundle.main.bundleURL
+                .appendingPathComponent("Contents/Library/LoginItems", isDirectory: true)
+                .path
+        )
+        let bundleIdentifier = Bundle.main.bundleIdentifier ?? "unknown"
+        let isDiagnostic = bundleIdentifier == "com.unblockerfire.BourbonDiagnostic"
+
+        let detail = [
+            "reason=\(launchReason)",
+            "login_item_launch=\(loginItemLaunch)",
+            "session_restore=\(sessionRestoreLaunch)",
+            "default_launch=\(defaultLaunch)",
+            "smapp_status=\(loginStatus)",
+            "embedded_login_items=\(embeddedLoginItems)",
+            "diagnostic=\(isDiagnostic)"
+        ].joined(separator: " ")
+        logger.notice("app.launch.context \(detail, privacy: .public)")
+        print("app.launch.context \(detail)")
+    }
+
+    private static func boolValue(_ userInfo: [AnyHashable: Any]?, key: String) -> Bool {
+        if let value = userInfo?[key] as? NSNumber {
+            return value.boolValue
+        }
+        return userInfo?[key] as? Bool ?? false
+    }
+
+    private static func reason(loginItem: Bool, sessionRestore: Bool, defaultLaunch: Bool) -> String {
+        if loginItem {
+            return "login_item"
+        }
+        if sessionRestore {
+            return "session_restore"
+        }
+        if defaultLaunch {
+            return "default"
+        }
+        return "unspecified"
+    }
+
+    private static func loginItemStatusName(_ status: SMAppService.Status) -> String {
+        switch status {
+        case .notRegistered:
+            return "not_registered"
+        case .enabled:
+            return "enabled"
+        case .requiresApproval:
+            return "requires_approval"
+        case .notFound:
+            return "not_found"
+        @unknown default:
+            return "unknown"
+        }
+    }
 }
 
 private enum BourbonInstallationGuard {

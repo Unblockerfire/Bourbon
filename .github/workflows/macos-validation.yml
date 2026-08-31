@@ -311,11 +311,20 @@ jobs:
             license.validation.decoding.completed \
             license.validation.decoding.failed \
             license.ui.surface.audit \
+            license.ui.window_hierarchy.started \
+            license.ui.window_hierarchy.completed \
+            license.ui.window \
+            license.ui.view \
             license.ui.responsive; do
             grep -Fq "$event" "$INTRO" "$LICENSE"
           done
 
-          grep -Fq 'if let player, !licenseGate.presentsBlockingOverlay' "$INTRO"
+          grep -Fq 'if licenseGate.mountsIntroSurface' "$INTRO"
+          grep -Fq 'BourbonSurfaceOwnershipMarker(role: "intro_surface")' "$INTRO"
+          grep -Fq 'BourbonSurfaceOwnershipMarker(role: "license_overlay")' "$INTRO"
+          grep -Fq 'override func hitTest(_ point: NSPoint) -> NSView?' "$INTRO"
+          grep -Fq 'let windows = NSApp.windows.filter(\.isVisible)' "$INTRO"
+          grep -Fq 'showButton = true' "$INTRO"
           grep -Fq 'license.player.created", detail: "stage=validation_succeeded' "$INTRO"
           ! grep -A8 -F '.onAppear {' "$INTRO" | grep -Fq 'AVPlayer(url:'
           ! sed -n '1,220p' "$INTRO" | grep -Fq 'ProgressView()'
@@ -326,6 +335,22 @@ jobs:
           grep -Fq 'diagnosticTokenAccount = "license-token-diagnostic"' "$POLICY"
           grep -Fq 'return [diagnosticBundleIdentifier, productionBundleIdentifier]' "$POLICY"
           grep -Fq '!isDiagnostic(bundleIdentifier: bundleIdentifier)' "$POLICY"
+
+      - name: Validate login item and session restoration contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_DELEGATE='Source/Whisky/AppDelegate.swift'
+          SETTINGS='Source/Whisky/Views/Settings/SettingsView.swift'
+          APP='Source/Whisky/Views/WhiskyApp.swift'
+
+          grep -Fq 'app.launch.context' "$APP_DELEGATE"
+          grep -Fq 'NSApplicationLaunchIsLoginItemKey' "$APP_DELEGATE"
+          grep -Fq 'NSApplicationLaunchIsSessionRestoreKey' "$APP_DELEGATE"
+          grep -Fq 'SMAppService.mainApp.status' "$APP_DELEGATE"
+          ! grep -Eq 'SMAppService.*\.(register|unregister)\(' "$APP_DELEGATE" "$SETTINGS" "$APP"
+          ! grep -Eiq 'open bourbon at login|launch at login' "$SETTINGS"
 
       - name: Probe license service transport and response contract
         shell: bash
@@ -542,6 +567,9 @@ jobs:
           test "$DISPLAY_NAME" = 'Bourbon Diagnostic'
           test "$BUNDLE_IDENTIFIER" = 'com.unblockerfire.BourbonDiagnostic'
           test ! -e "$DIAGNOSTIC_ROOT/Bourbon.app"
+          test ! -e "$DIAGNOSTIC_APP/Contents/Library/LoginItems"
+          ! /usr/libexec/PlistBuddy -c 'Print :SMPrivilegedExecutables' \
+            "$DIAGNOSTIC_APP/Contents/Info.plist" >/dev/null 2>&1
           test -f "$DIAGNOSTIC_APP/Contents/Resources/BuildInfo.json"
           test -f "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.tar.gz"
           test -f "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.json"
@@ -585,6 +613,14 @@ jobs:
           test -f "$METADATA"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = \
             'com.unblockerfire.BourbonDiagnostic'
+          test ! -e "$APP/Contents/Library/LoginItems"
+          ! /usr/libexec/PlistBuddy -c 'Print :SMPrivilegedExecutables' \
+            "$APP/Contents/Info.plist" >/dev/null 2>&1
+          printf '%s\n' \
+            'bundle_identifier=com.unblockerfire.BourbonDiagnostic' \
+            'embedded_login_items=false' \
+            'sm_privileged_executables=false' \
+            > "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-login-item-audit.txt"
           BOURBON_PACKAGED_DIAGNOSTIC_RUNTIME="$ARCHIVE" \
             BOURBON_PACKAGED_DIAGNOSTIC_METADATA="$METADATA" \
             BOURBON_PACKAGED_DIAGNOSTIC_APP="$APP" \

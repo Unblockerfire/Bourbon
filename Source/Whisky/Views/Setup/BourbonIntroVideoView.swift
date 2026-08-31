@@ -14,65 +14,28 @@ struct BourbonIntroVideoView: View {
 
     @State private var player: AVPlayer?
     @State private var showButton = false
-    @State private var playbackObserver: NSObjectProtocol?
     @State private var licenseGate: IntroLicenseGate = .idle
     @State private var finishPendingAfterValidation = false
     @State private var licenseActivity = BourbonLicenseActivityState()
     @State private var licenseTask: Task<Void, Never>?
     @State private var licenseFailureCode: String?
     @State private var surfaceDiagnosticCode = "surface_pending"
+    @State private var surfaceDiagnosticReport = "No window hierarchy has been captured yet."
     @State private var didStartReturningUserUpdateCheck = false
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-            Color.black.ignoresSafeArea()
+                Color.black.ignoresSafeArea()
 
-                ZStack(alignment: .bottom) {
-                    if let player, !licenseGate.presentsBlockingOverlay {
-                        PlayerContainerView(player: player)
-                            .frame(width: introPanelSide(proxy), height: introPanelSide(proxy))
-                            .clipped()
-                    }
-
-                    Button(buttonTitle) {
-                        finishIntro()
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 12)
-                    .background(.white.opacity(0.32), in: Capsule())
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .foregroundStyle(.white)
-                    .overlay(
-                        Capsule()
-                            .stroke(.white.opacity(0.38), lineWidth: 1)
-                    )
-                    .controlSize(.large)
-                    .padding(.bottom, 8)
-                    .opacity(showButton ? 1 : 0)
-                    .allowsHitTesting(showButton)
-                    .animation(.easeOut(duration: 0.6), value: showButton)
+                if licenseGate.mountsIntroSurface {
+                    introSurface(proxy: proxy)
                 }
-                .frame(width: introPanelSide(proxy), height: introPanelSide(proxy))
-                .background(
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                .fill(.white.opacity(0.12))
-                        }
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(.white.opacity(0.32), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.82), radius: 54, y: 38)
-                .shadow(color: .white.opacity(0.08), radius: 18, y: -10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                licenseGateOverlay
+                if licenseGate.presentsBlockingOverlay {
+                    licenseGateOverlay
+                        .background(BourbonSurfaceOwnershipMarker(role: "license_overlay"))
+                }
             }
         }
         .onAppear {
@@ -89,6 +52,7 @@ struct BourbonIntroVideoView: View {
         .onChange(of: licenseGate.overlayDiagnosticName) { oldValue, newValue in
             if let oldValue {
                 BourbonLicenseDiagnostics.record("license.overlay.dismissed", detail: "kind=\(oldValue)")
+                reportSurfaceOwnership(stage: "overlay_dismissed")
             }
             if let newValue {
                 BourbonLicenseDiagnostics.record("license.overlay.presented", detail: "kind=\(newValue)")
@@ -101,6 +65,53 @@ struct BourbonIntroVideoView: View {
 
     private func introPanelSide(_ proxy: GeometryProxy) -> CGFloat {
         min(proxy.size.width * 0.74, proxy.size.height * 0.74, 760)
+    }
+
+    private func introSurface(proxy: GeometryProxy) -> some View {
+        ZStack(alignment: .bottom) {
+            if let player {
+                PlayerContainerView(player: player)
+                    .frame(width: introPanelSide(proxy), height: introPanelSide(proxy))
+                    .clipped()
+            }
+
+            Button(buttonTitle) {
+                finishIntro()
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 12)
+            .background(.white.opacity(0.32), in: Capsule())
+            .background(.ultraThinMaterial, in: Capsule())
+            .foregroundStyle(.white)
+            .overlay(
+                Capsule()
+                    .stroke(.white.opacity(0.38), lineWidth: 1)
+            )
+            .controlSize(.large)
+            .padding(.bottom, 8)
+            .opacity(showButton ? 1 : 0)
+            .allowsHitTesting(showButton)
+            .animation(.easeOut(duration: 0.6), value: showButton)
+        }
+        .frame(width: introPanelSide(proxy), height: introPanelSide(proxy))
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(.white.opacity(0.12))
+                }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .stroke(.white.opacity(0.32), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.82), radius: 54, y: 38)
+        .shadow(color: .white.opacity(0.08), radius: 18, y: -10)
+        .background(BourbonSurfaceOwnershipMarker(role: "intro_surface"))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -126,7 +137,8 @@ struct BourbonIntroVideoView: View {
                 allowsRecovery: true,
                 allowsFreshActivation: allowsFreshActivation,
                 diagnosticCode: licenseFailureCode,
-                surfaceDiagnosticCode: surfaceDiagnosticCode
+                surfaceDiagnosticCode: surfaceDiagnosticCode,
+                onCopySurfaceDiagnostics: copySurfaceDiagnostics
             )
         case .checking, .checkingAfterFinish:
             checkingLicenseView
@@ -457,55 +469,35 @@ struct BourbonIntroVideoView: View {
     }
 
     private func prepareIntroPlayerIfNeeded() {
+        showButton = true
         guard player == nil else {
             player?.play()
+            reportSurfaceOwnership(stage: "intro_ready")
             return
         }
         guard let url = Bundle.main.url(forResource: "BourbonIntro", withExtension: "mov") else {
-            completeIntro()
+            BourbonLicenseDiagnostics.record("license.player.unavailable", detail: "reason=resource_missing")
+            reportSurfaceOwnership(stage: "intro_ready_without_player")
             return
         }
 
-        showButton = false
         let player = AVPlayer(url: url)
         self.player = player
         player.play()
         BourbonLicenseDiagnostics.record("license.player.created", detail: "stage=validation_succeeded")
+        reportSurfaceOwnership(stage: "intro_ready")
         if !didStartReturningUserUpdateCheck {
             didStartReturningUserUpdateCheck = true
             startReturningUserUpdateCheck()
         }
-
-        if let duration = player.currentItem?.asset.duration.seconds,
-           duration.isFinite,
-           duration > 1 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + duration - 3.0) {
-                guard self.player === player else { return }
-                showButton = true
-            }
-        } else {
-            playbackObserver = NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime,
-                object: player.currentItem,
-                queue: .main
-            ) { _ in
-                Task { @MainActor in
-                    guard self.player === player else { return }
-                    showButton = true
-                }
-            }
-        }
     }
 
     private func cleanupPlayer(reason: String = "view_disappeared") {
-        let hadPlayerSurface = player != nil || playbackObserver != nil
-        if let playbackObserver {
-            NotificationCenter.default.removeObserver(playbackObserver)
-            self.playbackObserver = nil
-        }
+        let hadPlayerSurface = player != nil
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         player = nil
+        showButton = false
         if hadPlayerSurface {
             BourbonLicenseDiagnostics.record("license.player.destroyed", detail: "reason=\(reason)")
         }
@@ -514,13 +506,9 @@ struct BourbonIntroVideoView: View {
     private func reportSurfaceOwnership(stage: String) {
         Task { @MainActor in
             await Task.yield()
-            let visibleWindows = NSApp.windows.filter(\.isVisible)
-            let playerViewCount = visibleWindows.reduce(into: 0) { count, window in
-                if let contentView = window.contentView {
-                    count += descendantPlayerViewCount(in: contentView)
-                }
-            }
-            surfaceDiagnosticCode = "surface_w\(visibleWindows.count)_p\(playerViewCount)"
+            let snapshot = BourbonWindowHierarchyDiagnostics.capture(stage: stage)
+            surfaceDiagnosticCode = snapshot.code
+            surfaceDiagnosticReport = snapshot.report
             BourbonLicenseDiagnostics.record(
                 "license.ui.surface.audit",
                 detail: "stage=\(stage) code=\(surfaceDiagnosticCode)"
@@ -528,11 +516,11 @@ struct BourbonIntroVideoView: View {
         }
     }
 
-    private func descendantPlayerViewCount(in view: NSView) -> Int {
-        let currentCount = view is AVPlayerView ? 1 : 0
-        return currentCount + view.subviews.reduce(0) { count, subview in
-            count + descendantPlayerViewCount(in: subview)
-        }
+    private func copySurfaceDiagnostics() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(surfaceDiagnosticReport, forType: .string)
+        BourbonLicenseDiagnostics.record("license.ui.window_hierarchy.copied")
     }
 
     private func reportResponsive(stage: String) {
@@ -557,6 +545,13 @@ private enum IntroLicenseGate {
 
     var presentsBlockingOverlay: Bool {
         overlayDiagnosticName != nil
+    }
+
+    var mountsIntroSurface: Bool {
+        if case .valid = self {
+            return true
+        }
+        return false
     }
 
     var overlayDiagnosticName: String? {
@@ -735,6 +730,7 @@ private struct LicenseUnavailableView: View {
     let allowsFreshActivation: Bool
     let diagnosticCode: String?
     let surfaceDiagnosticCode: String
+    let onCopySurfaceDiagnostics: () -> Void
     @State private var licenseKey = ""
     @State private var showingKeyInput = false
     @State private var showingSupport = false
@@ -803,6 +799,8 @@ private struct LicenseUnavailableView: View {
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                        Button("Copy UI Diagnostics") { onCopySurfaceDiagnostics() }
+                            .buttonStyle(BourbonSecondaryButtonStyle())
                     }
                 }
                 .multilineTextAlignment(.center)
@@ -1520,5 +1518,206 @@ struct PlayerContainerView: NSViewRepresentable {
     static func dismantleNSView(_ nsView: AVPlayerView, coordinator: ()) {
         nsView.player?.pause()
         nsView.player = nil
+    }
+}
+
+private struct BourbonSurfaceOwnershipMarker: NSViewRepresentable {
+    let role: String
+
+    func makeNSView(context: Context) -> BourbonSurfaceMarkerNSView {
+        BourbonSurfaceMarkerNSView(role: role)
+    }
+
+    func updateNSView(_ nsView: BourbonSurfaceMarkerNSView, context: Context) {
+        nsView.role = role
+    }
+}
+
+private final class BourbonSurfaceMarkerNSView: NSView {
+    var role: String {
+        didSet {
+            identifier = NSUserInterfaceItemIdentifier("bourbon.surface.\(role)")
+        }
+    }
+
+    init(role: String) {
+        self.role = role
+        super.init(frame: .zero)
+        identifier = NSUserInterfaceItemIdentifier("bourbon.surface.\(role)")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override var acceptsFirstResponder: Bool {
+        false
+    }
+}
+
+@MainActor
+private enum BourbonWindowHierarchyDiagnostics {
+    struct Snapshot {
+        let code: String
+        let report: String
+    }
+
+    private struct CaptureState {
+        var lines: [String]
+        var viewCount = 0
+        var playerViewCount = 0
+        var introMarkerCount = 0
+        var licenseMarkerCount = 0
+    }
+
+    private static let maximumViews = 256
+
+    // swiftlint:disable:next function_body_length
+    static func capture(stage: String) -> Snapshot {
+        let windows = NSApp.windows.filter(\.isVisible)
+        var state = CaptureState(lines: ["stage=\(safe(stage)) visible_windows=\(windows.count)"])
+
+        BourbonLicenseDiagnostics.record(
+            "license.ui.window_hierarchy.started",
+            detail: "stage=\(safe(stage)) windows=\(windows.count)"
+        )
+
+        for (windowIndex, window) in windows.enumerated() {
+            let windowClass = className(window)
+            let isModal = NSApp.modalWindow === window
+            let centerHit = windowCenterHitClass(window)
+            let windowDetail = [
+                "index=\(windowIndex)",
+                "class=\(windowClass)",
+                "frame=\(rect(window.frame))",
+                "visible=\(window.isVisible)",
+                "key=\(window.isKeyWindow)",
+                "main=\(window.isMainWindow)",
+                "alpha=\(number(window.alphaValue))",
+                "ignores_mouse=\(window.ignoresMouseEvents)",
+                "accepts_mouse_moved=\(window.acceptsMouseMovedEvents)",
+                "modal=\(isModal)",
+                "sheet=\(window.sheetParent != nil)",
+                "attached_sheet=\(window.attachedSheet != nil)",
+                "center_hit=\(centerHit)"
+            ].joined(separator: " ")
+            state.lines.append("window \(windowDetail)")
+            BourbonLicenseDiagnostics.record("license.ui.window", detail: windowDetail)
+
+            if let contentView = window.contentView {
+                visit(
+                    contentView,
+                    depth: 0,
+                    windowIndex: windowIndex,
+                    state: &state
+                )
+            }
+        }
+
+        let modalCount = windows.filter { NSApp.modalWindow === $0 }.count
+        let code = "surface_w\(windows.count)_p\(state.playerViewCount)" +
+            "_i\(state.introMarkerCount)_l\(state.licenseMarkerCount)_m\(modalCount)"
+        let completion = "stage=\(safe(stage)) code=\(code) views=\(state.viewCount)"
+        state.lines.append("completed \(completion)")
+        BourbonLicenseDiagnostics.record("license.ui.window_hierarchy.completed", detail: completion)
+        return Snapshot(code: code, report: state.lines.joined(separator: "\n"))
+    }
+
+    // swiftlint:disable:next function_body_length
+    private static func visit(
+        _ view: NSView,
+        depth: Int,
+        windowIndex: Int,
+        state: inout CaptureState
+    ) {
+        guard state.viewCount < maximumViews else { return }
+        state.viewCount += 1
+
+        let viewClass = className(view)
+        let identifier = safe(view.identifier?.rawValue ?? "none")
+        let markerRole = (view as? BourbonSurfaceMarkerNSView)?.role ?? "none"
+        let hitClass = view.hitTest(NSPoint(x: view.bounds.midX, y: view.bounds.midY)).map(className) ?? "none"
+        let hostingOwner = nearestHostingOwner(of: view)
+        let detail = [
+            "window=\(windowIndex)",
+            "depth=\(depth)",
+            "class=\(viewClass)",
+            "identifier=\(identifier)",
+            "role=\(safe(markerRole))",
+            "frame=\(rect(frameInWindow(view)))",
+            "hidden=\(view.isHidden)",
+            "hidden_ancestor=\(view.isHiddenOrHasHiddenAncestor)",
+            "alpha=\(number(view.alphaValue))",
+            "hit_center=\(hitClass)",
+            "mouse_moves_window=\(view.mouseDownCanMoveWindow)",
+            "touch=\(view.acceptsTouchEvents)",
+            "hosting_owner=\(hostingOwner)"
+        ].joined(separator: " ")
+        state.lines.append("view \(detail)")
+        BourbonLicenseDiagnostics.record("license.ui.view", detail: detail)
+
+        if view is AVPlayerView {
+            state.playerViewCount += 1
+        }
+        if markerRole == "intro_surface" {
+            state.introMarkerCount += 1
+        } else if markerRole == "license_overlay" {
+            state.licenseMarkerCount += 1
+        }
+
+        for subview in view.subviews {
+            visit(
+                subview,
+                depth: depth + 1,
+                windowIndex: windowIndex,
+                state: &state
+            )
+        }
+    }
+
+    private static func windowCenterHitClass(_ window: NSWindow) -> String {
+        guard let contentView = window.contentView else { return "none" }
+        let point = NSPoint(x: contentView.bounds.midX, y: contentView.bounds.midY)
+        return contentView.hitTest(point).map(className) ?? "none"
+    }
+
+    private static func nearestHostingOwner(of view: NSView) -> String {
+        var candidate: NSView? = view
+        while let current = candidate {
+            let name = className(current)
+            if name.localizedCaseInsensitiveContains("hosting") {
+                return name
+            }
+            candidate = current.superview
+        }
+        return "none"
+    }
+
+    private static func frameInWindow(_ view: NSView) -> NSRect {
+        guard let superview = view.superview else { return view.frame }
+        return superview.convert(view.frame, to: nil)
+    }
+
+    private static func className(_ value: AnyObject) -> String {
+        safe(NSStringFromClass(type(of: value)))
+    }
+
+    private static func rect(_ value: NSRect) -> String {
+        [value.origin.x, value.origin.y, value.size.width, value.size.height]
+            .map(number)
+            .joined(separator: ",")
+    }
+
+    private static func number(_ value: CGFloat) -> String {
+        String(format: "%.1f", Double(value))
+    }
+
+    private static func safe(_ value: String) -> String {
+        String(value.replacingOccurrences(of: "\n", with: "_").prefix(180))
     }
 }
