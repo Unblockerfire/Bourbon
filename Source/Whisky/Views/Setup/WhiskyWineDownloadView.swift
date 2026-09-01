@@ -11,6 +11,7 @@ struct WhiskyWineDownloadView: View {
     @State private var downloadProgress: Double = 0
     @State private var downloadError: String?
     @State private var localArchivePanel: NSOpenPanel?
+    @State private var retryAttempt = 0
 
     var body: some View {
         BourbonPanelBackdrop {
@@ -37,6 +38,11 @@ struct WhiskyWineDownloadView: View {
                                 .multilineTextAlignment(.center)
 
                             Button("Retry") {
+                                retryAttempt += 1
+                                WhiskyWineInstaller.recordRuntimeEvent(
+                                    "runtime.retry.started",
+                                    detail: "source=setup_download attempt=\(retryAttempt)"
+                                )
                                 download()
                             }
                             .buttonStyle(BourbonPrimaryButtonStyle())
@@ -88,23 +94,43 @@ struct WhiskyWineDownloadView: View {
                     DispatchQueue.main.async {
                         if let error {
                             downloadError = error.localizedDescription
+                            WhiskyWineInstaller.recordRuntimeEvent(
+                                "runtime.ui.finalized",
+                                detail: "surface=setup_download outcome=failure stage=download"
+                            )
                             return
                         }
 
                         guard let url else {
                             downloadError = "Download failed."
+                            WhiskyWineInstaller.recordRuntimeEvent(
+                                "runtime.ui.finalized",
+                                detail: "surface=setup_download outcome=failure stage=download"
+                            )
                             return
                         }
 
                         do {
+                            WhiskyWineInstaller.recordRuntimeEvent(
+                                "runtime.archive.selected",
+                                detail: "source=runtime_manifest"
+                            )
                             tarLocation = try WhiskyWineInstaller.persistDownloadedArchive(
                                 at: url,
                                 response: response,
                                 sourceURL: sourceURL
                             )
                             path.append(.whiskyWineInstall)
+                            WhiskyWineInstaller.recordRuntimeEvent(
+                                "runtime.ui.finalized",
+                                detail: "surface=setup_download outcome=archive_ready"
+                            )
                         } catch {
                             downloadError = error.localizedDescription
+                            WhiskyWineInstaller.recordRuntimeEvent(
+                                "runtime.ui.finalized",
+                                detail: "surface=setup_download outcome=failure"
+                            )
                         }
                     }
                 }
@@ -121,6 +147,10 @@ struct WhiskyWineDownloadView: View {
                 task.resume()
             } catch {
                 downloadError = error.localizedDescription
+                WhiskyWineInstaller.recordRuntimeEvent(
+                    "runtime.ui.finalized",
+                    detail: "surface=setup_download outcome=failure stage=selection"
+                )
             }
         }
     }
@@ -131,9 +161,17 @@ struct WhiskyWineDownloadView: View {
         }
 
         runtimeVersion = bundledRuntime.info.runtimeVersion
+        WhiskyWineInstaller.recordRuntimeEvent(
+            "runtime.archive.selected",
+            detail: "source=bundled_diagnostic_runtime"
+        )
         tarLocation = try WhiskyWineInstaller.persistLocalArchive(at: bundledRuntime.archive)
         downloadProgress = 1
         path.append(.whiskyWineInstall)
+        WhiskyWineInstaller.recordRuntimeEvent(
+            "runtime.ui.finalized",
+            detail: "surface=setup_download outcome=archive_ready"
+        )
         return true
     }
 
@@ -150,10 +188,22 @@ struct WhiskyWineDownloadView: View {
         if panel.runModal() == .OK, let url = panel.url {
             do {
                 runtimeVersion = nil
+                WhiskyWineInstaller.recordRuntimeEvent(
+                    "runtime.archive.selected",
+                    detail: "source=local_archive"
+                )
                 tarLocation = try WhiskyWineInstaller.persistLocalArchive(at: url)
                 path.append(.whiskyWineInstall)
+                WhiskyWineInstaller.recordRuntimeEvent(
+                    "runtime.ui.finalized",
+                    detail: "surface=setup_download outcome=archive_ready"
+                )
             } catch {
                 downloadError = error.localizedDescription
+                WhiskyWineInstaller.recordRuntimeEvent(
+                    "runtime.ui.finalized",
+                    detail: "surface=setup_download outcome=failure stage=local_archive"
+                )
             }
         }
     }

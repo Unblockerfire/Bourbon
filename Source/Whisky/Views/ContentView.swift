@@ -558,6 +558,8 @@ private struct BourbonWineRuntimeUpdateView: View {
     @State private var status = "Ready to install the available runtime."
     @State private var failure: String?
     @State private var completed = false
+    @State private var updateTask: Task<Void, Never>?
+    @State private var attempt = 0
 
     var body: some View {
         VStack(spacing: 18) {
@@ -585,9 +587,14 @@ private struct BourbonWineRuntimeUpdateView: View {
                     .multilineTextAlignment(.center)
             }
             HStack {
-                Button(completed ? "Close" : "Cancel", action: close)
-                    .disabled(isUpdating)
-                Button("Update") {
+                Button(completed ? "Close" : "Cancel") {
+                    if isUpdating {
+                        updateTask?.cancel()
+                    } else {
+                        close()
+                    }
+                }
+                Button(failure == nil ? "Update" : "Retry") {
                     update()
                 }
                 .buttonStyle(.borderedProminent)
@@ -597,21 +604,43 @@ private struct BourbonWineRuntimeUpdateView: View {
         .padding(28)
         .frame(width: 480)
         .interactiveDismissDisabled(isUpdating)
+        .onDisappear {
+            updateTask?.cancel()
+        }
     }
 
     private func update() {
         WhiskyWineInstaller.recordUpdateEvent("runtime.update.button.clicked")
+        attempt += 1
+        WhiskyWineInstaller.recordRuntimeEvent(
+            "runtime.retry.started",
+            detail: "attempt=\(attempt) target=\(availableVersion)"
+        )
         isUpdating = true
         failure = nil
         status = "Starting BourbonWine update…"
-        Task {
+        updateTask = Task {
+            var outcome = "failure"
+            defer {
+                isUpdating = false
+                updateTask = nil
+                WhiskyWineInstaller.recordRuntimeEvent(
+                    "runtime.ui.finalized",
+                    detail: "outcome=\(outcome) target=\(availableVersion)"
+                )
+            }
             do {
                 WhiskyWineInstaller.recordUpdateEvent("runtime.update.started", detail: "target=\(availableVersion)")
                 status = "Verifying and installing BourbonWine \(availableVersion)…"
                 let installedVersion = try await WhiskyWineInstaller.installLatestRuntimeUpdate()
+                try Task.checkCancellation()
                 let runtimeReady = await Task.detached(priority: .userInitiated) {
-                    WhiskyWineInstaller.runtimeReadiness(in: WhiskyWineInstaller.applicationFolder).isReady
+                    WhiskyWineInstaller.runtimeReadiness(
+                        in: WhiskyWineInstaller.applicationFolder,
+                        phase: "ui_final"
+                    ).isReady
                 }.value
+                try Task.checkCancellation()
                 guard installedVersion == String(availableVersion),
                       runtimeReady else {
                     throw NSError(
@@ -625,6 +654,11 @@ private struct BourbonWineRuntimeUpdateView: View {
                 }
                 completed = true
                 status = "BourbonWine \(installedVersion) installed successfully."
+                outcome = "success"
+            } catch is CancellationError {
+                outcome = "cancelled"
+                status = "BourbonWine update cancelled. The existing runtime was preserved."
+                failure = status
             } catch {
                 let safeError = error.localizedDescription.replacingOccurrences(of: "\n", with: " ")
                 WhiskyWineInstaller.recordUpdateEvent(
@@ -633,7 +667,6 @@ private struct BourbonWineRuntimeUpdateView: View {
                 )
                 failure = "BourbonWine update failed: \(safeError)"
             }
-            isUpdating = false
         }
     }
 

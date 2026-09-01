@@ -1,6 +1,7 @@
 import XCTest
 @testable import WhiskyKit
 
+// swiftlint:disable:next type_body_length
 final class WhiskyWineRuntimeReadinessTests: XCTestCase {
     func testExpectedRuntimeDestinationUsesBundleIdentifier() {
         let root = URL(fileURLWithPath: "/isolated/Application Support")
@@ -78,6 +79,50 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         let readiness = WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder)
         XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
         XCTAssertEqual(readiness.wineVersion?.trimmingCharacters(in: .whitespacesAndNewlines), "wine-11.16")
+    }
+
+    func testFailedStagedPreflightPreservesOldRuntimeAndReusesStagingOnRetry() throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        try fixture.makeRuntime(version: "0.9.0")
+        let archive = try fixture.archiveRuntime(
+            version: "1.0.2",
+            wineContents: "#!/bin/sh\nexit 7\n"
+        )
+
+        XCTAssertThrowsError(
+            try WhiskyWineInstaller.install(
+                from: archive,
+                runtimeVersion: "1.0.2",
+                into: fixture.applicationFolder
+            )
+        )
+        XCTAssertEqual(WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder)?.description, "0.9.0")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.preservedStagingWine.path))
+
+        try fixture.repairPreservedStagingWine()
+        try WhiskyWineInstaller.install(
+            from: archive,
+            runtimeVersion: "1.0.2",
+            into: fixture.applicationFolder
+        )
+
+        XCTAssertEqual(WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder)?.description, "1.0.2")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.preservedStagingRoot.path))
+    }
+
+    func testReadinessWineVersionTimeoutIsStageSpecific() throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        try fixture.makeRuntime(version: "1.0.2", wineContents: "#!/bin/sh\nsleep 10\n")
+
+        let readiness = RuntimeReadiness.validate(
+            applicationFolder: fixture.applicationFolder,
+            wineVersionTimeout: 0.1,
+            phase: "test_stage"
+        )
+
+        XCTAssertEqual(readiness.failures, ["wine_version_timeout:test_stage"])
     }
 
     func testFreshRuntimeExtractionPreservesExecutablePermissions() throws {
@@ -209,6 +254,8 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
 private final class RuntimeFixture {
     let root = FileManager.default.temporaryDirectory.appending(path: "BourbonRuntimeTests-\(UUID().uuidString)")
     var applicationFolder: URL { root.appending(path: "com.unblockerfire.BourbonDiagnostic") }
+    var preservedStagingRoot: URL { applicationFolder.appending(path: ".BourbonWineInstall-Staged") }
+    var preservedStagingWine: URL { preservedStagingRoot.appending(path: "Libraries/Wine/bin/wine") }
 
     init() throws { try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true) }
     func remove() { try? FileManager.default.removeItem(at: root) }
@@ -217,14 +264,15 @@ private final class RuntimeFixture {
         in applicationFolder: URL? = nil,
         version: String,
         includeWine: Bool = true,
-        includeNTDLL: Bool = true
+        includeNTDLL: Bool = true,
+        wineContents: String = "#!/bin/sh\necho wine-11.16\n"
     ) throws {
         let libraries = (applicationFolder ?? self.applicationFolder).appending(path: "Libraries")
         let wineRoot = libraries.appending(path: "Wine")
         let bin = wineRoot.appending(path: "bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         if includeWine {
-            try makeExecutable(at: bin.appending(path: "wine"), contents: "#!/bin/sh\necho wine-11.16\n")
+            try makeExecutable(at: bin.appending(path: "wine"), contents: wineContents)
         }
         try makeExecutable(at: bin.appending(path: "wineserver"), contents: "#!/bin/sh\necho wine-11.16\n")
         if includeNTDLL {
@@ -247,12 +295,21 @@ private final class RuntimeFixture {
         try marker.write(to: libraries.appending(path: "BourbonWineVersion.plist"))
     }
 
-    func archiveRuntime(version: String, includeNTDLL: Bool = true) throws -> URL {
+    func archiveRuntime(
+        version: String,
+        includeNTDLL: Bool = true,
+        wineContents: String = "#!/bin/sh\necho wine-11.16\n"
+    ) throws -> URL {
         let source = root.appending(path: "archive-source")
         if FileManager.default.fileExists(atPath: source.path) {
             try FileManager.default.removeItem(at: source)
         }
-        try makeRuntime(in: source, version: version, includeNTDLL: includeNTDLL)
+        try makeRuntime(
+            in: source,
+            version: version,
+            includeNTDLL: includeNTDLL,
+            wineContents: wineContents
+        )
         let archive = root.appending(path: "runtime.tar.gz")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
@@ -266,6 +323,10 @@ private final class RuntimeFixture {
     func writeMarker(version: String) throws {
         let marker = try XCTUnwrap(WhiskyWineInstaller.installedVersionMarkerData(runtimeVersion: version))
         try marker.write(to: applicationFolder.appending(path: "Libraries/BourbonWineVersion.plist"))
+    }
+
+    func repairPreservedStagingWine() throws {
+        try makeExecutable(at: preservedStagingWine, contents: "#!/bin/sh\necho wine-11.16\n")
     }
 
     private func makeExecutable(at url: URL, contents: String) throws {

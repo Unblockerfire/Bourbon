@@ -17,77 +17,90 @@
 //
 
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 
 public class Tar {
     static let tarBinary: URL = URL(fileURLWithPath: "/usr/bin/tar")
 
     public static func tar(folder: URL, toURL: URL) throws {
-        let process = Process()
-        let pipe = Pipe()
-
-        process.executableURL = tarBinary
-        process.arguments = ["-zcf", "\(toURL.path)", "\(folder.path)"]
-        process.standardOutput = pipe
-        process.standardError = pipe
-
-        try process.run()
-
-        if let output = try pipe.fileHandleForReading.readToEnd() {
-            let outputString = String(data: output, encoding: .utf8) ?? String()
-            process.waitUntilExit()
-            let status = process.terminationStatus
-            if status != 0 {
-                throw outputString
-            }
-        }
+        _ = try run(arguments: ["-zcf", toURL.path, folder.path], timeout: 300)
     }
 
     public static func untar(tarBall: URL, toURL: URL) throws {
-        let process = Process()
-        let pipe = Pipe()
-
-        process.executableURL = tarBinary
-        process.arguments = ["-xzf", "\(tarBall.path)", "-C", "\(toURL.path)"]
-        process.standardOutput = pipe
-        process.standardError = pipe
-
-        try process.run()
-
-        if let output = try pipe.fileHandleForReading.readToEnd() {
-            let outputString = String(data: output, encoding: .utf8) ?? String()
-            process.waitUntilExit()
-            let status = process.terminationStatus
-            if status != 0 {
-                throw outputString
-            }
-        }
+        _ = try run(arguments: ["-xzf", tarBall.path, "-C", toURL.path], timeout: 300)
     }
 
     public static func list(tarBall: URL) throws -> [String] {
+        let output = try run(arguments: ["-tzf", tarBall.path], timeout: 60)
+        return output
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+    }
+
+    private static func run(arguments: [String], timeout: TimeInterval) throws -> String {
         let process = Process()
-        let pipe = Pipe()
-
         process.executableURL = tarBinary
-        process.arguments = ["-tzf", "\(tarBall.path)"]
-        process.standardOutput = pipe
-        process.standardError = pipe
+        process.arguments = arguments
 
-        try process.run()
+        let fileManager = FileManager.default
+        let captureURL = fileManager.temporaryDirectory
+            .appending(path: "BourbonTar-\(UUID().uuidString).log")
+        guard fileManager.createFile(atPath: captureURL.path, contents: nil) else {
+            throw "Bourbon could not create a temporary tar diagnostic capture."
+        }
+        defer { try? fileManager.removeItem(at: captureURL) }
 
-        if let output = try pipe.fileHandleForReading.readToEnd() {
-            let outputString = String(data: output, encoding: .utf8) ?? String()
-            process.waitUntilExit()
-            let status = process.terminationStatus
-            if status != 0 {
-                throw outputString
+        let writer = try FileHandle(forWritingTo: captureURL)
+        process.standardOutput = writer
+        process.standardError = writer
+        do {
+            try process.run()
+        } catch {
+            try? writer.close()
+            throw error
+        }
+        try? writer.close()
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            if withUnsafeCurrentTask(body: { $0?.isCancelled ?? false }) {
+                stop(process)
+                throw CancellationError()
             }
-
-            return outputString
-                .split(whereSeparator: \.isNewline)
-                .map(String.init)
+            Thread.sleep(forTimeInterval: 0.05)
         }
 
-        return []
+        if process.isRunning {
+            stop(process)
+            throw "tar timed out after \(Int(timeout)) seconds."
+        }
+
+        let data = (try? Data(contentsOf: captureURL)) ?? Data()
+        let output = String(data: data, encoding: .utf8) ?? ""
+        guard process.terminationStatus == 0 else {
+            throw output.isEmpty ? "tar failed with exit status \(process.terminationStatus)." : output
+        }
+        return output
+    }
+
+    private static func stop(_ process: Process) {
+        guard process.isRunning else { return }
+        process.terminate()
+        let deadline = Date().addingTimeInterval(1)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        #if canImport(Darwin)
+        if process.isRunning {
+            _ = Darwin.kill(process.processIdentifier, SIGKILL)
+            let killDeadline = Date().addingTimeInterval(1)
+            while process.isRunning && Date() < killDeadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
+        #endif
     }
 }
 
