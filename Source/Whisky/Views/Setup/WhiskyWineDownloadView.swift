@@ -18,52 +18,7 @@ struct WhiskyWineDownloadView: View {
         BourbonPanelBackdrop {
             VStack(spacing: 22) {
                 Spacer(minLength: 0)
-
-                BourbonFloatingPanel(maxWidth: 560) {
-                    VStack(spacing: 22) {
-                        Text("Download BourbonWine")
-                            .font(.largeTitle.bold())
-
-                        Text("Bourbon is downloading the runtime it uses to open Windows apps.")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-
-                        if let downloadError {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 42))
-                                .foregroundStyle(BourbonStyle.amber)
-
-                            Text(downloadError)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-
-                            Button("Retry") {
-                                download()
-                            }
-                            .buttonStyle(BourbonPrimaryButtonStyle())
-                        } else {
-                            ProgressView(value: downloadProgress)
-                                .frame(width: 320)
-
-                            Text("\(Int(downloadProgress * 100))%")
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Button("Install BourbonWine Manually") {
-                            chooseLocalArchive()
-                        }
-                        .buttonStyle(BourbonSecondaryButtonStyle())
-                        .help("Use a BourbonWine archive already saved on this Mac.")
-
-                        Button("Download BourbonWine Manually") {
-                            downloadManually()
-                        }
-                        .buttonStyle(BourbonSecondaryButtonStyle())
-                        .help("Open the official BourbonWine archive download in your browser.")
-                    }
-                }
-
+                downloadPanel
                 Spacer(minLength: 0)
             }
         }
@@ -75,6 +30,45 @@ struct WhiskyWineDownloadView: View {
         .onDisappear {
             downloadTask?.cancel()
             observation?.invalidate()
+        }
+    }
+
+    private var downloadPanel: some View {
+        BourbonFloatingPanel(maxWidth: 560) {
+            VStack(spacing: 22) {
+                Text("Download BourbonWine")
+                    .font(.largeTitle.bold())
+                Text("Bourbon is downloading the runtime it uses to open Windows apps.")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                downloadStatus
+                Button("Install BourbonWine Manually") { chooseLocalArchive() }
+                    .buttonStyle(BourbonSecondaryButtonStyle())
+                    .help("Use a BourbonWine archive already saved on this Mac.")
+                Button("Download BourbonWine Manually") { downloadManually() }
+                    .buttonStyle(BourbonSecondaryButtonStyle())
+                    .help("Open the official BourbonWine archive download in your browser.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var downloadStatus: some View {
+        if let downloadError {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 42))
+                .foregroundStyle(BourbonStyle.amber)
+            Text(downloadError)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Retry") { download() }
+                .buttonStyle(BourbonPrimaryButtonStyle())
+        } else {
+            ProgressView(value: downloadProgress)
+                .frame(width: 320)
+            Text("\(Int(downloadProgress * 100))%")
+                .foregroundStyle(.secondary)
         }
     }
 
