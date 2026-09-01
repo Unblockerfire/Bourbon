@@ -284,26 +284,7 @@ public class WhiskyWineInstaller {
             expectedRuntimeVersion: requiredRuntimeVersion,
             runWineVersion: false
         )
-        guard files.isReady else {
-            let state: RuntimeDiscovery.State
-            if files.failures.contains("runtime_version_mismatch") {
-                state = .unsupported
-            } else if files.failures.contains(where: {
-                $0.hasPrefix("missing:") || $0.hasPrefix("not_executable:")
-            }) {
-                state = .corruptOrIncomplete
-            } else {
-                state = .verificationFailed
-            }
-            let event = state == .corruptOrIncomplete
-                ? "runtime.discovery.incomplete"
-                : "runtime.discovery.valid"
-            recordRuntimeEvent(
-                event,
-                detail: "state=\(state.rawValue) failures=\(files.failures.joined(separator: ","))"
-            )
-            return RuntimeDiscovery(state: state, readiness: files)
-        }
+        if let discovery = discoveryForInvalidFiles(files) { return discovery }
 
         recordRuntimeEvent("runtime.discovery.valid")
         do {
@@ -338,6 +319,28 @@ public class WhiskyWineInstaller {
                 errorDescription: error.localizedDescription
             )
         }
+    }
+
+    private static func discoveryForInvalidFiles(_ files: RuntimeReadiness) -> RuntimeDiscovery? {
+        guard !files.isReady else { return nil }
+        let state: RuntimeDiscovery.State
+        if files.failures.contains("runtime_version_mismatch") {
+            state = .unsupported
+        } else if files.failures.contains(where: {
+            $0.hasPrefix("missing:") || $0.hasPrefix("not_executable:")
+        }) {
+            state = .corruptOrIncomplete
+        } else {
+            state = .verificationFailed
+        }
+        let event = state == .corruptOrIncomplete
+            ? "runtime.discovery.incomplete"
+            : "runtime.discovery.valid"
+        recordRuntimeEvent(
+            event,
+            detail: "state=\(state.rawValue) failures=\(files.failures.joined(separator: ","))"
+        )
+        return RuntimeDiscovery(state: state, readiness: files)
     }
 
     /// Re-checks an existing runtime after the user approves Wine in macOS
