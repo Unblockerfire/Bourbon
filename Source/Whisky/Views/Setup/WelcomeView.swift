@@ -61,6 +61,7 @@ struct WelcomeView: View {
     @State private var activatedLicenseKey: String?
     @State private var hasUsableLicense = false
     @State private var installStatusRequestID = UUID()
+    @State private var runtimeDiscovery: RuntimeDiscovery?
     @Binding var path: [SetupStage]
     @Binding var showSetup: Bool
     @Binding var showBottleCreation: Bool
@@ -174,6 +175,17 @@ struct WelcomeView: View {
                 )
             }
             .padding(.vertical, 4)
+
+            if let runtimeDiscovery,
+               runtimeDiscovery.state == .verificationFailed {
+                Text(
+                    "BourbonWine is installed but could not complete its readiness check. " +
+                        "Retry the check before replacing the runtime."
+                )
+                .font(.callout)
+                .foregroundStyle(BourbonStyle.amber)
+                .multilineTextAlignment(.center)
+            }
 
             if showManualSetup {
                 ManualSetupView(rosettaInstalled: rosettaInstalled, whiskyWineInstalled: whiskyWineInstalled)
@@ -501,15 +513,17 @@ struct WelcomeView: View {
         let requestID = installStatusRequestID
         WhiskyWineInstaller.recordRuntimeEvent("runtime.bootstrap.setup_check.started")
         Task {
-            let installed = await Task.detached(priority: .userInitiated) {
-                WhiskyWineInstaller.isWhiskyWineInstalled()
+            let discovery = await Task.detached(priority: .userInitiated) {
+                await WhiskyWineInstaller.discoverRuntime()
             }.value
             guard requestID == installStatusRequestID, !Task.isCancelled else { return }
+            runtimeDiscovery = discovery
+            let installed = discovery.state == .ready
             whiskyWineInstalled = installed
             hasInstalledDependencies = rosettaInstalled == true && installed
             WhiskyWineInstaller.recordRuntimeEvent(
                 "runtime.bootstrap.setup_check.completed",
-                detail: "ready=\(installed)"
+                detail: "state=\(discovery.state.rawValue) ready=\(installed)"
             )
         }
     }
@@ -560,7 +574,20 @@ struct WelcomeView: View {
         }
 
         if whiskyWineInstalled != true {
-            path.append(.whiskyWineDownload)
+            switch runtimeDiscovery?.state {
+            case .gatekeeperBlocked:
+                WhiskyWineInstaller.recordRuntimeEvent("runtime.download.skipped_existing", detail: "state=gatekeeper_blocked")
+                path.append(.whiskyWineGatekeeperRecovery)
+            case .verificationFailed, .installedUnverified:
+                WhiskyWineInstaller.recordRuntimeEvent(
+                    "runtime.download.skipped_existing",
+                    detail: "state=\(runtimeDiscovery?.state.rawValue ?? "unknown")"
+                )
+                checkInstallStatus()
+            default:
+                WhiskyWineInstaller.recordRuntimeEvent("runtime.download.required")
+                path.append(.whiskyWineDownload)
+            }
             return
         }
 

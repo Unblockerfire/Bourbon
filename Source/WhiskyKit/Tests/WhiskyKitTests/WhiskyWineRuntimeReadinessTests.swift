@@ -38,6 +38,19 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         XCTAssertFalse(WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder).isReady)
     }
 
+    func testDiscoveryReportsMissingRuntimeWithoutSchedulingDownload() async throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+
+        let discovery = await WhiskyWineInstaller.discoverRuntime(
+            in: fixture.applicationFolder,
+            expectedRuntimeVersion: "1.0.2"
+        )
+
+        XCTAssertEqual(discovery.state, .missing)
+        XCTAssertTrue(discovery.requiresDownload)
+    }
+
     func testMarkerCannotMakeMissingWineReady() throws {
         let fixture = try RuntimeFixture()
         defer { fixture.remove() }
@@ -67,6 +80,20 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         XCTAssertFalse(WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder).isReady)
     }
 
+    func testIncompleteRuntimeDiscoveryRequiresReplacement() async throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        try fixture.makeRuntime(version: "1.0.2", includeNTDLL: false)
+
+        let discovery = await WhiskyWineInstaller.discoverRuntime(
+            in: fixture.applicationFolder,
+            expectedRuntimeVersion: "1.0.2"
+        )
+
+        XCTAssertEqual(discovery.state, .corruptOrIncomplete)
+        XCTAssertTrue(discovery.requiresDownload)
+    }
+
     func testRuntimeUpdaterInstallLifecycleReplacesOldRuntimeAndRunsWine() throws {
         let fixture = try RuntimeFixture()
         defer { fixture.remove() }
@@ -78,6 +105,20 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         let readiness = WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder)
         XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
         XCTAssertEqual(readiness.wineVersion?.trimmingCharacters(in: .whitespacesAndNewlines), "wine-11.16")
+        XCTAssertTrue(WhiskyWineInstaller.hasRestorablePreviousRuntime(in: fixture.applicationFolder))
+    }
+
+    func testRestorePreviousRuntimeRetainsTheReplacedRuntime() throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        try fixture.makeRuntime(version: "1.0.1")
+        let archive = try fixture.archiveRuntime(version: "1.0.2")
+        try WhiskyWineInstaller.install(from: archive, runtimeVersion: "1.0.2", into: fixture.applicationFolder)
+
+        try WhiskyWineInstaller.restorePreviousRuntime(in: fixture.applicationFolder)
+
+        XCTAssertEqual(WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder).map(String.init(describing:)), "1.0.1")
+        XCTAssertTrue(WhiskyWineInstaller.hasRestorablePreviousRuntime(in: fixture.applicationFolder))
     }
 
     func testFreshRuntimeExtractionPreservesExecutablePermissions() throws {
@@ -157,6 +198,38 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         } catch let error as WineRuntimePreflightError {
             XCTAssertTrue(error.isGatekeeperBlocked)
         }
+    }
+
+    func testGatekeeperBlockedDiscoverySkipsDownloadOnRelaunch() async throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        try fixture.makeRuntime(version: "1.0.2")
+        try fixture.writeWine(contents: "#!/bin/sh\necho 'Apple cannot verify wine' >&2\nexit 1\n")
+
+        let discovery = await WhiskyWineInstaller.discoverRuntime(
+            in: fixture.applicationFolder,
+            expectedRuntimeVersion: "1.0.2"
+        )
+
+        XCTAssertEqual(discovery.state, .gatekeeperBlocked)
+        XCTAssertFalse(discovery.requiresDownload)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: fixture.applicationFolder.appending(path: "Libraries/Wine/bin/wine").path
+        ))
+    }
+
+    func testInstalledUsableRuntimeIsReadyOnNextLaunch() async throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        try fixture.makeRuntime(version: "1.0.2")
+
+        let discovery = await WhiskyWineInstaller.discoverRuntime(
+            in: fixture.applicationFolder,
+            expectedRuntimeVersion: "1.0.2"
+        )
+
+        XCTAssertEqual(discovery.state, .ready)
+        XCTAssertFalse(discovery.requiresDownload)
     }
 
     func testRetryKeepsGenericRuntimeFailureDistinct() async throws {

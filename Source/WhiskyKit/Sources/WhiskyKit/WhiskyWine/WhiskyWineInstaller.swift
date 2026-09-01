@@ -227,6 +227,10 @@ public class WhiskyWineInstaller {
     /// URL to the installed `wine` `bin` directory
     public static let binFolder: URL = libraryFolder.appending(path: "Wine").appending(path: "bin")
 
+    /// A single retained runtime copy used only for a safe, user-initiated recovery.
+    /// It is a sibling of `Libraries` so its marker and manifest stay together.
+    public static let previousLibraryFolder: URL = applicationFolder.appending(path: "Libraries.previous")
+
     public static func isWhiskyWineInstalled() -> Bool {
         runtimeReadiness(in: applicationFolder).isReady
     }
@@ -235,11 +239,86 @@ public class WhiskyWineInstaller {
         runtimeReadiness(in: applicationFolder).hasRequiredFiles
     }
 
+    public static func previousRuntimeReadiness(
+        in applicationFolder: URL = applicationFolder
+    ) -> RuntimeReadiness {
+        RuntimeReadiness.validate(
+            applicationFolder: applicationFolder,
+            librariesFolder: applicationFolder.appending(path: "Libraries.previous"),
+            runWineVersion: false
+        )
+    }
+
+    public static func hasRestorablePreviousRuntime(
+        in applicationFolder: URL = applicationFolder
+    ) -> Bool {
+        previousRuntimeReadiness(in: applicationFolder).isReady
+    }
+
     /// The only authoritative statement that a runtime is ready.  A version marker is
     /// deliberately not sufficient: it is written last and is checked against the
     /// manifest shipped inside the runtime itself.
     public static func runtimeReadiness(in applicationFolder: URL) -> RuntimeReadiness {
         RuntimeReadiness.validate(applicationFolder: applicationFolder)
+    }
+
+    /// Discovers an existing runtime without equating a failed preflight with a
+    /// missing installation. In particular, Gatekeeper approval is recoverable
+    /// and must never cause a replacement download on the next launch.
+    public static func discoverRuntime(
+        in applicationFolder: URL = applicationFolder,
+        expectedRuntimeVersion: String? = nil
+    ) async -> RuntimeDiscovery {
+        recordRuntimeEvent("runtime.discovery.started")
+        let requiredRuntimeVersion = expectedRuntimeVersion ?? bundledDiagnosticRuntime()?.info.runtimeVersion
+        let fileManager = FileManager.default
+        let wineRoot = applicationFolder.appending(path: "Libraries/Wine")
+        guard fileManager.fileExists(atPath: wineRoot.path) else {
+            recordRuntimeEvent("runtime.discovery.missing")
+            return RuntimeDiscovery(state: .missing)
+        }
+
+        recordRuntimeEvent("runtime.discovery.found")
+        let files = RuntimeReadiness.validate(
+            applicationFolder: applicationFolder,
+            expectedRuntimeVersion: requiredRuntimeVersion,
+            runWineVersion: false
+        )
+        guard files.isReady else {
+            let state: RuntimeDiscovery.State
+            if files.failures.contains("runtime_version_mismatch") {
+                state = .unsupported
+            } else if files.failures.contains(where: {
+                $0.hasPrefix("missing:") || $0.hasPrefix("not_executable:")
+            }) {
+                state = .corruptOrIncomplete
+            } else {
+                state = .verificationFailed
+            }
+            let event = state == .corruptOrIncomplete
+                ? "runtime.discovery.incomplete"
+                : "runtime.discovery.valid"
+            recordRuntimeEvent(event, detail: "state=\(state.rawValue) failures=\(files.failures.joined(separator: ","))")
+            return RuntimeDiscovery(state: state, readiness: files)
+        }
+
+        recordRuntimeEvent("runtime.discovery.valid")
+        do {
+            let result = try await Wine.preflightRuntime(
+                executableURL: applicationFolder.appending(path: "Libraries/Wine/bin/wine")
+            )
+            recordRuntimeEvent("runtime.discovery.ready", detail: "wine_version=\(result.version)")
+            return RuntimeDiscovery(state: .ready, readiness: files, wineVersion: result.version)
+        } catch let error as WineRuntimePreflightError where error.isGatekeeperBlocked {
+            recordRuntimeEvent("runtime.discovery.gatekeeper_blocked")
+            return RuntimeDiscovery(state: .gatekeeperBlocked, readiness: files, errorDescription: error.localizedDescription)
+        } catch {
+            recordRuntimeEvent(
+                "runtime.discovery.valid",
+                detail: "state=verification_failed error=\(WineDiagnosticSanitizer.singleLine(error.localizedDescription))"
+            )
+            return RuntimeDiscovery(state: .verificationFailed, readiness: files, errorDescription: error.localizedDescription)
+        }
     }
 
     /// Re-checks an existing runtime after the user approves Wine in macOS
@@ -275,6 +354,48 @@ public class WhiskyWineInstaller {
                 "runtime.retry.failed",
                 detail: "stage=preflight error=\(WineDiagnosticSanitizer.singleLine(error.localizedDescription))"
             )
+            throw error
+        }
+    }
+
+    /// Atomically promotes the one retained previous runtime back into use. The
+    /// caller still performs the normal bounded Wine preflight afterward.
+    public static func restorePreviousRuntime(
+        in destinationApplicationFolder: URL = applicationFolder
+    ) throws {
+        let fileManager = FileManager.default
+        let current = destinationApplicationFolder.appending(path: "Libraries")
+        let previous = destinationApplicationFolder.appending(path: "Libraries.previous")
+        let recovered = destinationApplicationFolder.appending(path: ".BourbonWineRestore-\(UUID().uuidString)")
+        let readiness = RuntimeReadiness.validate(
+            applicationFolder: destinationApplicationFolder,
+            librariesFolder: previous,
+            runWineVersion: false
+        )
+        guard readiness.isReady else { throw WhiskyWineInstallerError.runtimeNotReady(readiness) }
+
+        recordRuntimeEvent("runtime.rollback.started", detail: "purpose=restore_previous")
+        do {
+            if fileManager.fileExists(atPath: current.path) {
+                try fileManager.moveItem(at: current, to: recovered)
+            }
+            try fileManager.moveItem(at: previous, to: current)
+            let installed = RuntimeReadiness.validate(
+                applicationFolder: destinationApplicationFolder,
+                runWineVersion: false
+            )
+            guard installed.isReady else { throw WhiskyWineInstallerError.runtimeNotReady(installed) }
+            if fileManager.fileExists(atPath: recovered.path) {
+                try fileManager.moveItem(at: recovered, to: previous)
+            }
+            recordRuntimeEvent("runtime.rollback.succeeded", detail: "purpose=restore_previous")
+        } catch {
+            if fileManager.fileExists(atPath: current.path) {
+                try? fileManager.removeItem(at: current)
+            }
+            if fileManager.fileExists(atPath: recovered.path) {
+                try? fileManager.moveItem(at: recovered, to: current)
+            }
             throw error
         }
     }
@@ -350,6 +471,11 @@ public class WhiskyWineInstaller {
                 throw WhiskyWineInstallerError.runtimeNotReady(stagedReadiness)
             }
 
+            let existingReadiness = RuntimeReadiness.validate(
+                applicationFolder: destinationApplicationFolder,
+                runWineVersion: false
+            )
+            let preserveExistingRuntime = existingReadiness.isReady
             if fileManager.fileExists(atPath: destinationLibraryFolder.path(percentEncoded: false)) {
                 let backup = destinationApplicationFolder.appending(path: ".BourbonWineBackup-\(UUID().uuidString)")
                 backupLibraryFolder = backup
@@ -380,13 +506,25 @@ public class WhiskyWineInstaller {
                 }
                 if let backupLibraryFolder,
                    fileManager.fileExists(atPath: backupLibraryFolder.path(percentEncoded: false)) {
+                    recordRuntimeEvent("runtime.rollback.started", detail: "purpose=failed_replacement")
                     try? fileManager.moveItem(at: backupLibraryFolder, to: destinationLibraryFolder)
+                    recordRuntimeEvent("runtime.rollback.succeeded", detail: "purpose=failed_replacement")
                 }
                 throw error
             }
 
-            if let backupLibraryFolder {
-                try? fileManager.removeItem(at: backupLibraryFolder)
+            if let backupLibraryFolder,
+               fileManager.fileExists(atPath: backupLibraryFolder.path(percentEncoded: false)) {
+                if preserveExistingRuntime {
+                    let previousLibraryFolder = destinationApplicationFolder.appending(path: "Libraries.previous")
+                    if fileManager.fileExists(atPath: previousLibraryFolder.path(percentEncoded: false)) {
+                        try fileManager.removeItem(at: previousLibraryFolder)
+                    }
+                    try fileManager.moveItem(at: backupLibraryFolder, to: previousLibraryFolder)
+                    recordRuntimeEvent("runtime.backup.created", detail: "purpose=runtime_replacement")
+                } else {
+                    try fileManager.removeItem(at: backupLibraryFolder)
+                }
             }
             // Keep the saved archive available while a user completes any
             // Gatekeeper approval and for the separate manual-recovery path.
@@ -673,6 +811,44 @@ struct WhiskyWineVersionInfo: Codable {
     }
 }
 
+public struct RuntimeDiscovery: Sendable, Equatable {
+    public enum State: String, Sendable, Equatable {
+        case missing = "missing"
+        case installedUnverified = "installed_unverified"
+        case gatekeeperBlocked = "gatekeeper_blocked"
+        case ready = "ready"
+        case corruptOrIncomplete = "corrupt_or_incomplete"
+        case unsupported = "unsupported"
+        case verificationFailed = "verification_failed"
+    }
+
+    public let state: State
+    public let readiness: RuntimeReadiness?
+    public let wineVersion: String?
+    public let errorDescription: String?
+
+    public init(
+        state: State,
+        readiness: RuntimeReadiness? = nil,
+        wineVersion: String? = nil,
+        errorDescription: String? = nil
+    ) {
+        self.state = state
+        self.readiness = readiness
+        self.wineVersion = wineVersion
+        self.errorDescription = errorDescription
+    }
+
+    public var requiresDownload: Bool {
+        switch state {
+        case .missing, .corruptOrIncomplete, .unsupported:
+            return true
+        case .installedUnverified, .gatekeeperBlocked, .ready, .verificationFailed:
+            return false
+        }
+    }
+}
+
 /// Result of validating an installed BourbonWine runtime. This is intentionally
 /// filesystem-and-process based so a leftover directory or plist cannot suppress
 /// setup after an interrupted migration or extraction.
@@ -688,12 +864,13 @@ public struct RuntimeReadiness: Sendable, Equatable {
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     static func validate(
         applicationFolder: URL,
+        librariesFolder: URL? = nil,
         expectedRuntimeVersion: String? = nil,
         requireVersionMarker: Bool = true,
         runWineVersion: Bool = true,
         fileManager: FileManager = .default
     ) -> RuntimeReadiness {
-        let libraries = applicationFolder.appending(path: "Libraries")
+        let libraries = librariesFolder ?? applicationFolder.appending(path: "Libraries")
         let wineRoot = libraries.appending(path: "Wine")
         let wine = wineRoot.appending(path: "bin/wine")
         let wineserver = wineRoot.appending(path: "bin/wineserver")

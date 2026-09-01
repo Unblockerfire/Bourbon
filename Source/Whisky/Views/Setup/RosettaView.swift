@@ -103,15 +103,22 @@ struct RosettaView: View {
 
     func proceed() async {
         WhiskyWineInstaller.recordRuntimeEvent("runtime.bootstrap.rosetta_followup.started")
-        let runtimeReady = await Task.detached(priority: .userInitiated) {
-            WhiskyWineInstaller.isWhiskyWineInstalled()
+        let discovery = await Task.detached(priority: .userInitiated) {
+            await WhiskyWineInstaller.discoverRuntime()
         }.value
+        let runtimeReady = discovery.state == .ready
         WhiskyWineInstaller.recordRuntimeEvent(
             "runtime.bootstrap.rosetta_followup.completed",
-            detail: "ready=\(runtimeReady)"
+            detail: "state=\(discovery.state.rawValue) ready=\(runtimeReady)"
         )
         if !runtimeReady {
-            path.append(.whiskyWineDownload)
+            if discovery.state == .gatekeeperBlocked {
+                WhiskyWineInstaller.recordRuntimeEvent("runtime.download.skipped_existing", detail: "state=gatekeeper_blocked")
+                path.append(.whiskyWineGatekeeperRecovery)
+            } else if discovery.requiresDownload {
+                WhiskyWineInstaller.recordRuntimeEvent("runtime.download.required", detail: "state=\(discovery.state.rawValue)")
+                path.append(.whiskyWineDownload)
+            }
             return
         }
 

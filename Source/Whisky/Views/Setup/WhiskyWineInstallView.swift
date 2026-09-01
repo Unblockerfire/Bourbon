@@ -26,6 +26,7 @@ struct WhiskyWineInstallView: View {
     @State private var installStatus = "Preparing BourbonWine…"
     @Binding var tarLocation: URL
     @Binding var runtimeVersion: String?
+    @Binding var manualRuntimeArchive: Bool
     @Binding var path: [SetupStage]
     @Binding var showSetup: Bool
     @AppStorage("hasInstalledDependencies") private var hasInstalledDependencies = false
@@ -109,6 +110,9 @@ struct WhiskyWineInstallView: View {
                         detail: "ready=\(runtimeReady)"
                     )
                     outcome = "success"
+                    if manualRuntimeArchive {
+                        WhiskyWineInstaller.recordRuntimeEvent("runtime.manual.install.succeeded")
+                    }
                     proceed(runtimeReady: runtimeReady)
                 } catch let error as WineRuntimePreflightError where error.isGatekeeperBlocked {
                     outcome = "gatekeeper_recovery"
@@ -118,6 +122,12 @@ struct WhiskyWineInstallView: View {
                     errorMessage = "BourbonWine installation was cancelled. You can retry safely."
                 } catch {
                     outcome = "failure"
+                    if manualRuntimeArchive {
+                        WhiskyWineInstaller.recordRuntimeEvent(
+                            "runtime.manual.install.failed",
+                            detail: "error=\(error.localizedDescription)"
+                        )
+                    }
                     errorMessage = error.localizedDescription
                 }
             }

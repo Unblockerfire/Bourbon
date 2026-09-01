@@ -406,6 +406,7 @@ jobs:
           CONTENT_VIEW="Source/Whisky/Views/ContentView.swift"
           INSTALL_VIEW="Source/Whisky/Views/Setup/WhiskyWineInstallView.swift"
           RECOVERY_VIEW="Source/Whisky/Views/Setup/WhiskyWineGatekeeperRecoveryView.swift"
+          DOWNLOAD_VIEW="Source/Whisky/Views/Setup/WhiskyWineDownloadView.swift"
           INSTALLER="Source/WhiskyKit/Sources/WhiskyKit/WhiskyWine/WhiskyWineInstaller.swift"
 
           grep -Fq 'BourbonWineRuntimeUpdateView' "$CONTENT_VIEW"
@@ -444,6 +445,21 @@ jobs:
             runtime.retry.failed \
             runtime.readiness.completed \
             runtime.ui.finalized \
+            runtime.discovery.started \
+            runtime.discovery.missing \
+            runtime.discovery.found \
+            runtime.discovery.valid \
+            runtime.discovery.incomplete \
+            runtime.discovery.gatekeeper_blocked \
+            runtime.discovery.ready \
+            runtime.download.required \
+            runtime.download.skipped_existing \
+            runtime.manual.install.started \
+            runtime.manual.install.succeeded \
+            runtime.manual.install.failed \
+            runtime.backup.created \
+            runtime.rollback.started \
+            runtime.rollback.succeeded \
             runtime.update.started \
             runtime.update.download.started \
             runtime.update.download.progress \
@@ -457,12 +473,15 @@ jobs:
             runtime.update.preflight.started \
             runtime.update.preflight.completed \
             runtime.update.failed; do
-            grep -Fq "$event" "$CONTENT_VIEW" "$INSTALL_VIEW" "$RECOVERY_VIEW" "$INSTALLER"
+            grep -Fq "$event" "$CONTENT_VIEW" "$INSTALL_VIEW" "$RECOVERY_VIEW" "$DOWNLOAD_VIEW" "$INSTALLER"
           done
 
           grep -Fq 'macOS blocked BourbonWine' "$RECOVERY_VIEW"
           grep -Fq 'Open Privacy & Security' "$RECOVERY_VIEW"
           grep -Fq 'retryInstalledRuntimeReadiness' "$RECOVERY_VIEW"
+          grep -Fq 'Restore Previous BourbonWine' "$RECOVERY_VIEW"
+          grep -Fq 'Install BourbonWine Manually' "$DOWNLOAD_VIEW"
+          grep -Fq 'Download BourbonWine Manually' "$DOWNLOAD_VIEW"
           grep -Fq 'runWineVersion: false' "$INSTALLER"
 
           WINE='Source/WhiskyKit/Sources/WhiskyKit/Wine/Wine.swift'

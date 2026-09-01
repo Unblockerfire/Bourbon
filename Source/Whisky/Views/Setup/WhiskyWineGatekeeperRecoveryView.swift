@@ -34,10 +34,11 @@ struct WhiskyWineGatekeeperRecoveryView: View {
                             .buttonStyle(BourbonPrimaryButtonStyle())
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Find the message about wine.")
-                            Text("Click Open Anyway.")
-                            Text("Return to Bourbon.")
-                            Text("Click Retry.")
+                            Text("1. Open Privacy & Security.")
+                            Text("2. Find the blocked wine message and click Open Anyway.")
+                            Text("3. Approve the macOS confirmation if it appears.")
+                            Text("4. Return to Bourbon and click Retry.")
+                            Text("5. Quit and reopen Bourbon if macOS asks you to.")
                         }
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -52,6 +53,13 @@ struct WhiskyWineGatekeeperRecoveryView: View {
                         Button(retrying ? "Checking BourbonWine…" : "Retry") { retry() }
                             .buttonStyle(BourbonSecondaryButtonStyle())
                             .disabled(retrying)
+
+                        if WhiskyWineInstaller.hasRestorablePreviousRuntime() {
+                            Button("Restore Previous BourbonWine") { restorePrevious() }
+                                .buttonStyle(BourbonSecondaryButtonStyle())
+                                .disabled(retrying)
+                                .help("Restore the last structurally valid BourbonWine runtime.")
+                        }
                     }
                 }
                 Spacer(minLength: 0)
@@ -102,6 +110,30 @@ struct WhiskyWineGatekeeperRecoveryView: View {
                 errorMessage = "BourbonWine readiness check was cancelled. Retry when you are ready."
             } catch {
                 outcome = "failure"
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func restorePrevious() {
+        retrying = true
+        errorMessage = nil
+        Task {
+            var outcome = "cancelled"
+            defer {
+                retrying = false
+                WhiskyWineInstaller.recordRuntimeEvent("runtime.ui.finalized", detail: "outcome=\(outcome)")
+            }
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try WhiskyWineInstaller.restorePreviousRuntime()
+                }.value
+                _ = try await WhiskyWineInstaller.retryInstalledRuntimeReadiness()
+                outcome = "restored_previous"
+                hasInstalledDependencies = true
+                path.removeAll()
+            } catch {
+                outcome = "restore_failed"
                 errorMessage = error.localizedDescription
             }
         }
