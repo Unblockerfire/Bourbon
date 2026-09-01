@@ -1,7 +1,6 @@
 import XCTest
 @testable import WhiskyKit
 
-// swiftlint:disable:next type_body_length
 final class WhiskyWineRuntimeReadinessTests: XCTestCase {
     func testExpectedRuntimeDestinationUsesBundleIdentifier() {
         let root = URL(fileURLWithPath: "/isolated/Application Support")

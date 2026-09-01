@@ -698,10 +698,10 @@ struct WhiskyWineVersionInfo: Codable {
     }
 }
 
+// swiftlint:disable:next type_body_length
 /// Result of validating an installed BourbonWine runtime. This is intentionally
 /// filesystem-and-process based so a leftover directory or plist cannot suppress
 /// setup after an interrupted migration or extraction.
-// swiftlint:disable:next type_body_length
 public struct RuntimeReadiness: Sendable, Equatable {
     static let wineVersionTimeout: TimeInterval = 45
 

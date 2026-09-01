@@ -609,6 +609,7 @@ private struct BourbonWineRuntimeUpdateView: View {
         }
     }
 
+    // swiftlint:disable:next function_body_length
     private func update() {
         WhiskyWineInstaller.recordUpdateEvent("runtime.update.button.clicked")
         attempt += 1
