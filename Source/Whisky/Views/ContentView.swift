@@ -29,6 +29,46 @@ extension Notification.Name {
     static let bourbonOpenAdminLogin = Notification.Name("BourbonOpenAdminLogin")
 }
 
+/// The runtime-update sheet payload is its presentation state.  SwiftUI never
+/// receives a request to present this sheet without the version it needs to render.
+private struct BourbonWineRuntimeUpdatePresentation: Identifiable {
+    let version: SemanticVersion
+
+    var id: String { String(describing: version) }
+}
+
+@MainActor
+enum BourbonSheetDiagnostics {
+    enum Source: String {
+        case sparklePendingUpdate = "sparkle_pending_update"
+        case adminUnlock = "admin_unlock"
+        case bourbonWineRuntimeUpdate = "bourbon_wine_runtime_update"
+        case fileOpen = "file_open"
+        case bottleExplanation = "bottle_explanation"
+    }
+
+    static func recordPresentation(source: Source) {
+        record("sheet.present", source: source)
+        DispatchQueue.main.async {
+            record("sheet.present", source: source)
+        }
+    }
+
+    static func recordDismissal(source: Source) {
+        record("sheet.dismiss", source: source)
+    }
+
+    private static func record(_ event: String, source: Source) {
+        let keyWindow = NSApp.keyWindow
+        BourbonLicenseDiagnostics.record(
+            event,
+            detail: "source=\(source.rawValue) window=\(keyWindow?.windowNumber ?? -1) " +
+                "class=\(keyWindow.map { String(describing: type(of: $0)) } ?? \"none\") " +
+                "attached_sheet=\(keyWindow?.attachedSheet != nil)"
+        )
+    }
+}
+
 // swiftlint:disable:next type_body_length
 struct ContentView: View {
     @AppStorage("selectedBottleURL") private var selectedBottleURL: URL?
@@ -54,8 +94,10 @@ struct ContentView: View {
     @State private var homeSubtitle = BourbonHomeCopy.randomSubtitle()
     @State private var showAdminUnlock = false
     @State private var previousPageBeforeCreation: MainContentPage? = .home
-    @State private var runtimeUpdateVersion: SemanticVersion?
-    @State private var showRuntimeUpdate = false
+    // A sheet must have one authoritative presentation value. Keeping a Bool
+    // separate from the optional version allowed SwiftUI to create a sheet with
+    // an EmptyView while no update payload was available.
+    @State private var runtimeUpdatePresentation: BourbonWineRuntimeUpdatePresentation?
     @State private var resolvedAccountLicense: BourbonLicenseRecord?
 
     @State private var bottleFilter = ""
@@ -86,17 +128,30 @@ struct ContentView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .sheet(isPresented: $pendingUpdateManager.isPromptPresented) {
+        .sheet(isPresented: $pendingUpdateManager.isPromptPresented, onDismiss: {
+            BourbonSheetDiagnostics.recordDismissal(source: .sparklePendingUpdate)
+        }) {
             BourbonPendingUpdatePrompt(manager: pendingUpdateManager, updater: updater)
-        }
-        .sheet(isPresented: $showAdminUnlock) {
-            AdminUnlockView()
-        }
-        .sheet(isPresented: $showRuntimeUpdate) {
-            if let runtimeUpdateVersion {
-                BourbonWineRuntimeUpdateView(availableVersion: runtimeUpdateVersion) {
-                    showRuntimeUpdate = false
+                .onAppear {
+                    BourbonSheetDiagnostics.recordPresentation(source: .sparklePendingUpdate)
                 }
+        }
+        .sheet(isPresented: $showAdminUnlock, onDismiss: {
+            BourbonSheetDiagnostics.recordDismissal(source: .adminUnlock)
+        }) {
+            AdminUnlockView()
+                .onAppear {
+                    BourbonSheetDiagnostics.recordPresentation(source: .adminUnlock)
+                }
+        }
+        .sheet(item: $runtimeUpdatePresentation, onDismiss: {
+            BourbonSheetDiagnostics.recordDismissal(source: .bourbonWineRuntimeUpdate)
+        }) { presentation in
+            BourbonWineRuntimeUpdateView(availableVersion: presentation.version) {
+                runtimeUpdatePresentation = nil
+            }
+            .onAppear {
+                BourbonSheetDiagnostics.recordPresentation(source: .bourbonWineRuntimeUpdate)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .bourbonOpenAdminLogin)) { _ in
@@ -149,10 +204,15 @@ struct ContentView: View {
                 }
             }
         }
-        .sheet(item: $openedFileURL) { url in
+        .sheet(item: $openedFileURL, onDismiss: {
+            BourbonSheetDiagnostics.recordDismissal(source: .fileOpen)
+        }) { url in
             FileOpenView(fileURL: url,
                          currentBottle: selected,
                          bottles: bottleVM.bottles)
+                .onAppear {
+                    BourbonSheetDiagnostics.recordPresentation(source: .fileOpen)
+                }
         }
         .onChange(of: selected) {
             if selected != nil {
@@ -217,9 +277,13 @@ struct ContentView: View {
                 return await WhiskyWineInstaller.shouldUpdateWhiskyWine()
             }
             let updateInfo = await task.value
-            if updateInfo.0 {
-                runtimeUpdateVersion = updateInfo.1
-                showRuntimeUpdate = true
+            if updateInfo.0, !showSetup {
+                runtimeUpdatePresentation = BourbonWineRuntimeUpdatePresentation(version: updateInfo.1)
+            } else if updateInfo.0 {
+                BourbonLicenseDiagnostics.record(
+                    "sheet.not_presented",
+                    detail: "source=bourbon_wine_runtime_update reason=setup_active"
+                )
             }
 
             resolvedAccountLicense = await LicenseKeychainStore.currentLicenseAsync()

@@ -104,6 +104,16 @@ struct WelcomeView: View {
         .onAppear {
             migrateLegacyOnboardingFlags()
             checkInstallStatus()
+            DispatchQueue.main.async {
+                let mainWindow = NSApp.windows.first(where: { $0.isVisible && $0.sheetParent == nil })
+                BourbonLicenseDiagnostics.record(
+                    "sheet.welcome.state",
+                    detail: "main_window=\(mainWindow?.windowNumber ?? -1) " +
+                        "main_key=\(mainWindow?.isKeyWindow ?? false) " +
+                        "attached_sheet=\(mainWindow?.attachedSheet != nil) " +
+                        "key_window=\(NSApp.keyWindow?.windowNumber ?? -1)"
+                )
+            }
         }
         .task {
             await refreshLicenseState()
@@ -235,7 +245,9 @@ struct WelcomeView: View {
             }
             .padding(.top, 8)
         }
-        .sheet(isPresented: $showBottleExplanation) {
+        .sheet(isPresented: $showBottleExplanation, onDismiss: {
+            BourbonSheetDiagnostics.recordDismissal(source: .bottleExplanation)
+        }) {
             BourbonPanelBackdrop {
                 BourbonFloatingPanel(maxWidth: 420) {
                     VStack(spacing: 14) {
@@ -261,6 +273,9 @@ struct WelcomeView: View {
                 }
             }
             .frame(width: 520, height: 420)
+            .onAppear {
+                BourbonSheetDiagnostics.recordPresentation(source: .bottleExplanation)
+            }
         }
     }
 

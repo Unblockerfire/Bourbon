@@ -410,6 +410,18 @@ jobs:
           grep -Fq 'runtime.update.button.clicked' "$CONTENT_VIEW"
           grep -Fq 'installLatestRuntimeUpdate' "$CONTENT_VIEW"
           ! grep -A4 -F 'runtime.update.button.clicked' "$CONTENT_VIEW" | grep -Fq 'WhiskyWineInstaller.uninstall()'
+          grep -Fq '@State private var runtimeUpdatePresentation: BourbonWineRuntimeUpdatePresentation?' "$CONTENT_VIEW"
+          grep -Fq '.sheet(item: $runtimeUpdatePresentation' "$CONTENT_VIEW"
+          ! grep -Fq 'showRuntimeUpdate' "$CONTENT_VIEW"
+          ! grep -Fq 'runtimeUpdateVersion' "$CONTENT_VIEW"
+          grep -Fq 'if updateInfo.0, !showSetup' "$CONTENT_VIEW"
+          grep -Fq 'sheet.not_presented' "$CONTENT_VIEW"
+          for event in \
+            sheet.present \
+            sheet.dismiss \
+            sheet.welcome.state; do
+            grep -Fq "$event" "$CONTENT_VIEW" 'Source/Whisky/Views/Setup/WelcomeView.swift'
+          done
           for event in \
             runtime.update.started \
             runtime.update.download.started \
