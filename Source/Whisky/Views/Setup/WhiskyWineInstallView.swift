@@ -23,7 +23,6 @@ import WhiskyKit
 struct WhiskyWineInstallView: View {
     @State var installing: Bool = true
     @State private var errorMessage: String?
-    @State private var installTask: Task<Void, Never>?
     @Binding var tarLocation: URL
     @Binding var runtimeVersion: String?
     @Binding var path: [SetupStage]
@@ -58,11 +57,9 @@ struct WhiskyWineInstallView: View {
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.center)
                                 Button("Retry") {
-                                    WhiskyWineInstaller.recordRuntimeEvent(
-                                        "runtime.retry.started",
-                                        detail: "source=setup_install"
-                                    )
-                                    install()
+                                    if !path.isEmpty {
+                                        path.removeLast()
+                                    }
                                 }
                                 .buttonStyle(BourbonPrimaryButtonStyle())
                             }
@@ -80,48 +77,59 @@ struct WhiskyWineInstallView: View {
         }
         .navigationTitle("Installing BourbonWine")
         .onAppear {
-            install()
-        }
-        .onDisappear {
-            installTask?.cancel()
-        }
-    }
-
-    private func install() {
-        let archiveURL = tarLocation
-        let installedRuntimeVersion = runtimeVersion
-        installing = true
-        errorMessage = nil
-        installTask = Task {
-            var outcome = "failure"
-            defer {
-                installing = false
-                installTask = nil
-                WhiskyWineInstaller.recordRuntimeEvent(
-                    "runtime.ui.finalized",
-                    detail: "surface=setup_install outcome=\(outcome)"
-                )
-            }
-            do {
-                let worker = Task.detached(priority: .userInitiated) {
-                    try WhiskyWineInstaller.install(
-                        from: archiveURL,
-                        runtimeVersion: installedRuntimeVersion
+            let archiveURL = tarLocation
+            let installedRuntimeVersion = runtimeVersion
+            Task {
+                WhiskyWineInstaller.recordRuntimeEvent("runtime.retry.started")
+                WhiskyWineInstaller.recordRuntimeEvent("runtime.archive.selected")
+                var outcome = "cancelled"
+                defer {
+                    installing = false
+                    WhiskyWineInstaller.recordRuntimeEvent(
+                        "runtime.ui.finalized",
+                        detail: "outcome=\(outcome)"
                     )
                 }
-                try await withTaskCancellationHandler {
-                    try await worker.value
-                } onCancel: {
-                    worker.cancel()
+                do {
+                    WhiskyWineInstaller.recordRuntimeEvent("runtime.install.started")
+                    try await Task.detached(priority: .userInitiated) {
+                        try WhiskyWineInstaller.install(
+                            from: archiveURL,
+                            runtimeVersion: installedRuntimeVersion
+                        )
+                    }.value
+                    WhiskyWineInstaller.recordRuntimeEvent("runtime.install.completed")
+                    WhiskyWineInstaller.recordRuntimeEvent("runtime.readiness.completed", detail: "started=true")
+                    let runtimeReady = await Task.detached(priority: .userInitiated) {
+                        WhiskyWineInstaller.isWhiskyWineInstalled()
+                    }.value
+                    WhiskyWineInstaller.recordRuntimeEvent(
+                        "runtime.readiness.completed",
+                        detail: "ready=\(runtimeReady)"
+                    )
+                    guard runtimeReady else {
+                        throw NSError(
+                            domain: "BourbonWineInstall",
+                            code: 1,
+                            userInfo: [
+                                NSLocalizedDescriptionKey:
+                                    "BourbonWine was installed, but its readiness check did not pass. Try again."
+                            ]
+                        )
+                    }
+                    outcome = "success"
+                    proceed(runtimeReady: runtimeReady)
+                } catch is CancellationError {
+                    outcome = "cancelled"
+                    errorMessage = "BourbonWine installation was cancelled. Retry when you are ready."
+                } catch {
+                    outcome = "failure"
+                    WhiskyWineInstaller.recordRuntimeEvent(
+                        "runtime.install.failed",
+                        detail: "error=\(error.localizedDescription.replacingOccurrences(of: "\n", with: " "))"
+                    )
+                    errorMessage = error.localizedDescription
                 }
-                try Task.checkCancellation()
-                outcome = "success"
-                proceed(runtimeReady: true)
-            } catch is CancellationError {
-                outcome = "cancelled"
-                errorMessage = "BourbonWine installation was cancelled. The existing runtime was preserved."
-            } catch {
-                errorMessage = error.localizedDescription
             }
         }
     }

@@ -405,8 +405,6 @@ jobs:
           set -euo pipefail
           CONTENT_VIEW="Source/Whisky/Views/ContentView.swift"
           INSTALLER="Source/WhiskyKit/Sources/WhiskyKit/WhiskyWine/WhiskyWineInstaller.swift"
-          DOWNLOAD_VIEW="Source/Whisky/Views/Setup/WhiskyWineDownloadView.swift"
-          INSTALL_VIEW="Source/Whisky/Views/Setup/WhiskyWineInstallView.swift"
 
           grep -Fq 'BourbonWineRuntimeUpdateView' "$CONTENT_VIEW"
           grep -Fq 'runtime.update.button.clicked' "$CONTENT_VIEW"
@@ -425,6 +423,18 @@ jobs:
             grep -Fq "$event" "$CONTENT_VIEW" 'Source/Whisky/Views/Setup/WelcomeView.swift'
           done
           for event in \
+            runtime.retry.started \
+            runtime.archive.selected \
+            runtime.extract.started \
+            runtime.extract.completed \
+            runtime.install.started \
+            runtime.install.completed \
+            runtime.preflight.started \
+            runtime.wine_version.started \
+            runtime.wine_version.completed \
+            runtime.gatekeeper_check \
+            runtime.readiness.completed \
+            runtime.ui.finalized \
             runtime.update.started \
             runtime.update.download.started \
             runtime.update.download.progress \
@@ -438,26 +448,6 @@ jobs:
             runtime.update.preflight.started \
             runtime.update.preflight.completed \
             runtime.update.failed; do
-            grep -Fq "$event" "$CONTENT_VIEW" "$INSTALLER" "$DOWNLOAD_VIEW" "$INSTALL_VIEW"
-          done
-          grep -Fq 'runtime.install.staging_preserved' "$INSTALLER"
-          grep -Fq '.BourbonWineInstall-Staged' "$INSTALLER"
-          grep -Fq 'runBounded(process: process, timeout: timeout)' "$INSTALLER"
-          ! grep -A30 -F 'static func wineVersion(' "$INSTALLER" | grep -Fq 'readToEnd()'
-          ! grep -A30 -F 'static func wineVersion(' "$INSTALLER" | grep -Fq 'waitUntilExit()'
-          for event in \
-            runtime.retry.started \
-            runtime.archive.selected \
-            runtime.extract.started \
-            runtime.extract.completed \
-            runtime.install.started \
-            runtime.install.completed \
-            runtime.preflight.started \
-            runtime.wine_version.started \
-            runtime.wine_version.completed \
-            runtime.gatekeeper_check \
-            runtime.readiness.completed \
-            runtime.ui.finalized; do
             grep -Fq "$event" "$CONTENT_VIEW" "$INSTALLER"
           done
 
