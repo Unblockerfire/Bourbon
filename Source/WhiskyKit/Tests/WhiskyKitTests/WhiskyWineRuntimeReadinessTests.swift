@@ -381,7 +381,6 @@ private final class RuntimeFixture {
         XCTAssertEqual(process.terminationStatus, 0)
         return archive
     }
-
     func writeMarker(version: String) throws {
         let marker = try XCTUnwrap(WhiskyWineInstaller.installedVersionMarkerData(runtimeVersion: version))
         try marker.write(to: applicationFolder.appending(path: "Libraries/BourbonWineVersion.plist"))

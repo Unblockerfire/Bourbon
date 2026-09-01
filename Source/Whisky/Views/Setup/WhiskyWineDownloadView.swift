@@ -78,7 +78,6 @@ struct WhiskyWineDownloadView: View {
         }
     }
 
-    // swiftlint:disable:next function_body_length
     private func download() {
         downloadError = nil
         downloadProgress = 0
@@ -88,34 +87,7 @@ struct WhiskyWineDownloadView: View {
 
         Task {
             do {
-                let discovery = await WhiskyWineInstaller.discoverRuntime()
-                switch discovery.state {
-                case .ready:
-                    WhiskyWineInstaller.recordRuntimeEvent("runtime.download.skipped_existing", detail: "state=ready")
-                    path.removeAll()
-                    return
-                case .gatekeeperBlocked:
-                    WhiskyWineInstaller.recordRuntimeEvent(
-                        "runtime.download.skipped_existing",
-                        detail: "state=gatekeeper_blocked"
-                    )
-                    path.append(.whiskyWineGatekeeperRecovery)
-                    return
-                case .installedUnverified, .verificationFailed:
-                    WhiskyWineInstaller.recordRuntimeEvent(
-                        "runtime.download.skipped_existing",
-                        detail: "state=\(discovery.state.rawValue)"
-                    )
-                    downloadError = discovery.errorDescription
-                        ?? "BourbonWine is already installed. Retry its readiness check before replacing it."
-                    return
-                case .missing, .corruptOrIncomplete, .unsupported:
-                    WhiskyWineInstaller.recordRuntimeEvent(
-                        "runtime.download.required",
-                        detail: "state=\(discovery.state.rawValue)"
-                    )
-                }
-
+                if await existingRuntimePreventsDownload() { return }
                 if try loadBundledDiagnosticRuntime() { return }
 
                 let runtimeInfo = try await WhiskyWineInstaller.latestRuntimeInfo()
@@ -160,6 +132,37 @@ struct WhiskyWineDownloadView: View {
             } catch {
                 downloadError = error.localizedDescription
             }
+        }
+    }
+
+    private func existingRuntimePreventsDownload() async -> Bool {
+        let discovery = await WhiskyWineInstaller.discoverRuntime()
+        switch discovery.state {
+        case .ready:
+            WhiskyWineInstaller.recordRuntimeEvent("runtime.download.skipped_existing", detail: "state=ready")
+            path.removeAll()
+            return true
+        case .gatekeeperBlocked:
+            WhiskyWineInstaller.recordRuntimeEvent(
+                "runtime.download.skipped_existing",
+                detail: "state=gatekeeper_blocked"
+            )
+            path.append(.whiskyWineGatekeeperRecovery)
+            return true
+        case .installedUnverified, .verificationFailed:
+            WhiskyWineInstaller.recordRuntimeEvent(
+                "runtime.download.skipped_existing",
+                detail: "state=\(discovery.state.rawValue)"
+            )
+            downloadError = discovery.errorDescription
+                ?? "BourbonWine is already installed. Retry its readiness check before replacing it."
+            return true
+        case .missing, .corruptOrIncomplete, .unsupported:
+            WhiskyWineInstaller.recordRuntimeEvent(
+                "runtime.download.required",
+                detail: "state=\(discovery.state.rawValue)"
+            )
+            return false
         }
     }
 
