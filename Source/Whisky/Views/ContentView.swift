@@ -60,10 +60,11 @@ enum BourbonSheetDiagnostics {
 
     private static func record(_ event: String, source: Source) {
         let keyWindow = NSApp.keyWindow
+        let windowClass = keyWindow.map { String(describing: type(of: $0)) } ?? "none"
         BourbonLicenseDiagnostics.record(
             event,
             detail: "source=\(source.rawValue) window=\(keyWindow?.windowNumber ?? -1) " +
-                "class=\(keyWindow.map { String(describing: type(of: $0)) } ?? \"none\") " +
+                "class=\(windowClass) " +
                 "attached_sheet=\(keyWindow?.attachedSheet != nil)"
         )
     }
