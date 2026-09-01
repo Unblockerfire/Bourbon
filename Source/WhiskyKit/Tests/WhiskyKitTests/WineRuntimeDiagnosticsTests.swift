@@ -2,6 +2,15 @@ import XCTest
 @testable import WhiskyKit
 
 final class WineRuntimeDiagnosticsTests: XCTestCase {
+    func testGatekeeperTextIsClassifiedSeparately() {
+        let error = WineDiagnosticSanitizer.classifiedFailure(
+            details: "wine Not Opened: Apple cannot verify this app is free from malware.",
+            executablePath: "/runtime/Libraries/Wine/bin/wine"
+        )
+
+        XCTAssertTrue(error.isGatekeeperBlocked)
+        XCTAssertEqual(error.diagnosticCode, "gatekeeper_blocked")
+    }
     func testRedactsSensitiveProcessOutput() {
         let input = "password=hunter2 token: abcdefghijk user@example.com BRBN-1234567890ABCDEF"
         let output = WineDiagnosticSanitizer.redact(input)

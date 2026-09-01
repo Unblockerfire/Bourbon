@@ -405,6 +405,7 @@ jobs:
           set -euo pipefail
           CONTENT_VIEW="Source/Whisky/Views/ContentView.swift"
           INSTALL_VIEW="Source/Whisky/Views/Setup/WhiskyWineInstallView.swift"
+          RECOVERY_VIEW="Source/Whisky/Views/Setup/WhiskyWineGatekeeperRecoveryView.swift"
           INSTALLER="Source/WhiskyKit/Sources/WhiskyKit/WhiskyWine/WhiskyWineInstaller.swift"
 
           grep -Fq 'BourbonWineRuntimeUpdateView' "$CONTENT_VIEW"
@@ -434,6 +435,13 @@ jobs:
             runtime.wine_version.started \
             runtime.wine_version.completed \
             runtime.gatekeeper_check \
+            runtime.gatekeeper.detected \
+            runtime.gatekeeper.settings_opened \
+            runtime.retry.files_verified \
+            runtime.retry.preflight.started \
+            runtime.retry.preflight.succeeded \
+            runtime.retry.preflight.blocked \
+            runtime.retry.failed \
             runtime.readiness.completed \
             runtime.ui.finalized \
             runtime.update.started \
@@ -449,8 +457,13 @@ jobs:
             runtime.update.preflight.started \
             runtime.update.preflight.completed \
             runtime.update.failed; do
-            grep -Fq "$event" "$CONTENT_VIEW" "$INSTALL_VIEW" "$INSTALLER"
+            grep -Fq "$event" "$CONTENT_VIEW" "$INSTALL_VIEW" "$RECOVERY_VIEW" "$INSTALLER"
           done
+
+          grep -Fq 'macOS blocked BourbonWine' "$RECOVERY_VIEW"
+          grep -Fq 'Open Privacy & Security' "$RECOVERY_VIEW"
+          grep -Fq 'retryInstalledRuntimeReadiness' "$RECOVERY_VIEW"
+          grep -Fq 'runWineVersion: false' "$INSTALLER"
 
           WINE='Source/WhiskyKit/Sources/WhiskyKit/Wine/Wine.swift'
           for event in \

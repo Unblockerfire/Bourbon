@@ -84,7 +84,6 @@ struct WhiskyWineInstallView: View {
             let archiveURL = tarLocation
             let installedRuntimeVersion = runtimeVersion
             Task {
-                WhiskyWineInstaller.recordRuntimeEvent("runtime.retry.started")
                 WhiskyWineInstaller.recordRuntimeEvent("runtime.archive.selected")
                 var outcome = "cancelled"
                 defer {
@@ -103,25 +102,18 @@ struct WhiskyWineInstallView: View {
                         )
                     }.value
                     installStatus = "Checking BourbonWine…"
-                    let runtimeReady = await Task.detached(priority: .userInitiated) {
-                        WhiskyWineInstaller.isWhiskyWineInstalled()
-                    }.value
+                    _ = try await Wine.preflightRuntime()
+                    let runtimeReady = true
                     WhiskyWineInstaller.recordRuntimeEvent(
                         "runtime.readiness.completed",
                         detail: "ready=\(runtimeReady)"
                     )
-                    guard runtimeReady else {
-                        throw NSError(
-                            domain: "BourbonWineInstall",
-                            code: 1,
-                            userInfo: [
-                                NSLocalizedDescriptionKey:
-                                    "BourbonWine was installed, but its readiness check did not pass. Try again."
-                            ]
-                        )
-                    }
                     outcome = "success"
                     proceed(runtimeReady: runtimeReady)
+                } catch let error as WineRuntimePreflightError where error.isGatekeeperBlocked {
+                    outcome = "gatekeeper_recovery"
+                    WhiskyWineInstaller.recordRuntimeEvent("runtime.gatekeeper.detected")
+                    path.append(.whiskyWineGatekeeperRecovery)
                 } catch is CancellationError {
                     errorMessage = "BourbonWine installation was cancelled. You can retry safely."
                 } catch {

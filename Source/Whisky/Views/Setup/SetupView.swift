@@ -23,6 +23,7 @@ enum SetupStage {
     case rosetta
     case whiskyWineDownload
     case whiskyWineInstall
+    case whiskyWineGatekeeperRecovery
 }
 
 struct SetupView: View {
@@ -72,6 +73,11 @@ struct SetupView: View {
                             WhiskyWineInstallView(
                                 tarLocation: $tarLocation,
                                 runtimeVersion: $runtimeVersion,
+                                path: $path,
+                                showSetup: $showSetup
+                            )
+                        case .whiskyWineGatekeeperRecovery:
+                            WhiskyWineGatekeeperRecoveryView(
                                 path: $path,
                                 showSetup: $showSetup
                             )

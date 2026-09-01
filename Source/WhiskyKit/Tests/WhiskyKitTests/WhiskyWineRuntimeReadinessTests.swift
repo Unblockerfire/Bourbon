@@ -131,6 +131,49 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
     }
 
+    func testRetryOnlyRechecksInstalledRuntimeAndPreservesArchive() async throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        let archive = try fixture.archiveRuntime(version: "1.0.2")
+        try WhiskyWineInstaller.install(from: archive, runtimeVersion: "1.0.2", into: fixture.applicationFolder)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archive.path))
+        let result = try await WhiskyWineInstaller.retryInstalledRuntimeReadiness(in: fixture.applicationFolder)
+        XCTAssertEqual(result.version, "11.16")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: fixture.applicationFolder.appending(path: "Libraries/Wine/bin/wine").path
+        ))
+    }
+
+    func testRetryReturnsGatekeeperBlockToRecoveryUI() async throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        try fixture.makeRuntime(version: "1.0.2")
+        try fixture.writeWine(contents: "#!/bin/sh\necho 'Apple cannot verify wine' >&2\nexit 1\n")
+
+        do {
+            _ = try await WhiskyWineInstaller.retryInstalledRuntimeReadiness(in: fixture.applicationFolder)
+            XCTFail("Expected Gatekeeper block")
+        } catch let error as WineRuntimePreflightError {
+            XCTAssertTrue(error.isGatekeeperBlocked)
+        }
+    }
+
+    func testRetryKeepsGenericRuntimeFailureDistinct() async throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        try fixture.makeRuntime(version: "1.0.2")
+        try fixture.writeWine(contents: "#!/bin/sh\necho 'unexpected runtime failure' >&2\nexit 1\n")
+
+        do {
+            _ = try await WhiskyWineInstaller.retryInstalledRuntimeReadiness(in: fixture.applicationFolder)
+            XCTFail("Expected generic preflight failure")
+        } catch let error as WineRuntimePreflightError {
+            XCTAssertFalse(error.isGatekeeperBlocked)
+            XCTAssertEqual(error.diagnosticCode, "process_nonzero")
+        }
+    }
+
     func testDiagnosticAndProductionRuntimeStateCanCoexist() throws {
         let fixture = try RuntimeFixture()
         defer { fixture.remove() }
@@ -266,6 +309,13 @@ private final class RuntimeFixture {
     func writeMarker(version: String) throws {
         let marker = try XCTUnwrap(WhiskyWineInstaller.installedVersionMarkerData(runtimeVersion: version))
         try marker.write(to: applicationFolder.appending(path: "Libraries/BourbonWineVersion.plist"))
+    }
+
+    func writeWine(contents: String) throws {
+        try makeExecutable(
+            at: applicationFolder.appending(path: "Libraries/Wine/bin/wine"),
+            contents: contents
+        )
     }
 
     private func makeExecutable(at url: URL, contents: String) throws {

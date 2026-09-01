@@ -10,6 +10,7 @@ public struct WineRuntimePreflightResult: Sendable {
 }
 
 public enum WineRuntimePreflightError: LocalizedError, Sendable {
+    case gatekeeperBlocked(path: String, details: String)
     case executableMissing(path: String)
     case cannotExecute(path: String, details: String)
     case rosettaUnavailable(path: String, details: String)
@@ -19,6 +20,7 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
 
     public var diagnosticCode: String {
         switch self {
+        case .gatekeeperBlocked: return "gatekeeper_blocked"
         case .executableMissing: return "executable_missing"
         case .cannotExecute: return "cannot_execute"
         case .rosettaUnavailable: return "rosetta_unavailable"
@@ -50,6 +52,8 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
+        case .gatekeeperBlocked:
+            return "macOS blocked BourbonWine until it is approved in Privacy & Security."
         case .executableMissing:
             return "The BourbonWine executable is missing at \(safeExecutablePath)."
         case .cannotExecute(_, let details):
@@ -68,6 +72,7 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
 
     var failedCheck: String {
         switch self {
+        case .gatekeeperBlocked: return "gatekeeper_approval_required"
         case .executableMissing: return "executable_exists"
         case .cannotExecute: return "executable_permission_or_launch"
         case .rosettaUnavailable: return "process_architecture_launch"
@@ -79,7 +84,8 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
 
     private var executablePath: String {
         switch self {
-        case .executableMissing(let path), .cannotExecute(let path, _),
+        case .gatekeeperBlocked(let path, _),
+             .executableMissing(let path), .cannotExecute(let path, _),
              .rosettaUnavailable(let path, _), .runtimeLibraryFailure(let path, _),
              .processNonzero(let path, _, _), .invalidWineOutput(let path, _):
             return path
@@ -92,6 +98,8 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
 
     private var safeDetails: String {
         switch self {
+        case .gatekeeperBlocked(_, let details):
+            return WineDiagnosticSanitizer.excerpt(from: details)
         case .executableMissing:
             return "The selected executable does not exist."
         case .cannotExecute(_, let details), .rosettaUnavailable(_, let details),
@@ -104,6 +112,11 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
     private var exitStatus: Int32? {
         guard case .processNonzero(_, let status, _) = self else { return nil }
         return status
+    }
+
+    public var isGatekeeperBlocked: Bool {
+        if case .gatekeeperBlocked = self { return true }
+        return false
     }
 }
 
@@ -194,6 +207,14 @@ enum WineDiagnosticSanitizer {
     ) -> WineRuntimePreflightError {
         let excerpt = excerpt(from: details)
         let lowercased = details.lowercased()
+
+        if lowercased.contains("cannot be opened because the developer cannot be verified")
+            || lowercased.contains("apple cannot verify")
+            || lowercased.contains("not opened")
+            || lowercased.contains("gatekeeper")
+            || lowercased.contains("malware check") {
+            return .gatekeeperBlocked(path: executablePath, details: excerpt)
+        }
 
         if lowercased.contains("bad cpu type")
             || lowercased.contains("rosetta")

@@ -242,6 +242,43 @@ public class WhiskyWineInstaller {
         RuntimeReadiness.validate(applicationFolder: applicationFolder)
     }
 
+    /// Re-checks an existing runtime after the user approves Wine in macOS
+    /// Privacy & Security. This never downloads, extracts, or replaces files.
+    public static func retryInstalledRuntimeReadiness(
+        in applicationFolder: URL = applicationFolder
+    ) async throws -> WineRuntimePreflightResult {
+        recordRuntimeEvent("runtime.retry.started")
+        let files = RuntimeReadiness.validate(
+            applicationFolder: applicationFolder,
+            runWineVersion: false
+        )
+        guard files.isReady else {
+            recordRuntimeEvent(
+                "runtime.retry.failed",
+                detail: "stage=files failures=\(files.failures.joined(separator: ","))"
+            )
+            throw WhiskyWineInstallerError.runtimeNotReady(files)
+        }
+        recordRuntimeEvent("runtime.retry.files_verified")
+        recordRuntimeEvent("runtime.retry.preflight.started")
+        do {
+            let result = try await Wine.preflightRuntime(
+                executableURL: applicationFolder.appending(path: "Libraries/Wine/bin/wine")
+            )
+            recordRuntimeEvent("runtime.retry.preflight.succeeded")
+            return result
+        } catch let error as WineRuntimePreflightError where error.isGatekeeperBlocked {
+            recordRuntimeEvent("runtime.retry.preflight.blocked")
+            throw error
+        } catch {
+            recordRuntimeEvent(
+                "runtime.retry.failed",
+                detail: "stage=preflight error=\(WineDiagnosticSanitizer.singleLine(error.localizedDescription))"
+            )
+            throw error
+        }
+    }
+
     public static func legacyRuntimeMarkerURL() -> URL? {
         for name in ["whiskyWineVersion", "GPTKVersion"] {
             let versionPlist = libraryFolder
@@ -327,7 +364,8 @@ public class WhiskyWineInstaller {
                 recordRuntimeEvent("runtime.preflight.started", detail: "purpose=runtime_install")
                 let installedReadiness = RuntimeReadiness.validate(
                     applicationFolder: destinationApplicationFolder,
-                    expectedRuntimeVersion: runtimeVersion
+                    expectedRuntimeVersion: runtimeVersion,
+                    runWineVersion: false
                 )
                 guard installedReadiness.isReady else {
                     throw WhiskyWineInstallerError.runtimeNotReady(installedReadiness)
@@ -350,7 +388,8 @@ public class WhiskyWineInstaller {
             if let backupLibraryFolder {
                 try? fileManager.removeItem(at: backupLibraryFolder)
             }
-            try fileManager.removeItem(at: from)
+            // Keep the saved archive available while a user completes any
+            // Gatekeeper approval and for the separate manual-recovery path.
         } catch {
             recordRuntimeEvent(
                 "runtime.install.failed",
@@ -651,6 +690,7 @@ public struct RuntimeReadiness: Sendable, Equatable {
         applicationFolder: URL,
         expectedRuntimeVersion: String? = nil,
         requireVersionMarker: Bool = true,
+        runWineVersion: Bool = true,
         fileManager: FileManager = .default
     ) -> RuntimeReadiness {
         let libraries = applicationFolder.appending(path: "Libraries")
@@ -701,6 +741,7 @@ public struct RuntimeReadiness: Sendable, Equatable {
         }
 
         guard failures.isEmpty else { return RuntimeReadiness(failures: failures, wineVersion: nil) }
+        guard runWineVersion else { return RuntimeReadiness(failures: [], wineVersion: nil) }
         do {
             let version = try wineVersion(at: wine, wineRoot: wineRoot)
             guard WineSemanticVersion.versionToken(from: version) != nil else {
