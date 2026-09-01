@@ -8,6 +8,8 @@ import os
 import SwiftUI
 import WhiskyKit
 
+// swiftlint:disable file_length
+
 private let diagnosticInstallerLogger = Logger(
     subsystem: Bundle.main.bundleIdentifier ?? "com.unblockerfire.Bourbon",
     category: "diagnostic-installer"

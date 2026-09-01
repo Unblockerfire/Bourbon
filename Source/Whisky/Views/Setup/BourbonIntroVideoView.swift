@@ -1693,43 +1693,7 @@ enum BourbonWindowHierarchyDiagnostics {
         )
 
         for (windowIndex, window) in windows.enumerated() {
-            let windowClass = className(window)
-            let isModal = NSApp.modalWindow === window
-            let centerHit = windowCenterHitClass(window)
-            let windowDetail = [
-                "index=\(windowIndex)",
-                "number=\(window.windowNumber)",
-                "class=\(windowClass)",
-                "frame=\(rect(window.frame))",
-                "level=\(window.level.rawValue)",
-                "style=\(window.styleMask.rawValue)",
-                "visible=\(window.isVisible)",
-                "key=\(window.isKeyWindow)",
-                "main=\(window.isMainWindow)",
-                "can_key=\(window.canBecomeKey)",
-                "can_main=\(window.canBecomeMain)",
-                "alpha=\(number(window.alphaValue))",
-                "ignores_mouse=\(window.ignoresMouseEvents)",
-                "accepts_mouse_moved=\(window.acceptsMouseMovedEvents)",
-                "modal=\(isModal)",
-                "sheet=\(window.sheetParent != nil)",
-                "attached_sheet=\(window.attachedSheet != nil)",
-                "parent=\(window.parent?.windowNumber ?? -1)",
-                "children=\(window.childWindows?.count ?? 0)",
-                "first_responder=\(window.firstResponder.map(className) ?? "none")",
-                "center_hit=\(centerHit)"
-            ].joined(separator: " ")
-            state.lines.append("window \(windowDetail)")
-            BourbonLicenseDiagnostics.record("license.ui.window", detail: windowDetail)
-
-            if let contentView = window.contentView {
-                visit(
-                    contentView,
-                    depth: 0,
-                    windowIndex: windowIndex,
-                    state: &state
-                )
-            }
+            capture(window: window, index: windowIndex, state: &state)
         }
 
         let modalCount = windows.filter { NSApp.modalWindow === $0 }.count
@@ -1740,6 +1704,38 @@ enum BourbonWindowHierarchyDiagnostics {
         state.lines.append("completed \(completion)")
         BourbonLicenseDiagnostics.record("license.ui.window_hierarchy.completed", detail: completion)
         return Snapshot(code: code, report: state.lines.joined(separator: "\n"))
+    }
+
+    private static func capture(window: NSWindow, index: Int, state: inout CaptureState) {
+        let windowDetail = [
+            "index=\(index)",
+            "number=\(window.windowNumber)",
+            "class=\(className(window))",
+            "frame=\(rect(window.frame))",
+            "level=\(window.level.rawValue)",
+            "style=\(window.styleMask.rawValue)",
+            "visible=\(window.isVisible)",
+            "key=\(window.isKeyWindow)",
+            "main=\(window.isMainWindow)",
+            "can_key=\(window.canBecomeKey)",
+            "can_main=\(window.canBecomeMain)",
+            "alpha=\(number(window.alphaValue))",
+            "ignores_mouse=\(window.ignoresMouseEvents)",
+            "accepts_mouse_moved=\(window.acceptsMouseMovedEvents)",
+            "modal=\(NSApp.modalWindow === window)",
+            "sheet=\(window.sheetParent != nil)",
+            "attached_sheet=\(window.attachedSheet != nil)",
+            "parent=\(window.parent?.windowNumber ?? -1)",
+            "children=\(window.childWindows?.count ?? 0)",
+            "first_responder=\(window.firstResponder.map(className) ?? "none")",
+            "center_hit=\(windowCenterHitClass(window))"
+        ].joined(separator: " ")
+        state.lines.append("window \(windowDetail)")
+        BourbonLicenseDiagnostics.record("license.ui.window", detail: windowDetail)
+
+        if let contentView = window.contentView {
+            visit(contentView, depth: 0, windowIndex: index, state: &state)
+        }
     }
 
     @discardableResult
