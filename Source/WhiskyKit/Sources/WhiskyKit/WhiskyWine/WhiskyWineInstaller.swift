@@ -703,8 +703,6 @@ public struct RuntimeReadiness: Sendable, Equatable {
                 return RuntimeReadiness(failures: ["wine_version_mismatch"], wineVersion: version)
             }
             return RuntimeReadiness(failures: [], wineVersion: version)
-        } catch WhiskyWineInstallerError.wineVersionTimedOut {
-            return RuntimeReadiness(failures: ["wine_version_timed_out"], wineVersion: nil)
         } catch {
             return RuntimeReadiness(failures: ["wine_version_failed"], wineVersion: nil)
         }
@@ -713,11 +711,6 @@ public struct RuntimeReadiness: Sendable, Equatable {
     private static func wineVersion(at executable: URL, wineRoot: URL) throws -> String {
         let process = Process()
         let output = Pipe()
-        WhiskyWineInstaller.recordRuntimeEvent("runtime.wine_version.started")
-        WhiskyWineInstaller.recordRuntimeEvent(
-            "runtime.gatekeeper_check",
-            detail: "executable_present=\(FileManager.default.fileExists(atPath: executable.path))"
-        )
         process.executableURL = executable
         process.arguments = ["--version"]
         process.currentDirectoryURL = executable.deletingLastPathComponent()
@@ -728,37 +721,11 @@ public struct RuntimeReadiness: Sendable, Equatable {
         ]
         process.standardOutput = output
         process.standardError = output
-        do {
-            try process.run()
-        } catch {
-            WhiskyWineInstaller.recordRuntimeEvent(
-                "runtime.wine_version.failed",
-                detail: "stage=launch error=\(WineDiagnosticSanitizer.singleLine(error.localizedDescription))"
-            )
-            throw error
-        }
-
-        let deadline = Date().addingTimeInterval(30)
-        while process.isRunning && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        guard !process.isRunning else {
-            process.terminate()
-            WhiskyWineInstaller.recordRuntimeEvent("runtime.wine_version.failed", detail: "stage=timeout")
-            throw WhiskyWineInstallerError.wineVersionTimedOut
-        }
-
+        try process.run()
         let data = try output.fileHandleForReading.readToEnd() ?? Data()
-        let version = String(data: data, encoding: .utf8) ?? ""
-        guard process.terminationStatus == 0 else {
-            WhiskyWineInstaller.recordRuntimeEvent(
-                "runtime.wine_version.failed",
-                detail: "stage=terminated status=\(process.terminationStatus)"
-            )
-            throw WhiskyWineInstallerError.wineVersionFailed
-        }
-        WhiskyWineInstaller.recordRuntimeEvent("runtime.wine_version.completed")
-        return version
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { throw WhiskyWineInstallerError.wineVersionFailed }
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }
 
@@ -779,7 +746,6 @@ enum WhiskyWineInstallerError: LocalizedError {
     case invalidArchiveLayout(URL?, URL)
     case runtimeNotReady(RuntimeReadiness)
     case wineVersionFailed
-    case wineVersionTimedOut
 
     var errorDescription: String? {
         switch self {
@@ -811,8 +777,6 @@ enum WhiskyWineInstallerError: LocalizedError {
             return "BourbonWine runtime validation failed: \(readiness.failures.joined(separator: ", "))"
         case .wineVersionFailed:
             return "BourbonWine wine --version failed during runtime validation."
-        case .wineVersionTimedOut:
-            return "BourbonWine wine --version did not finish within 30 seconds after launch. macOS may still be blocking the executable."
         }
     }
 }
