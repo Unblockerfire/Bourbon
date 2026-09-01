@@ -23,6 +23,7 @@ import WhiskyKit
 struct WhiskyWineInstallView: View {
     @State var installing: Bool = true
     @State private var errorMessage: String?
+    @State private var installStatus = "Preparing BourbonWine…"
     @Binding var tarLocation: URL
     @Binding var runtimeVersion: String?
     @Binding var path: [SetupStage]
@@ -47,6 +48,9 @@ struct WhiskyWineInstallView: View {
                             ProgressView()
                                 .progressViewStyle(.circular)
                                 .controlSize(.large)
+                            Text(installStatus)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
                         } else if let errorMessage {
                             VStack(spacing: 10) {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -80,16 +84,32 @@ struct WhiskyWineInstallView: View {
             let archiveURL = tarLocation
             let installedRuntimeVersion = runtimeVersion
             Task {
+                WhiskyWineInstaller.recordRuntimeEvent("runtime.retry.started")
+                WhiskyWineInstaller.recordRuntimeEvent("runtime.archive.selected")
+                var outcome = "cancelled"
+                defer {
+                    installing = false
+                    WhiskyWineInstaller.recordRuntimeEvent(
+                        "runtime.ui.finalized",
+                        detail: "outcome=\(outcome)"
+                    )
+                }
                 do {
+                    installStatus = "Installing BourbonWine…"
                     try await Task.detached(priority: .userInitiated) {
                         try WhiskyWineInstaller.install(
                             from: archiveURL,
                             runtimeVersion: installedRuntimeVersion
                         )
                     }.value
+                    installStatus = "Checking BourbonWine…"
                     let runtimeReady = await Task.detached(priority: .userInitiated) {
                         WhiskyWineInstaller.isWhiskyWineInstalled()
                     }.value
+                    WhiskyWineInstaller.recordRuntimeEvent(
+                        "runtime.readiness.completed",
+                        detail: "ready=\(runtimeReady)"
+                    )
                     guard runtimeReady else {
                         throw NSError(
                             domain: "BourbonWineInstall",
@@ -100,10 +120,13 @@ struct WhiskyWineInstallView: View {
                             ]
                         )
                     }
+                    outcome = "success"
                     proceed(runtimeReady: runtimeReady)
+                } catch is CancellationError {
+                    errorMessage = "BourbonWine installation was cancelled. You can retry safely."
                 } catch {
+                    outcome = "failure"
                     errorMessage = error.localizedDescription
-                    installing = false
                 }
             }
         }
