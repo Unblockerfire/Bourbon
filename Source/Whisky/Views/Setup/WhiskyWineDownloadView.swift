@@ -78,6 +78,7 @@ struct WhiskyWineDownloadView: View {
         }
     }
 
+    // swiftlint:disable:next function_body_length
     private func download() {
         downloadError = nil
         downloadProgress = 0

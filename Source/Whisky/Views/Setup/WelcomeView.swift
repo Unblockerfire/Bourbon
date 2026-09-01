@@ -576,12 +576,16 @@ struct WelcomeView: View {
         if whiskyWineInstalled != true {
             switch runtimeDiscovery?.state {
             case .gatekeeperBlocked:
-                WhiskyWineInstaller.recordRuntimeEvent("runtime.download.skipped_existing", detail: "state=gatekeeper_blocked")
-                path.append(.whiskyWineGatekeeperRecovery)
-            case .verificationFailed, .installedUnverified:
                 WhiskyWineInstaller.recordRuntimeEvent(
                     "runtime.download.skipped_existing",
-                    detail: "state=\(runtimeDiscovery?.state.rawValue ?? "unknown")"
+                    detail: "state=gatekeeper_blocked"
+                )
+                path.append(.whiskyWineGatekeeperRecovery)
+            case .verificationFailed, .installedUnverified:
+                let discoveryState = runtimeDiscovery?.state.rawValue ?? "unknown"
+                WhiskyWineInstaller.recordRuntimeEvent(
+                    "runtime.download.skipped_existing",
+                    detail: "state=\(discoveryState)"
                 )
                 checkInstallStatus()
             default:

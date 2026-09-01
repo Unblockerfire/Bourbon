@@ -298,7 +298,10 @@ public class WhiskyWineInstaller {
             let event = state == .corruptOrIncomplete
                 ? "runtime.discovery.incomplete"
                 : "runtime.discovery.valid"
-            recordRuntimeEvent(event, detail: "state=\(state.rawValue) failures=\(files.failures.joined(separator: ","))")
+            recordRuntimeEvent(
+                event,
+                detail: "state=\(state.rawValue) failures=\(files.failures.joined(separator: ","))"
+            )
             return RuntimeDiscovery(state: state, readiness: files)
         }
 
@@ -307,17 +310,33 @@ public class WhiskyWineInstaller {
             let result = try await Wine.preflightRuntime(
                 executableURL: applicationFolder.appending(path: "Libraries/Wine/bin/wine")
             )
-            recordRuntimeEvent("runtime.discovery.ready", detail: "wine_version=\(result.version)")
-            return RuntimeDiscovery(state: .ready, readiness: files, wineVersion: result.version)
+            recordRuntimeEvent(
+                "runtime.discovery.ready",
+                detail: "wine_version=\(result.version)"
+            )
+            return RuntimeDiscovery(
+                state: .ready,
+                readiness: files,
+                wineVersion: result.version
+            )
         } catch let error as WineRuntimePreflightError where error.isGatekeeperBlocked {
             recordRuntimeEvent("runtime.discovery.gatekeeper_blocked")
-            return RuntimeDiscovery(state: .gatekeeperBlocked, readiness: files, errorDescription: error.localizedDescription)
+            return RuntimeDiscovery(
+                state: .gatekeeperBlocked,
+                readiness: files,
+                errorDescription: error.localizedDescription
+            )
         } catch {
             recordRuntimeEvent(
                 "runtime.discovery.valid",
-                detail: "state=verification_failed error=\(WineDiagnosticSanitizer.singleLine(error.localizedDescription))"
+                detail: "state=verification_failed error=" +
+                    WineDiagnosticSanitizer.singleLine(error.localizedDescription)
             )
-            return RuntimeDiscovery(state: .verificationFailed, readiness: files, errorDescription: error.localizedDescription)
+            return RuntimeDiscovery(
+                state: .verificationFailed,
+                readiness: files,
+                errorDescription: error.localizedDescription
+            )
         }
     }
 

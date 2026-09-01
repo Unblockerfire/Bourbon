@@ -1,6 +1,7 @@
 import XCTest
 @testable import WhiskyKit
 
+// swiftlint:disable:next type_body_length
 final class WhiskyWineRuntimeReadinessTests: XCTestCase {
     func testExpectedRuntimeDestinationUsesBundleIdentifier() {
         let root = URL(fileURLWithPath: "/isolated/Application Support")
@@ -117,7 +118,9 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
 
         try WhiskyWineInstaller.restorePreviousRuntime(in: fixture.applicationFolder)
 
-        XCTAssertEqual(WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder).map(String.init(describing:)), "1.0.1")
+        let version = WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder)
+            .map(String.init(describing:))
+        XCTAssertEqual(version, "1.0.1")
         XCTAssertTrue(WhiskyWineInstaller.hasRestorablePreviousRuntime(in: fixture.applicationFolder))
     }
 

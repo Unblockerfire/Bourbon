@@ -113,10 +113,16 @@ struct RosettaView: View {
         )
         if !runtimeReady {
             if discovery.state == .gatekeeperBlocked {
-                WhiskyWineInstaller.recordRuntimeEvent("runtime.download.skipped_existing", detail: "state=gatekeeper_blocked")
+                WhiskyWineInstaller.recordRuntimeEvent(
+                    "runtime.download.skipped_existing",
+                    detail: "state=gatekeeper_blocked"
+                )
                 path.append(.whiskyWineGatekeeperRecovery)
             } else if discovery.requiresDownload {
-                WhiskyWineInstaller.recordRuntimeEvent("runtime.download.required", detail: "state=\(discovery.state.rawValue)")
+                WhiskyWineInstaller.recordRuntimeEvent(
+                    "runtime.download.required",
+                    detail: "state=\(discovery.state.rawValue)"
+                )
                 path.append(.whiskyWineDownload)
             }
             return
