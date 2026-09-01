@@ -130,30 +130,30 @@ struct ContentView: View {
         }
         .sheet(isPresented: $pendingUpdateManager.isPromptPresented, onDismiss: {
             BourbonSheetDiagnostics.recordDismissal(source: .sparklePendingUpdate)
-        }) {
+        }, content: {
             BourbonPendingUpdatePrompt(manager: pendingUpdateManager, updater: updater)
                 .onAppear {
                     BourbonSheetDiagnostics.recordPresentation(source: .sparklePendingUpdate)
                 }
-        }
+        })
         .sheet(isPresented: $showAdminUnlock, onDismiss: {
             BourbonSheetDiagnostics.recordDismissal(source: .adminUnlock)
-        }) {
+        }, content: {
             AdminUnlockView()
                 .onAppear {
                     BourbonSheetDiagnostics.recordPresentation(source: .adminUnlock)
                 }
-        }
+        })
         .sheet(item: $runtimeUpdatePresentation, onDismiss: {
             BourbonSheetDiagnostics.recordDismissal(source: .bourbonWineRuntimeUpdate)
-        }) { presentation in
+        }, content: { presentation in
             BourbonWineRuntimeUpdateView(availableVersion: presentation.version) {
                 runtimeUpdatePresentation = nil
             }
             .onAppear {
                 BourbonSheetDiagnostics.recordPresentation(source: .bourbonWineRuntimeUpdate)
             }
-        }
+        })
         .onReceive(NotificationCenter.default.publisher(for: .bourbonOpenAdminLogin)) { _ in
             openAdminLogin()
         }
@@ -206,14 +206,14 @@ struct ContentView: View {
         }
         .sheet(item: $openedFileURL, onDismiss: {
             BourbonSheetDiagnostics.recordDismissal(source: .fileOpen)
-        }) { url in
+        }, content: { url in
             FileOpenView(fileURL: url,
                          currentBottle: selected,
                          bottles: bottleVM.bottles)
                 .onAppear {
                     BourbonSheetDiagnostics.recordPresentation(source: .fileOpen)
                 }
-        }
+        })
         .onChange(of: selected) {
             if selected != nil {
                 print("bottle.selection.changed")

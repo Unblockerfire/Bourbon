@@ -247,7 +247,7 @@ struct WelcomeView: View {
         }
         .sheet(isPresented: $showBottleExplanation, onDismiss: {
             BourbonSheetDiagnostics.recordDismissal(source: .bottleExplanation)
-        }) {
+        }, content: {
             BourbonPanelBackdrop {
                 BourbonFloatingPanel(maxWidth: 420) {
                     VStack(spacing: 14) {
@@ -276,7 +276,7 @@ struct WelcomeView: View {
             .onAppear {
                 BourbonSheetDiagnostics.recordPresentation(source: .bottleExplanation)
             }
-        }
+        })
     }
 
     private var displayNameContent: some View {
