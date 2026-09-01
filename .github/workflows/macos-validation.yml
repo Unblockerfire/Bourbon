@@ -404,6 +404,7 @@ jobs:
         run: |
           set -euo pipefail
           CONTENT_VIEW="Source/Whisky/Views/ContentView.swift"
+          INSTALL_VIEW="Source/Whisky/Views/Setup/WhiskyWineInstallView.swift"
           INSTALLER="Source/WhiskyKit/Sources/WhiskyKit/WhiskyWine/WhiskyWineInstaller.swift"
 
           grep -Fq 'BourbonWineRuntimeUpdateView' "$CONTENT_VIEW"
@@ -448,7 +449,7 @@ jobs:
             runtime.update.preflight.started \
             runtime.update.preflight.completed \
             runtime.update.failed; do
-            grep -Fq "$event" "$CONTENT_VIEW" "$INSTALLER"
+            grep -Fq "$event" "$CONTENT_VIEW" "$INSTALL_VIEW" "$INSTALLER"
           done
 
           WINE='Source/WhiskyKit/Sources/WhiskyKit/Wine/Wine.swift'
@@ -467,7 +468,7 @@ jobs:
             runtime.preflight.process.started \
             runtime.preflight.process.terminated \
             runtime.preflight.failed; do
-            grep -Fq "$event" "$CONTENT_VIEW" "$INSTALLER" "$WINE"
+            grep -Fq "$event" "$CONTENT_VIEW" "$INSTALL_VIEW" "$INSTALLER" "$WINE"
           done
 
       - name: Validate production BourbonWine launcher contract
