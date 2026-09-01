@@ -1,5 +1,6 @@
-import AVKit
+import AVFoundation
 import AppKit
+import QuartzCore
 import Security
 import SwiftUI
 import WhiskyKit
@@ -1500,24 +1501,57 @@ enum AdminUnlockError: Error {
     case keychain(OSStatus)
 }
 
-struct PlayerContainerView: NSViewRepresentable {
+private struct PlayerContainerView: NSViewRepresentable {
     let player: AVPlayer
 
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
-        view.player = player
-        view.controlsStyle = .none
-        view.videoGravity = .resizeAspectFill
+    func makeNSView(context: Context) -> BourbonPlayerSurfaceNSView {
+        let view = BourbonPlayerSurfaceNSView()
+        view.playerLayer.player = player
+        BourbonLicenseDiagnostics.record("license.player.surface.created", detail: "kind=avplayerlayer")
         return view
     }
 
-    func updateNSView(_ nsView: AVPlayerView, context: Context) {
-        nsView.player = player
+    func updateNSView(_ nsView: BourbonPlayerSurfaceNSView, context: Context) {
+        nsView.playerLayer.player = player
     }
 
-    static func dismantleNSView(_ nsView: AVPlayerView, coordinator: ()) {
-        nsView.player?.pause()
-        nsView.player = nil
+    static func dismantleNSView(_ nsView: BourbonPlayerSurfaceNSView, coordinator: ()) {
+        nsView.playerLayer.player?.pause()
+        nsView.playerLayer.player = nil
+        BourbonLicenseDiagnostics.record("license.player.surface.destroyed", detail: "kind=avplayerlayer")
+    }
+}
+
+private final class BourbonPlayerSurfaceNSView: NSView {
+    let playerLayer = AVPlayerLayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        identifier = NSUserInterfaceItemIdentifier("bourbon.surface.video_layer")
+        wantsLayer = true
+        playerLayer.videoGravity = .resizeAspectFill
+        layer?.addSublayer(playerLayer)
+    }
+
+    convenience init() {
+        self.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        playerLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }
 
@@ -1659,7 +1693,7 @@ private enum BourbonWindowHierarchyDiagnostics {
         state.lines.append("view \(detail)")
         BourbonLicenseDiagnostics.record("license.ui.view", detail: detail)
 
-        if view is AVPlayerView {
+        if view is BourbonPlayerSurfaceNSView {
             state.playerViewCount += 1
         }
         if markerRole == "intro_surface" {
