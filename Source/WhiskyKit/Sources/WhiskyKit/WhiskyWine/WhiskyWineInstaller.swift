@@ -816,7 +816,8 @@ enum WhiskyWineInstallerError: LocalizedError {
         case .wineVersionFailed:
             return "BourbonWine wine --version failed during runtime validation."
         case .wineVersionTimedOut:
-            return "BourbonWine wine --version did not finish within 30 seconds. macOS may still be blocking the executable; use Privacy & Security to allow it, then retry."
+            return "BourbonWine wine --version did not finish within 30 seconds. "
+                + "macOS may still be blocking the executable; use Privacy & Security to allow it, then retry."
         }
     }
 }
