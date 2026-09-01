@@ -129,6 +129,24 @@ final class DiagnosticInstallationCoordinator: ObservableObject {
         let sourceURL = self.sourceURL
         let copier = self.copier
 
+        Task { [weak self] in
+            guard let self else { return }
+            if replaceExisting, !await stopRunningInstalledCopies() {
+                phase = .failure(
+                    "The previous Bourbon Diagnostic process could not be closed safely. " +
+                        "Quit or Force Quit that diagnostic copy, then try again."
+                )
+                return
+            }
+            launchCopy(sourceURL: sourceURL, copier: copier, replaceExisting: replaceExisting)
+        }
+    }
+
+    private func launchCopy(
+        sourceURL: URL,
+        copier: DiagnosticAppBundleCopier,
+        replaceExisting: Bool
+    ) {
         Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 let destination = try copier.copy(
@@ -144,6 +162,63 @@ final class DiagnosticInstallationCoordinator: ObservableObject {
                 await self?.copyFailed(error)
             }
         }
+    }
+
+    private func stopRunningInstalledCopies() async -> Bool {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return true }
+        let destination = DiagnosticAppInstallationPolicy.destinationURL
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+        let currentProcessIdentifier = ProcessInfo.processInfo.processIdentifier
+        let installedCopies = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            .filter { application in
+                guard application.processIdentifier != currentProcessIdentifier,
+                      let bundleURL = application.bundleURL else {
+                    return false
+                }
+                return bundleURL.standardizedFileURL.resolvingSymlinksInPath() == destination
+            }
+
+        guard !installedCopies.isEmpty else { return true }
+        diagnosticInstallerLogger.notice(
+            "app.install.previous_process.detected count=\(installedCopies.count)"
+        )
+        for application in installedCopies {
+            diagnosticInstallerLogger.notice(
+                "app.install.previous_process.terminate_requested pid=\(application.processIdentifier)"
+            )
+            application.terminate()
+        }
+
+        if await waitForTermination(installedCopies, attempts: 30) {
+            diagnosticInstallerLogger.notice("app.install.previous_process.terminated forced=false")
+            return true
+        }
+
+        for application in installedCopies where !application.isTerminated {
+            diagnosticInstallerLogger.notice(
+                "app.install.previous_process.force_terminate_requested pid=\(application.processIdentifier)"
+            )
+            application.forceTerminate()
+        }
+        let terminated = await waitForTermination(installedCopies, attempts: 20)
+        diagnosticInstallerLogger.notice(
+            "app.install.previous_process.terminated forced=true success=\(terminated)"
+        )
+        return terminated
+    }
+
+    private func waitForTermination(
+        _ applications: [NSRunningApplication],
+        attempts: Int
+    ) async -> Bool {
+        for _ in 0..<attempts {
+            if applications.allSatisfy(\.isTerminated) {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        return applications.allSatisfy(\.isTerminated)
     }
 
     private func receiveProgress(_ progress: DiagnosticCopyProgress) {

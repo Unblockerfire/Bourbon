@@ -73,6 +73,13 @@ struct WhiskyApp: App {
         .commands {
             CommandGroup(after: .appInfo) {
                 SparkleView(updater: updater)
+                if isDiagnosticBuild {
+                    Divider()
+                    Button("Copy Diagnostic UI Report") {
+                        BourbonWindowHierarchyDiagnostics.copyCurrentReport(stage: "menu_command")
+                    }
+                    .keyboardShortcut("D", modifiers: [.command, .shift])
+                }
             }
             CommandGroup(before: .systemServices) {
                 Divider()
@@ -147,6 +154,10 @@ struct WhiskyApp: App {
                 SettingsView()
             }
         }
+    }
+
+    private var isDiagnosticBuild: Bool {
+        Bundle.main.bundleIdentifier == BourbonLicenseStoragePolicy.diagnosticBundleIdentifier
     }
 
     private var mainContent: some View {

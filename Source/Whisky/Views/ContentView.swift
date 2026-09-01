@@ -1649,11 +1649,12 @@ struct BourbonBuildDiagnostics {
     let displayName: String
     let version: String
     let buildNumber: String
+    let gitCommit: String
     let gitCommitShort: String
     let buildDateUTC: String
     let updateFeedURL: String
 
-    static var current: BourbonBuildDiagnostics {
+    static let current: BourbonBuildDiagnostics = {
         let infoDictionary = Bundle.main.infoDictionary ?? [:]
         let buildInfo = loadBuildInfo()
         let version = buildInfo?.marketingVersion ??
@@ -1671,11 +1672,12 @@ struct BourbonBuildDiagnostics {
             displayName: infoDictionary["CFBundleDisplayName"] as? String ?? "Bourbon",
             version: version,
             buildNumber: buildNumber,
+            gitCommit: commit,
             gitCommitShort: shortCommit,
             buildDateUTC: buildDate,
             updateFeedURL: feedURL
         )
-    }
+    }()
 
     private static func loadBuildInfo() -> BourbonBuildInfo? {
         guard let url = Bundle.main.url(forResource: "BuildInfo", withExtension: "json"),

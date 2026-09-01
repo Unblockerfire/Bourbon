@@ -22,6 +22,7 @@ struct BourbonIntroVideoView: View {
     @State private var licenseFailureCode: String?
     @State private var surfaceDiagnosticCode = "surface_pending"
     @State private var surfaceDiagnosticReport = "No window hierarchy has been captured yet."
+    @State private var diagnosticCopyConfirmation = false
     @State private var didStartReturningUserUpdateCheck = false
 
     var body: some View {
@@ -37,9 +38,14 @@ struct BourbonIntroVideoView: View {
                     licenseGateOverlay
                         .background(BourbonSurfaceOwnershipMarker(role: "license_overlay"))
                 }
+
+                if isDiagnosticBuild {
+                    diagnosticChrome
+                }
             }
         }
         .onAppear {
+            applyDiagnosticWindowTitle()
             BourbonLicenseDiagnostics.record("license.ui.opened")
             reportResponsive(stage: "opened")
             startLicenseValidation()
@@ -61,6 +67,60 @@ struct BourbonIntroVideoView: View {
                 reportSurfaceOwnership(stage: "overlay_presented")
             }
             reportResponsive(stage: "overlay_changed")
+        }
+    }
+
+    private var isDiagnosticBuild: Bool {
+        Bundle.main.bundleIdentifier == BourbonLicenseStoragePolicy.diagnosticBundleIdentifier
+    }
+
+    private var diagnosticChrome: some View {
+        VStack {
+            HStack {
+                Text(
+                    "Diagnostic \(BourbonBuildDiagnostics.current.gitCommitShort) · " +
+                        "PID \(ProcessInfo.processInfo.processIdentifier)"
+                )
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(.black.opacity(0.62), in: Capsule())
+
+                Spacer()
+
+                Button(diagnosticCopyConfirmation ? "UI Report Copied" : "Copy UI Report") {
+                    copySurfaceDiagnostics()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(12)
+
+            Spacer()
+
+            HStack {
+                Text(surfaceDiagnosticCode)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(.black.opacity(0.62), in: Capsule())
+                Spacer()
+            }
+            .padding(12)
+        }
+        .zIndex(100)
+    }
+
+    private func applyDiagnosticWindowTitle() {
+        guard isDiagnosticBuild else { return }
+        Task { @MainActor in
+            await Task.yield()
+            let title = "Bourbon Diagnostic · \(BourbonBuildDiagnostics.current.gitCommitShort)"
+            for window in NSApp.windows where window.isVisible {
+                window.title = title
+            }
         }
     }
 
@@ -518,10 +578,10 @@ struct BourbonIntroVideoView: View {
     }
 
     private func copySurfaceDiagnostics() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(surfaceDiagnosticReport, forType: .string)
-        BourbonLicenseDiagnostics.record("license.ui.window_hierarchy.copied")
+        let snapshot = BourbonWindowHierarchyDiagnostics.copyCurrentReport(stage: "copy_ui_report")
+        surfaceDiagnosticCode = snapshot.code
+        surfaceDiagnosticReport = snapshot.report
+        diagnosticCopyConfirmation = true
     }
 
     private func reportResponsive(stage: String) {
@@ -1595,7 +1655,7 @@ private final class BourbonSurfaceMarkerNSView: NSView {
 }
 
 @MainActor
-private enum BourbonWindowHierarchyDiagnostics {
+enum BourbonWindowHierarchyDiagnostics {
     struct Snapshot {
         let code: String
         let report: String
@@ -1607,13 +1667,25 @@ private enum BourbonWindowHierarchyDiagnostics {
         var playerViewCount = 0
         var introMarkerCount = 0
         var licenseMarkerCount = 0
+        var compositorWindowCount = 0
     }
 
     private static let maximumViews = 256
 
     static func capture(stage: String) -> Snapshot {
+        let allApplicationWindows = NSApp.windows
         let windows = NSApp.windows.filter(\.isVisible)
-        var state = CaptureState(lines: ["stage=\(safe(stage)) visible_windows=\(windows.count)"])
+        let build = BourbonBuildDiagnostics.current
+        var state = CaptureState(lines: [
+            "stage=\(safe(stage)) visible_windows=\(windows.count) app_windows=\(allApplicationWindows.count)",
+            "build commit=\(safe(build.gitCommit)) version=\(safe(build.version)) " +
+                "number=\(safe(build.buildNumber)) pid=\(ProcessInfo.processInfo.processIdentifier)",
+            accessibilityState()
+        ])
+
+        let compositorWindows = compositorWindowDetails()
+        state.compositorWindowCount = compositorWindows.count
+        state.lines.append(contentsOf: compositorWindows)
 
         BourbonLicenseDiagnostics.record(
             "license.ui.window_hierarchy.started",
@@ -1626,17 +1698,25 @@ private enum BourbonWindowHierarchyDiagnostics {
             let centerHit = windowCenterHitClass(window)
             let windowDetail = [
                 "index=\(windowIndex)",
+                "number=\(window.windowNumber)",
                 "class=\(windowClass)",
                 "frame=\(rect(window.frame))",
+                "level=\(window.level.rawValue)",
+                "style=\(window.styleMask.rawValue)",
                 "visible=\(window.isVisible)",
                 "key=\(window.isKeyWindow)",
                 "main=\(window.isMainWindow)",
+                "can_key=\(window.canBecomeKey)",
+                "can_main=\(window.canBecomeMain)",
                 "alpha=\(number(window.alphaValue))",
                 "ignores_mouse=\(window.ignoresMouseEvents)",
                 "accepts_mouse_moved=\(window.acceptsMouseMovedEvents)",
                 "modal=\(isModal)",
                 "sheet=\(window.sheetParent != nil)",
                 "attached_sheet=\(window.attachedSheet != nil)",
+                "parent=\(window.parent?.windowNumber ?? -1)",
+                "children=\(window.childWindows?.count ?? 0)",
+                "first_responder=\(window.firstResponder.map(className) ?? "none")",
                 "center_hit=\(centerHit)"
             ].joined(separator: " ")
             state.lines.append("window \(windowDetail)")
@@ -1654,11 +1734,22 @@ private enum BourbonWindowHierarchyDiagnostics {
 
         let modalCount = windows.filter { NSApp.modalWindow === $0 }.count
         let code = "surface_w\(windows.count)_p\(state.playerViewCount)" +
-            "_i\(state.introMarkerCount)_l\(state.licenseMarkerCount)_m\(modalCount)"
+            "_cg\(state.compositorWindowCount)_i\(state.introMarkerCount)" +
+            "_l\(state.licenseMarkerCount)_m\(modalCount)"
         let completion = "stage=\(safe(stage)) code=\(code) views=\(state.viewCount)"
         state.lines.append("completed \(completion)")
         BourbonLicenseDiagnostics.record("license.ui.window_hierarchy.completed", detail: completion)
         return Snapshot(code: code, report: state.lines.joined(separator: "\n"))
+    }
+
+    @discardableResult
+    static func copyCurrentReport(stage: String) -> Snapshot {
+        let snapshot = capture(stage: stage)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(snapshot.report, forType: .string)
+        BourbonLicenseDiagnostics.record("license.ui.window_hierarchy.copied", detail: "stage=\(safe(stage))")
+        return snapshot
     }
 
     private static func visit(
@@ -1685,6 +1776,10 @@ private enum BourbonWindowHierarchyDiagnostics {
             "hidden=\(view.isHidden)",
             "hidden_ancestor=\(view.isHiddenOrHasHiddenAncestor)",
             "alpha=\(number(view.alphaValue))",
+            "accepts_first=\(view.acceptsFirstResponder)",
+            "can_key_view=\(view.canBecomeKeyView)",
+            "focus_ring=\(view.focusRingType.rawValue)",
+            "wants_layer=\(view.wantsLayer)",
             "hit_center=\(hitClass)",
             "mouse_moves_window=\(view.mouseDownCanMoveWindow)",
             "touch=\(view.acceptsTouchEvents)",
@@ -1716,6 +1811,42 @@ private enum BourbonWindowHierarchyDiagnostics {
         guard let contentView = window.contentView else { return "none" }
         let point = NSPoint(x: contentView.bounds.midX, y: contentView.bounds.midY)
         return contentView.hitTest(point).map(className) ?? "none"
+    }
+
+    private static func accessibilityState() -> String {
+        let workspace = NSWorkspace.shared
+        return [
+            "accessibility",
+            "voiceover=\(workspace.isVoiceOverEnabled)",
+            "increase_contrast=\(workspace.accessibilityDisplayShouldIncreaseContrast)",
+            "reduce_transparency=\(workspace.accessibilityDisplayShouldReduceTransparency)",
+            "reduce_motion=\(workspace.accessibilityDisplayShouldReduceMotion)",
+            "invert_colors=\(workspace.accessibilityDisplayShouldInvertColors)"
+        ].joined(separator: " ")
+    }
+
+    private static func compositorWindowDetails() -> [String] {
+        guard let windowInfo = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return ["compositor unavailable=true"]
+        }
+
+        let processIdentifier = ProcessInfo.processInfo.processIdentifier
+        return windowInfo.compactMap { entry in
+            guard let owner = entry[kCGWindowOwnerPID as String] as? NSNumber,
+                  owner.int32Value == processIdentifier else {
+                return nil
+            }
+            let number = (entry[kCGWindowNumber as String] as? NSNumber)?.intValue ?? -1
+            let layer = (entry[kCGWindowLayer as String] as? NSNumber)?.intValue ?? -1
+            let alpha = (entry[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? -1
+            let name = entry[kCGWindowName as String] as? String ?? "none"
+            let bounds = String(describing: entry[kCGWindowBounds as String] ?? "none")
+            return "compositor number=\(number) layer=\(layer) alpha=\(alpha) " +
+                "name=\(safe(name)) bounds=\(safe(bounds))"
+        }
     }
 
     private static func nearestHostingOwner(of view: NSView) -> String {

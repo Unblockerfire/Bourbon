@@ -324,6 +324,10 @@ jobs:
           grep -Fq 'BourbonSurfaceOwnershipMarker(role: "license_overlay")' "$INTRO"
           grep -Fq 'override func hitTest(_ point: NSPoint) -> NSView?' "$INTRO"
           grep -Fq 'let windows = NSApp.windows.filter(\.isVisible)' "$INTRO"
+          grep -Fq 'CGWindowListCopyWindowInfo' "$INTRO"
+          grep -Fq 'workspace.isVoiceOverEnabled' "$INTRO"
+          grep -Fq 'Copy UI Report' "$INTRO"
+          grep -Fq 'BourbonBuildDiagnostics.current.gitCommitShort' "$INTRO"
           grep -Fq 'showButton = true' "$INTRO"
           grep -Fq 'let playerLayer = AVPlayerLayer()' "$INTRO"
           grep -Fq 'private final class BourbonPlayerSurfaceNSView' "$INTRO"
@@ -333,6 +337,9 @@ jobs:
           grep -Fq 'license.player.created", detail: "stage=validation_succeeded' "$INTRO"
           ! grep -A8 -F '.onAppear {' "$INTRO" | grep -Fq 'AVPlayer(url:'
           ! sed -n '1,220p' "$INTRO" | grep -Fq 'ProgressView()'
+          grep -Fq 'Copy Diagnostic UI Report' 'Source/Whisky/Views/WhiskyApp.swift'
+          grep -Fq 'keyboardShortcut("D", modifiers: [.command, .shift])' \
+            'Source/Whisky/Views/WhiskyApp.swift'
           grep -Fq 'configuration.timeoutIntervalForRequest = 30' "$LICENSE"
           grep -Fq 'configuration.timeoutIntervalForResource = 45' "$LICENSE"
           grep -Fq 'transport_timeout' "$FAILURE_POLICY"
@@ -356,6 +363,11 @@ jobs:
           grep -Fq 'SMAppService.mainApp.status' "$APP_DELEGATE"
           ! grep -Eq 'SMAppService.*\.(register|unregister)\(' "$APP_DELEGATE" "$SETTINGS" "$APP"
           ! grep -Eiq 'open bourbon at login|launch at login' "$SETTINGS"
+
+          INSTALLER='Source/Whisky/Views/DiagnosticAppInstallerView.swift'
+          grep -Fq 'app.install.previous_process.detected' "$INSTALLER"
+          grep -Fq 'app.install.previous_process.terminate_requested' "$INSTALLER"
+          grep -Fq 'app.install.previous_process.force_terminate_requested' "$INSTALLER"
 
       - name: Probe license service transport and response contract
         shell: bash
