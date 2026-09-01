@@ -133,12 +133,15 @@ final class DiagnosticInstallationCoordinator: ObservableObject {
 
         Task { [weak self] in
             guard let self else { return }
-            if replaceExisting, !await stopRunningInstalledCopies() {
-                phase = .failure(
-                    "The previous Bourbon Diagnostic process could not be closed safely. " +
-                        "Quit or Force Quit that diagnostic copy, then try again."
-                )
-                return
+            if replaceExisting {
+                let stoppedPreviousCopy = await stopRunningInstalledCopies()
+                if !stoppedPreviousCopy {
+                    phase = .failure(
+                        "The previous Bourbon Diagnostic process could not be closed safely. " +
+                            "Quit or Force Quit that diagnostic copy, then try again."
+                    )
+                    return
+                }
             }
             launchCopy(sourceURL: sourceURL, copier: copier, replaceExisting: replaceExisting)
         }
