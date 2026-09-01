@@ -494,8 +494,7 @@ public class WhiskyWineInstaller {
             }
 
             let existingReadiness = RuntimeReadiness.validate(
-                applicationFolder: destinationApplicationFolder,
-                runWineVersion: false
+                applicationFolder: destinationApplicationFolder
             )
             let preserveExistingRuntime = existingReadiness.isReady
             if fileManager.fileExists(atPath: destinationLibraryFolder.path(percentEncoded: false)) {
