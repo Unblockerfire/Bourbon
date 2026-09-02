@@ -418,7 +418,7 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
             WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder).map(String.init(describing:)),
             "1.0.2"
         )
-        XCTAssertEqual(preflight.version.trimmingCharacters(in: .whitespacesAndNewlines), "wine-11.16")
+        XCTAssertEqual(preflight.version, "11.16")
     }
 
     func testExtendedAttributeDiagnosticsAreReadOnlyAndDistinguishStates() throws {
