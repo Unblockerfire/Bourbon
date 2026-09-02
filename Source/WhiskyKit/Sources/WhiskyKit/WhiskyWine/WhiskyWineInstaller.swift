@@ -25,6 +25,10 @@ import CryptoKit
 
 // swiftlint:disable:next type_body_length
 public class WhiskyWineInstaller {
+    enum RuntimeAcquisitionSource: String, Sendable, Equatable {
+        case runtimeAPI = "runtime_api"
+    }
+
     public static let archiveURLDefaultsKey = "whiskyWineArchiveURL"
     public static let versionURLDefaultsKey = "whiskyWineVersionURL"
     public static let defaultArchiveURLString = [
@@ -197,18 +201,15 @@ public class WhiskyWineInstaller {
         return directory.appending(path: "\(base)-\(UUID().uuidString)\(suffix)")
     }
 
-    /// Updates from the diagnostic archive when it is packaged in this app;
-    /// production builds use the runtime manifest's signed/checksummed archive.
+    /// Resolves and installs the same signed/checksummed runtime used by normal
+    /// setup. Bundle contents never alter runtime acquisition semantics.
     public static func installLatestRuntimeUpdate(
-        in bundle: Bundle = .main,
         into destinationApplicationFolder: URL = applicationFolder
     ) async throws -> String {
-        if bundledDiagnosticRuntime(in: bundle) != nil {
-            return try await Task.detached(priority: .userInitiated) {
-                try installBundledDiagnosticRuntime(in: bundle, into: destinationApplicationFolder)
-            }.value
-        }
-
+        recordRuntimeEvent(
+            "runtime.acquisition.source",
+            detail: "source=\(runtimeAcquisitionSource().rawValue)"
+        )
         let runtimeInfo = try await latestRuntimeInfo()
         guard SemanticVersion(runtimeInfo.version) != nil else {
             throw WhiskyWineInstallerError.invalidRuntimeVersion(runtimeInfo.version)
@@ -221,15 +222,20 @@ public class WhiskyWineInstaller {
         let archive = try persistDownloadedArchive(
             at: temporaryURL,
             response: response,
-            sourceURL: runtimeInfo.archiveUrl
+            sourceURL: runtimeInfo.archiveUrl,
+            expectedSHA256: runtimeInfo.sha256
         )
         recordUpdateEvent("runtime.update.download.progress", detail: "percent=100")
         recordUpdateEvent("runtime.update.download.completed", detail: "source=runtime_manifest")
         recordUpdateEvent("runtime.update.verification.started")
-        try validateArchiveSHA256(at: archive, expected: runtimeInfo.sha256)
         recordUpdateEvent("runtime.update.verification.completed")
         try await Task.detached(priority: .userInitiated) {
-            try install(from: archive, runtimeVersion: runtimeInfo.version, into: destinationApplicationFolder)
+            try install(
+                from: archive,
+                runtimeVersion: runtimeInfo.version,
+                expectedSHA256: runtimeInfo.sha256,
+                into: destinationApplicationFolder
+            )
         }.value
         return runtimeInfo.version
     }
@@ -252,12 +258,74 @@ public class WhiskyWineInstaller {
     }
 
     public static func latestRuntimeInfo() async throws -> BourbonRuntimeInfo {
-        let request = URLRequest(url: runtimeAPIBaseURL.appending(path: "runtime/latest"))
+        let endpoint = runtimeAPIBaseURL.appending(path: "runtime/latest")
+        recordRuntimeEvent(
+            "runtime.resolver.started",
+            detail: "endpoint=\(endpoint.scheme ?? "https")://\(endpoint.host ?? "unavailable")/runtime/latest"
+        )
+        let request = URLRequest(url: endpoint)
         let (data, response) = try await URLSession(configuration: .ephemeral).data(for: request)
         try validateVersionResponse(response, sourceURL: request.url ?? runtimeAPIBaseURL)
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(BourbonRuntimeInfo.self, from: data)
+        let info = try decoder.decode(BourbonRuntimeInfo.self, from: data)
+        recordRuntimeEvent(
+            "runtime.resolver.succeeded",
+            detail: "runtime_version=\(info.version) wine_version=\(info.wineVersion) archive=\(info.archiveName)"
+        )
+        return info
+    }
+
+    /// Runtime acquisition is intentionally independent of bundle resources.
+    /// Embedded archives remain test-fixture helpers only.
+    static func runtimeAcquisitionSource(in _: Bundle = .main) -> RuntimeAcquisitionSource {
+        .runtimeAPI
+    }
+
+    /// Downloads the canonical runtime selected by `/runtime/latest` to the
+    /// user's Downloads folder. The untouched file is accepted by the normal
+    /// manual picker and uses the same response, SHA, and archive validation as
+    /// automatic setup.
+    public static func downloadLatestRuntimeForManualInstallation(
+        downloadsDirectory: URL = FileManager.default.urls(
+            for: .downloadsDirectory,
+            in: .userDomainMask
+        )[0]
+    ) async throws -> URL {
+        let runtimeInfo = try await latestRuntimeInfo()
+        let request = URLRequest(url: runtimeInfo.archiveUrl)
+        let (temporaryURL, response) = try await URLSession(configuration: .ephemeral).download(for: request)
+        return try persistManualDownload(
+            at: temporaryURL,
+            response: response,
+            runtimeInfo: runtimeInfo,
+            downloadsDirectory: downloadsDirectory
+        )
+    }
+
+    static func persistManualDownload(
+        at temporaryURL: URL,
+        response: URLResponse?,
+        runtimeInfo: BourbonRuntimeInfo,
+        downloadsDirectory: URL
+    ) throws -> URL {
+        try validateDownloadResponse(response, sourceURL: runtimeInfo.archiveUrl)
+        try validateArchive(at: temporaryURL, sourceURL: runtimeInfo.archiveUrl)
+        try validateArchiveSHA256(at: temporaryURL, expected: runtimeInfo.sha256)
+        recordRuntimeEvent("runtime.download.sha256.succeeded", detail: "purpose=manual_install")
+
+        try FileManager.default.createDirectory(at: downloadsDirectory, withIntermediateDirectories: true)
+        let destination = uniqueManualDownloadURL(
+            in: downloadsDirectory,
+            preferredName: runtimeInfo.archiveName
+        )
+        try FileManager.default.copyItem(at: temporaryURL, to: destination)
+        recordRuntimeEvent(
+            "runtime.manual.download.completed",
+            detail: "source=runtime_api archive=\(destination.lastPathComponent) runtime_version=\(runtimeInfo.version)"
+        )
+        recordArtifactSecurityState(event: "runtime.download.quarantine", component: "archive", url: destination)
+        return destination
     }
 
     /// The Whisky application folder
@@ -472,18 +540,73 @@ public class WhiskyWineInstaller {
     }
 
     private static func discoveryQuarantineState(for executable: URL) -> String {
+        extendedAttributeState(for: executable, attribute: "com.apple.quarantine").rawValue
+    }
+
+    static func extendedAttributeState(
+        for url: URL,
+        attribute: String,
+        xattrExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/xattr")
+    ) -> RuntimeExtendedAttributeState {
+        guard FileManager.default.fileExists(atPath: url.path) else { return .unavailable }
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
-        process.arguments = ["-p", "com.apple.quarantine", executable.path]
+        let processExit = DispatchSemaphore(value: 0)
+        process.executableURL = xattrExecutableURL
+        process.arguments = ["-p", attribute, url.path]
         let output = Pipe()
         process.standardOutput = output
         process.standardError = output
+        process.terminationHandler = { _ in processExit.signal() }
         do {
             try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0 ? "present" : "absent_or_unreadable"
+            guard processExit.wait(timeout: .now() + 2) == .success else {
+                process.terminate()
+                _ = processExit.wait(timeout: .now() + 1)
+                return .unreadable
+            }
+            if process.terminationStatus == 0 { return .present }
+            let data = try output.fileHandleForReading.readToEnd() ?? Data()
+            let message = String(data: data, encoding: .utf8)?.lowercased() ?? ""
+            if message.contains("no such xattr") || message.contains("attribute not found") {
+                return .absent
+            }
+            return .unreadable
         } catch {
-            return "unavailable"
+            return .unavailable
+        }
+    }
+
+    private static func recordArtifactSecurityState(event: String, component: String, url: URL) {
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        let quarantine = extendedAttributeState(for: url, attribute: "com.apple.quarantine")
+        let provenance = extendedAttributeState(for: url, attribute: "com.apple.provenance")
+        recordRuntimeEvent(
+            event,
+            detail: "component=\(component) exists=\(exists) " +
+                "state=\(quarantine.rawValue) provenance=\(provenance.rawValue)"
+        )
+    }
+
+    private static func recordInstalledRuntimeSecurityState(in applicationFolder: URL) {
+        let wineRoot = applicationFolder.appending(path: "Libraries/Wine")
+        recordArtifactSecurityState(
+            event: "runtime.install.quarantine",
+            component: "wine_root",
+            url: wineRoot
+        )
+        let components = [
+            ("wine", "bin/wine"),
+            ("wineserver", "bin/wineserver"),
+            ("libMoltenVK.dylib", "lib/libMoltenVK.dylib"),
+            ("libvulkan.1.dylib", "lib/libvulkan.1.dylib"),
+            ("ntdll.so", "lib/wine/x86_64-unix/ntdll.so")
+        ]
+        for (component, relativePath) in components {
+            recordArtifactSecurityState(
+                event: "runtime.component.quarantine",
+                component: component,
+                url: wineRoot.appending(path: relativePath)
+            )
         }
     }
 
@@ -588,6 +711,7 @@ public class WhiskyWineInstaller {
     public static func install(
         from: URL,
         runtimeVersion: String? = nil,
+        expectedSHA256: String? = nil,
         into destinationApplicationFolder: URL = applicationFolder
     ) throws {
         let fileManager = FileManager.default
@@ -602,6 +726,15 @@ public class WhiskyWineInstaller {
 
         do {
             recordRuntimeEvent("runtime.install.started")
+            recordArtifactSecurityState(
+                event: "runtime.download.quarantine",
+                component: "archive_for_install",
+                url: from
+            )
+            if let expectedSHA256 {
+                try validateArchiveSHA256(at: from, expected: expectedSHA256)
+                recordRuntimeEvent("runtime.install.sha256.succeeded")
+            }
             try validateArchive(at: from, sourceURL: nil)
             recordRuntimeEvent(
                 "runtime.install.destination",
@@ -632,7 +765,6 @@ public class WhiskyWineInstaller {
             let stagedReadiness = RuntimeReadiness.validate(
                 applicationFolder: staging,
                 expectedRuntimeVersion: resolvedRuntimeVersion,
-                requireVersionMarker: false,
                 // Do not execute Wine from the temporary staging directory.
                 // Gatekeeper approval belongs to the final installed binary and
                 // must lead to recovery rather than discarding this runtime.
@@ -676,6 +808,7 @@ public class WhiskyWineInstaller {
                 guard installedReadiness.isReady else {
                     throw WhiskyWineInstallerError.runtimeNotReady(installedReadiness)
                 }
+                recordInstalledRuntimeSecurityState(in: destinationApplicationFolder)
                 recordUpdateEvent("runtime.update.preflight.completed")
                 recordRuntimeEvent("runtime.preflight.completed", detail: "purpose=runtime_install")
                 recordUpdateEvent("runtime.update.install.completed")
@@ -721,7 +854,8 @@ public class WhiskyWineInstaller {
     public static func persistDownloadedArchive(
         at temporaryURL: URL,
         response: URLResponse?,
-        sourceURL: URL
+        sourceURL: URL,
+        expectedSHA256: String? = nil
     ) throws -> URL {
         Logger.wineKit.info(
             "Received BourbonWine download from `\(sourceURL.absoluteString)` at `\(temporaryURL.path)`"
@@ -729,6 +863,10 @@ public class WhiskyWineInstaller {
 
         try validateDownloadResponse(response, sourceURL: sourceURL)
         try validateArchive(at: temporaryURL, sourceURL: sourceURL)
+        if let expectedSHA256 {
+            try validateArchiveSHA256(at: temporaryURL, expected: expectedSHA256)
+            recordRuntimeEvent("runtime.download.sha256.succeeded")
+        }
 
         let savedURL = FileManager.default.temporaryDirectory
             .appending(path: "WhiskyWine-\(UUID().uuidString)")
@@ -742,6 +880,7 @@ public class WhiskyWineInstaller {
         Logger.wineKit.info(
             "Downloaded BourbonWine from `\(sourceURL.absoluteString)` to `\(savedURL.path(percentEncoded: false))`"
         )
+        recordArtifactSecurityState(event: "runtime.download.quarantine", component: "archive", url: savedURL)
         return savedURL
     }
 
@@ -773,17 +912,6 @@ public class WhiskyWineInstaller {
 
     public static func shouldUpdateWhiskyWine() async -> (Bool, SemanticVersion) {
         let localVersion = whiskyWineVersion()
-        if let bundledRuntime = bundledDiagnosticRuntime(),
-           let bundledVersion = SemanticVersion(bundledRuntime.info.runtimeVersion) {
-            if let localVersion {
-                if localVersion < bundledVersion {
-                    return (true, bundledVersion)
-                }
-            } else {
-                return (true, bundledVersion)
-            }
-        }
-
         let remoteVersion = await remotewhiskyWineVersion()
 
         if let localVersion = localVersion, let remoteVersion = remoteVersion {
@@ -960,6 +1088,13 @@ public class WhiskyWineInstaller {
     private static func isLibrariesRootEntry(_ entry: String) -> Bool {
         entry == "Libraries" || entry == "Libraries/" || entry.hasPrefix("Libraries/")
     }
+}
+
+enum RuntimeExtendedAttributeState: String, Sendable, Equatable {
+    case present
+    case absent
+    case unreadable
+    case unavailable
 }
 
 struct WhiskyWineVersionInfo: Codable {

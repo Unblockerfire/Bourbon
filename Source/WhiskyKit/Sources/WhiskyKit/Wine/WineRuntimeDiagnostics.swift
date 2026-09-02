@@ -216,7 +216,9 @@ enum WineDiagnosticSanitizer {
             || lowercased.contains("gatekeeper")
             || lowercased.contains("osstatus error -67062")
             || lowercased.contains("code object is not signed")
-            || lowercased.contains("malware check") {
+            || lowercased.contains("malware check")
+            || lowercased.contains("is damaged and can't be opened")
+            || lowercased.contains("should move it to the trash") {
             return .gatekeeperBlocked(path: executablePath, details: excerpt)
         }
 

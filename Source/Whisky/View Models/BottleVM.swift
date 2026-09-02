@@ -153,6 +153,14 @@ final class BottleVM: ObservableObject {
                 "bottle.create.wine.process.terminated stage=wine phase=\(phase) " +
                 "status=failure error_type=\(errorType) description=\(description)"
             )
+            let gatekeeperBlocked = (error as? WineProcessError)?.isGatekeeperBlocked == true
+                || (error as? WineRuntimePreflightError)?.isGatekeeperBlocked == true
+            if gatekeeperBlocked {
+                BottleCreationDiagnostics.record(
+                    "bottle.create.wine.gatekeeper_blocked stage=wine phase=\(phase)"
+                )
+                throw BottleCreationError.gatekeeperBlocked
+            }
             throw error
         }
     }
@@ -161,8 +169,11 @@ final class BottleVM: ObservableObject {
         if let preflightError = error as? WineRuntimePreflightError {
             return preflightError.unifiedLogDescription
         }
-        if error is BottleCreationError {
-            return "invalid_wine_version"
+        if let creationError = error as? BottleCreationError {
+            switch creationError {
+            case .invalidWineVersion: return "invalid_wine_version"
+            case .gatekeeperBlocked: return "gatekeeper_blocked"
+            }
         }
         if let wineError = error as? WineProcessError {
             return "wine_process_exit_status_\(wineError.status)"
@@ -193,8 +204,19 @@ final class BottleVM: ObservableObject {
     }
 }
 
-enum BottleCreationError: Error {
+enum BottleCreationError: LocalizedError {
     case invalidWineVersion
+    case gatekeeperBlocked
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidWineVersion:
+            return "BourbonWine returned an invalid Wine version."
+        case .gatekeeperBlocked:
+            return "macOS blocked a BourbonWine component while creating this Bottle. " +
+                "Approve BourbonWine in Privacy & Security, then try again."
+        }
+    }
 }
 
 private enum BottleCreationStage: String {

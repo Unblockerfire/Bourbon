@@ -20,6 +20,30 @@ final class WineRuntimeDiagnosticsTests: XCTestCase {
 
         XCTAssertTrue(error.isGatekeeperBlocked)
     }
+
+    func testDamagedMoltenVKDialogIsClassifiedAsGatekeeper() {
+        let error = WineDiagnosticSanitizer.classifiedFailure(
+            details: "libMoltenVK.dylib is damaged and can't be opened. You should move it to the Trash.",
+            executablePath: "/runtime/Libraries/Wine/lib/libMoltenVK.dylib",
+            status: 1
+        )
+
+        XCTAssertTrue(error.isGatekeeperBlocked)
+        XCTAssertEqual(error.diagnosticCode, "gatekeeper_blocked")
+    }
+
+    func testWineProcessErrorExposesGatekeeperClassification() {
+        let error = WineProcessError(
+            command: ["/runtime/Libraries/Wine/bin/wine", "winecfg", "-v", "win10"],
+            status: 1,
+            standardOutput: "",
+            standardError: "libMoltenVK.dylib is damaged and can't be opened.",
+            terminationReason: "exit"
+        )
+
+        XCTAssertTrue(error.isGatekeeperBlocked)
+    }
+
     func testRedactsSensitiveProcessOutput() {
         let input = "password=hunter2 token: abcdefghijk user@example.com BRBN-1234567890ABCDEF"
         let output = WineDiagnosticSanitizer.redact(input)

@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import WhiskyKit
 
@@ -188,6 +189,48 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         ))
     }
 
+    func testSHA256MismatchRejectsArchiveBeforeInstallation() throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        let archive = try fixture.archiveRuntime(version: "1.0.2")
+
+        XCTAssertThrowsError(
+            try WhiskyWineInstaller.install(
+                from: archive,
+                runtimeVersion: "1.0.2",
+                expectedSHA256: String(repeating: "0", count: 64),
+                into: fixture.applicationFolder
+            )
+        ) { error in
+            guard case WhiskyWineInstallerError.archiveChecksumMismatch = error else {
+                return XCTFail("Expected archiveChecksumMismatch, got \(error)")
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: fixture.applicationFolder.appending(path: "Libraries").path
+        ))
+    }
+
+    func testFailedReplacementPreservesExistingValidRuntime() throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        try fixture.makeRuntime(version: "1.0.1")
+        let invalidArchive = try fixture.archiveRuntime(version: "1.0.2", includeNTDLL: false)
+
+        XCTAssertThrowsError(
+            try WhiskyWineInstaller.install(
+                from: invalidArchive,
+                runtimeVersion: "1.0.2",
+                into: fixture.applicationFolder
+            )
+        )
+        XCTAssertEqual(
+            WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder).map(String.init(describing:)),
+            "1.0.1"
+        )
+        XCTAssertTrue(WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder).isReady)
+    }
+
     func testRuntimeInstallIsIdempotent() throws {
         let fixture = try RuntimeFixture()
         defer { fixture.remove() }
@@ -322,6 +365,109 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         }
     }
 
+    func testRuntimeAcquisitionNeverDependsOnEmbeddedBundleContents() throws {
+        let bundle = try fixtureBundleWithEmbeddedRuntime()
+        defer { try? FileManager.default.removeItem(at: bundle.bundleURL) }
+
+        XCTAssertNotNil(WhiskyWineInstaller.bundledDiagnosticRuntime(in: bundle))
+        XCTAssertEqual(WhiskyWineInstaller.runtimeAcquisitionSource(in: bundle), .runtimeAPI)
+    }
+
+    // swiftlint:disable:next function_body_length
+    func testManualDownloadArtifactStagesInstallsAndPreflightsUntouched() async throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        let sourceArchive = try fixture.archiveRuntime(version: "1.0.2")
+        let sourceBytes = try Data(contentsOf: sourceArchive)
+        let checksum = SHA256.hash(data: sourceBytes).map { String(format: "%02x", $0) }.joined()
+        let sourceURL = try XCTUnwrap(URL(string: "https://runtime.example/BourbonWine-1.0.2.tar.gz"))
+        let response = try XCTUnwrap(
+            HTTPURLResponse(
+                url: sourceURL,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/gzip"]
+            )
+        )
+        let runtimeInfo = WhiskyWineInstaller.BourbonRuntimeInfo(
+            version: "1.0.2",
+            wineVersion: "wine-11.16",
+            archiveName: "BourbonWine-1.0.2-macOS-x86_64.tar.gz",
+            sha256: checksum,
+            plistUrl: sourceURL,
+            archiveUrl: sourceURL,
+            expiresInSeconds: 900
+        )
+        let downloads = fixture.root.appending(path: "Downloads")
+
+        let downloaded = try WhiskyWineInstaller.persistManualDownload(
+            at: sourceArchive,
+            response: response,
+            runtimeInfo: runtimeInfo,
+            downloadsDirectory: downloads
+        )
+        XCTAssertEqual(downloaded.lastPathComponent, runtimeInfo.archiveName)
+        XCTAssertEqual(try Data(contentsOf: downloaded), sourceBytes)
+
+        let selected = try WhiskyWineInstaller.persistLocalArchive(at: downloaded)
+        XCTAssertEqual(try Data(contentsOf: selected), sourceBytes)
+        try WhiskyWineInstaller.install(from: selected, into: fixture.applicationFolder)
+        let readiness = try await WhiskyWineInstaller.retryInstalledRuntimeReadiness(
+            in: fixture.applicationFolder
+        )
+        XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
+        XCTAssertEqual(
+            WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder).map(String.init(describing:)),
+            "1.0.2"
+        )
+        XCTAssertEqual(readiness.wineVersion?.trimmingCharacters(in: .whitespacesAndNewlines), "wine-11.16")
+    }
+
+    func testExtendedAttributeDiagnosticsAreReadOnlyAndDistinguishStates() throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        let target = fixture.root.appending(path: "runtime-component")
+        let original = Data("unchanged".utf8)
+        try original.write(to: target)
+        let present = try fixture.makeProbe(name: "xattr-present", output: "0081;Safari;", status: 0)
+        let absent = try fixture.makeProbe(name: "xattr-absent", output: "No such xattr", status: 1)
+        let unreadable = try fixture.makeProbe(name: "xattr-unreadable", output: "Permission denied", status: 1)
+
+        XCTAssertEqual(
+            WhiskyWineInstaller.extendedAttributeState(
+                for: target,
+                attribute: "com.apple.quarantine",
+                xattrExecutableURL: present
+            ),
+            .present
+        )
+        XCTAssertEqual(
+            WhiskyWineInstaller.extendedAttributeState(
+                for: target,
+                attribute: "com.apple.quarantine",
+                xattrExecutableURL: absent
+            ),
+            .absent
+        )
+        XCTAssertEqual(
+            WhiskyWineInstaller.extendedAttributeState(
+                for: target,
+                attribute: "com.apple.quarantine",
+                xattrExecutableURL: unreadable
+            ),
+            .unreadable
+        )
+        XCTAssertEqual(
+            WhiskyWineInstaller.extendedAttributeState(
+                for: target,
+                attribute: "com.apple.quarantine",
+                xattrExecutableURL: fixture.root.appending(path: "missing-xattr")
+            ),
+            .unavailable
+        )
+        XCTAssertEqual(try Data(contentsOf: target), original)
+    }
+
     func testDiagnosticAndProductionRuntimeStateCanCoexist() throws {
         let fixture = try RuntimeFixture()
         defer { fixture.remove() }
@@ -335,76 +481,38 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         XCTAssertNotEqual(production, diagnostic)
     }
 
-    func testPackagedDiagnosticArchiveInstallsIntoCleanApplicationSupport() async throws {
-        guard let archivePath = ProcessInfo.processInfo.environment["BOURBON_PACKAGED_DIAGNOSTIC_RUNTIME"] else {
-            throw XCTSkip("Runs only when CI mounts the packaged diagnostic DMG.")
-        }
-        let fixture = try RuntimeFixture()
-        defer { fixture.remove() }
-        let metadataPath = try XCTUnwrap(
-            ProcessInfo.processInfo.environment["BOURBON_PACKAGED_DIAGNOSTIC_METADATA"]
-        )
-        let appPath = try XCTUnwrap(
-            ProcessInfo.processInfo.environment["BOURBON_PACKAGED_DIAGNOSTIC_APP"]
-        )
-        let metadata = try JSONDecoder().decode(
-            WhiskyWineInstaller.BundledDiagnosticRuntimeInfo.self,
-            from: Data(contentsOf: URL(fileURLWithPath: metadataPath))
-        )
-
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: fixture.applicationFolder.appending(path: "Libraries/Wine/bin/wine").path
-        ))
-        let bundle = try XCTUnwrap(Bundle(url: URL(fileURLWithPath: appPath)))
-        let manualDownloadDirectory = fixture.root.appending(path: "Downloads")
-        let manualDownload = try WhiskyWineInstaller.exportBundledDiagnosticRuntimeForManualInstallation(
-            in: bundle,
-            downloadsDirectory: manualDownloadDirectory
-        )
-        XCTAssertEqual(try Data(contentsOf: manualDownload), try Data(contentsOf: URL(fileURLWithPath: archivePath)))
-        let persistedArchive = try WhiskyWineInstaller.persistLocalArchive(at: manualDownload)
-        try WhiskyWineInstaller.install(
-            from: persistedArchive,
-            // Match the manual picker: the untouched archive manifest, rather
-            // than separate app metadata, supplies the expected version.
-            runtimeVersion: nil,
-            into: fixture.applicationFolder
-        )
-
-        let readiness = WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder)
-        XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
-        XCTAssertEqual(
-            readiness.wineVersion?.trimmingCharacters(in: .whitespacesAndNewlines),
-            metadata.wineVersion
-        )
-        XCTAssertTrue(FileManager.default.fileExists(
-            atPath: fixture.applicationFolder.appending(path: "Libraries/Wine/bin/wine").path
-        ))
-        _ = try await WhiskyWineInstaller.retryInstalledRuntimeReadiness(in: fixture.applicationFolder)
-    }
-
-    func testPackagedDiagnosticBundleBootstrapsFreshRuntime() throws {
+    func testPackagedDiagnosticUsesProductionRuntimeAcquisition() throws {
         guard let appPath = ProcessInfo.processInfo.environment["BOURBON_PACKAGED_DIAGNOSTIC_APP"] else {
             throw XCTSkip("Runs only when CI mounts the packaged diagnostic DMG.")
         }
-        let appURL = URL(fileURLWithPath: appPath)
-        let bundle = try XCTUnwrap(Bundle(url: appURL))
-        let fixture = try RuntimeFixture()
-        defer { fixture.remove() }
+        let bundle = try XCTUnwrap(Bundle(url: URL(fileURLWithPath: appPath)))
 
         XCTAssertEqual(bundle.bundleIdentifier, "com.unblockerfire.BourbonDiagnostic")
-        XCTAssertNil(WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder))
-        let installedVersion = try WhiskyWineInstaller.installBundledDiagnosticRuntime(
-            in: bundle,
-            into: fixture.applicationFolder
-        )
+        XCTAssertNil(WhiskyWineInstaller.bundledDiagnosticRuntime(in: bundle))
+        XCTAssertEqual(WhiskyWineInstaller.runtimeAcquisitionSource(in: bundle), .runtimeAPI)
+        XCTAssertNil(bundle.url(forResource: "BourbonWineDiagnosticRuntime", withExtension: "tar.gz"))
+    }
 
-        XCTAssertEqual(installedVersion, "1.0.2")
-        let readiness = WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder)
-        XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
-        XCTAssertTrue(FileManager.default.isExecutableFile(
-            atPath: fixture.applicationFolder.appending(path: "Libraries/Wine/bin/wine").path
-        ))
+    private func fixtureBundleWithEmbeddedRuntime() throws -> Bundle {
+        let bundleURL = FileManager.default.temporaryDirectory
+            .appending(path: "BourbonAcquisitionTests-\(UUID().uuidString)")
+            .appendingPathExtension("bundle")
+        let resources = bundleURL.appending(path: "Contents/Resources")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        let info: [String: Any] = [
+            "CFBundleIdentifier": "com.unblockerfire.BourbonAcquisitionTests",
+            "CFBundlePackageType": "BNDL"
+        ]
+        let plist = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        try plist.write(to: bundleURL.appending(path: "Contents/Info.plist"))
+        try Data([0x1f, 0x8b]).write(to: resources.appending(path: "BourbonWineDiagnosticRuntime.tar.gz"))
+        let metadata = """
+        {"maximumMinimumMacOS":"14.0","runtimeVersion":"1.0.2","sourceAsset":"fixture",
+        "sourceAssetSHA256":"fixture","sourceRelease":"11.16","sourceRepository":"fixture",
+        "wineVersion":"wine-11.16"}
+        """
+        try Data(metadata.utf8).write(to: resources.appending(path: "BourbonWineDiagnosticRuntime.json"))
+        return try XCTUnwrap(Bundle(url: bundleURL))
     }
 }
 
@@ -485,6 +593,12 @@ private final class RuntimeFixture {
             at: applicationFolder.appending(path: "Libraries/Wine/bin/wine"),
             contents: contents
         )
+    }
+
+    func makeProbe(name: String, output: String, status: Int32) throws -> URL {
+        let probe = root.appending(path: name)
+        try makeExecutable(at: probe, contents: "#!/bin/sh\nprintf '%s' '\(output)' >&2\nexit \(status)\n")
+        return probe
     }
 
     private func makeExecutable(at url: URL, contents: String) throws {

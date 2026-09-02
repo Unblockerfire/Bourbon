@@ -842,6 +842,14 @@ public struct WineProcessError: LocalizedError {
         let excerpt = WineDiagnosticSanitizer.excerpt(from: output)
         return "Wine command failed with exit status \(status). \(excerpt)"
     }
+
+    public var isGatekeeperBlocked: Bool {
+        WineDiagnosticSanitizer.classifiedFailure(
+            details: output,
+            executablePath: command.first ?? "wine",
+            status: status
+        ).isGatekeeperBlocked
+    }
 }
 
 private extension Wine {

@@ -461,6 +461,14 @@ jobs:
             runtime.download.required \
             runtime.download.reason \
             runtime.download.skipped_existing \
+            runtime.download.quarantine \
+            runtime.install.quarantine \
+            runtime.component.quarantine \
+            runtime.download.sha256.succeeded \
+            runtime.resolver.started \
+            runtime.resolver.succeeded \
+            runtime.acquisition.source \
+            runtime.manual.download.completed \
             runtime.manual.install.started \
             runtime.manual.install.succeeded \
             runtime.manual.install.failed \
@@ -489,6 +497,10 @@ jobs:
           grep -Fq 'Restore Previous BourbonWine' "$RECOVERY_VIEW"
           grep -Fq 'Install BourbonWine Manually' "$DOWNLOAD_VIEW"
           grep -Fq 'Download BourbonWine Manually' "$DOWNLOAD_VIEW"
+          grep -Fq 'downloadLatestRuntimeForManualInstallation' "$DOWNLOAD_VIEW" "$INSTALLER"
+          ! grep -Fq 'loadBundledDiagnosticRuntime' "$DOWNLOAD_VIEW"
+          ! grep -Fq 'exportBundledDiagnosticRuntimeForManualInstallation' "$DOWNLOAD_VIEW"
+          grep -Fq 'runtimeAcquisitionSource' "$INSTALLER"
           grep -Fq 'runWineVersion: false' "$INSTALLER"
 
           WINE='Source/WhiskyKit/Sources/WhiskyKit/Wine/Wine.swift'
@@ -519,6 +531,7 @@ jobs:
           RUNTIME_ARCHIVE="$RUNNER_TEMP/bourbon-runtime.tar.gz"
           RUNTIME_LISTING="$RUNNER_TEMP/bourbon-runtime-files.txt"
           RUNTIME_EXTRACT="$RUNNER_TEMP/bourbon-runtime-extract"
+          mkdir -p "$RUNNER_TEMP/bourbon-validation-logs"
 
           curl --fail --silent --show-error \
             https://api.getbourbon.app/runtime/latest \
@@ -533,6 +546,17 @@ jobs:
           RUNTIME_WINE_VERSION="$(python3 -c \
             'import json,sys; print(json.load(open(sys.argv[1]))["wineVersion"])' \
             "$RUNTIME_JSON")"
+          RUNTIME_ARCHIVE_NAME="$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["archiveName"])' \
+            "$RUNTIME_JSON")"
+          RUNTIME_API_VERSION="$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["version"])' \
+            "$RUNTIME_JSON")"
+
+          test "$RUNTIME_API_VERSION" = '1.0.2'
+          test "$RUNTIME_WINE_VERSION" = 'wine-11.16'
+          test "$RUNTIME_ARCHIVE_NAME" = 'BourbonWine-1.0.2-macOS-x86_64.tar.gz'
+          test "$RUNTIME_SHA256" = '6e070803fb5d1f9f92152b82ec6a1dab4cb82bcc1bc719663dda4a492875fce8'
 
           curl --fail --location --silent --show-error \
             "$RUNTIME_URL" \
@@ -567,11 +591,32 @@ jobs:
             "$RUNTIME_EXTRACT/Libraries/BourbonWineRuntime.json")"
           RUNTIME_MARKER_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :version' \
             "$RUNTIME_EXTRACT/Libraries/BourbonWineVersion.plist")"
-          RUNTIME_API_VERSION="$(python3 -c \
-            'import json,sys; print(json.load(open(sys.argv[1]))["version"])' \
-            "$RUNTIME_JSON")"
           test "$RUNTIME_MANIFEST_VERSION" = "$RUNTIME_API_VERSION"
           test "$RUNTIME_MARKER_VERSION" = "$RUNTIME_API_VERSION"
+
+          RUNTIME_WINE_ROOT="$RUNTIME_EXTRACT/Libraries/Wine"
+          DYLD_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" \
+            DYLD_FALLBACK_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" \
+            "$RUNTIME_EXTRACT/$SELECTED_LAUNCHER" --version \
+            | tee "$RUNNER_TEMP/bourbon-validation-logs/production-runtime-wine-version.txt"
+          DYLD_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" \
+            DYLD_FALLBACK_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" \
+            "$RUNTIME_WINE_ROOT/bin/wineserver" --version \
+            | tee "$RUNNER_TEMP/bourbon-validation-logs/production-runtime-wineserver-version.txt"
+
+          {
+            echo 'CI quarantine limitation: archive fetched by curl on a GitHub runner; no Safari provenance is expected.'
+            for COMPONENT in \
+              "$RUNTIME_ARCHIVE" \
+              "$RUNTIME_EXTRACT/$SELECTED_LAUNCHER" \
+              "$RUNTIME_WINE_ROOT/bin/wineserver" \
+              "$RUNTIME_WINE_ROOT/lib/libMoltenVK.dylib" \
+              "$RUNTIME_WINE_ROOT/lib/libvulkan.1.dylib" \
+              "$RUNTIME_WINE_ROOT/lib/wine/x86_64-unix/ntdll.so"; do
+              echo "component=$(basename "$COMPONENT")"
+              xattr -l "$COMPONENT" 2>&1 || true
+            done
+          } > "$RUNNER_TEMP/bourbon-validation-logs/production-runtime-xattrs.txt"
 
           echo "Resolver-selected production runtime launcher: $SELECTED_LAUNCHER"
           echo "Production runtime Wine version: $RUNTIME_WINE_VERSION"
@@ -647,10 +692,6 @@ jobs:
           test -d "$SOURCE_APP"
           mkdir -p "$DIAGNOSTIC_ROOT" "$DIAGNOSTIC_OUTPUT"
           ditto "$SOURCE_APP" "$DIAGNOSTIC_APP"
-          cp "$RUNNER_TEMP/bourbon-corrected-runtime/BourbonWineDiagnosticRuntime.tar.gz" \
-            "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.tar.gz"
-          cp "$RUNNER_TEMP/bourbon-corrected-runtime/BourbonWineDiagnosticRuntime.json" \
-            "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.json"
           /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Bourbon Diagnostic' \
             "$DIAGNOSTIC_APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.unblockerfire.BourbonDiagnostic' \
@@ -670,8 +711,8 @@ jobs:
           ! /usr/libexec/PlistBuddy -c 'Print :SMPrivilegedExecutables' \
             "$DIAGNOSTIC_APP/Contents/Info.plist" >/dev/null 2>&1
           test -f "$DIAGNOSTIC_APP/Contents/Resources/BuildInfo.json"
-          test -f "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.tar.gz"
-          test -f "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.json"
+          test ! -e "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.tar.gz"
+          test ! -e "$DIAGNOSTIC_APP/Contents/Resources/BourbonWineDiagnosticRuntime.json"
           python3 - "$DIAGNOSTIC_APP/Contents/Resources/BuildInfo.json" "$GITHUB_SHA" <<'PY'
           import json
           import sys
@@ -691,25 +732,21 @@ jobs:
             "$DIAGNOSTIC_DMG"
           shasum -a 256 "$DIAGNOSTIC_DMG" > "$DIAGNOSTIC_DMG.sha256"
 
-      - name: Validate packaged diagnostic DMG and clean runtime installation
+      - name: Validate packaged diagnostic DMG production runtime acquisition
         shell: bash
         run: |
           set -euo pipefail
 
           DMG_PATH="$(find "$RUNNER_TEMP/bourbon-diagnostic-dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
           MOUNT_DIR="$RUNNER_TEMP/bourbon-diagnostic-mounted"
-          EXTRACT_DIR="$RUNNER_TEMP/bourbon-diagnostic-runtime-extract"
-          CLEAN_HOME="$RUNNER_TEMP/bourbon-diagnostic-clean-home"
-          mkdir -p "$MOUNT_DIR" "$EXTRACT_DIR" "$CLEAN_HOME"
+          mkdir -p "$MOUNT_DIR"
           hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_DIR" -nobrowse -readonly -noverify
           cleanup_mount() { hdiutil detach "$MOUNT_DIR" -quiet || true; }
           trap cleanup_mount EXIT
 
           APP="$MOUNT_DIR/Bourbon Diagnostic.app"
-          ARCHIVE="$APP/Contents/Resources/BourbonWineDiagnosticRuntime.tar.gz"
-          METADATA="$APP/Contents/Resources/BourbonWineDiagnosticRuntime.json"
-          test -f "$ARCHIVE"
-          test -f "$METADATA"
+          test ! -e "$APP/Contents/Resources/BourbonWineDiagnosticRuntime.tar.gz"
+          test ! -e "$APP/Contents/Resources/BourbonWineDiagnosticRuntime.json"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = \
             'com.unblockerfire.BourbonDiagnostic'
           test ! -e "$APP/Contents/Library/LoginItems"
@@ -719,48 +756,20 @@ jobs:
             'bundle_identifier=com.unblockerfire.BourbonDiagnostic' \
             'embedded_login_items=false' \
             'sm_privileged_executables=false' \
+            'embedded_bourbonwine_runtime=false' \
+            'runtime_acquisition=production_runtime_api' \
             > "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-login-item-audit.txt"
-          BOURBON_PACKAGED_DIAGNOSTIC_RUNTIME="$ARCHIVE" \
-            BOURBON_PACKAGED_DIAGNOSTIC_METADATA="$METADATA" \
-            BOURBON_PACKAGED_DIAGNOSTIC_APP="$APP" \
+          BOURBON_PACKAGED_DIAGNOSTIC_APP="$APP" \
             swift test --package-path Source/WhiskyKit \
-              --filter WhiskyWineRuntimeReadinessTests/testPackagedDiagnostic
-          tar -tzf "$ARCHIVE" | grep -Fx 'Libraries/Wine/bin/wine'
-          tar -tzf "$ARCHIVE" | grep -Fx 'Libraries/Wine/bin/wineserver'
-          tar -tzf "$ARCHIVE" | grep -Fx 'Libraries/Wine/lib/wine/x86_64-unix/ntdll.so'
-          tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR"
-          RUNTIME="$EXTRACT_DIR/Libraries/Wine"
-          test -x "$RUNTIME/bin/wine"
-          test -x "$RUNTIME/bin/wineserver"
-          test -f "$RUNTIME/lib/wine/x86_64-unix/ntdll.so"
-          file \
-            "$RUNTIME/bin/wine" \
-            "$RUNTIME/bin/wineserver" \
-            "$RUNTIME/lib/wine/x86_64-unix/ntdll.so" \
-            | tee "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-runtime-file.txt"
-          lipo -archs "$RUNTIME/bin/wine" \
-            | tee "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-wine-architectures.txt"
-          otool -l "$RUNTIME/bin/wine" \
-            | tee "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-wine-load-commands.txt"
-          xattr -l "$ARCHIVE" \
-            > "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-archive-xattrs.txt" 2>&1 || true
-          xattr -l "$RUNTIME/bin/wine" \
-            > "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-extracted-wine-xattrs.txt" 2>&1 || true
-          DYLD_LIBRARY_PATH="$RUNTIME/lib" DYLD_FALLBACK_LIBRARY_PATH="$RUNTIME/lib" \
-            "$RUNTIME/bin/wine" --version | tee "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-wine-version.txt"
+              --filter WhiskyWineRuntimeReadinessTests/testPackagedDiagnosticUsesProductionRuntimeAcquisition
 
-          # This explicitly proves the app's isolated Application Support destination
-          # starts empty before the bundled archive is installed.
-          DESTINATION="$CLEAN_HOME/Library/Application Support/com.unblockerfire.BourbonDiagnostic"
-          test ! -e "$DESTINATION/Libraries/Wine/bin/wine"
-          mkdir -p "$DESTINATION"
-          tar -xzf "$ARCHIVE" -C "$DESTINATION"
-          test -x "$DESTINATION/Libraries/Wine/bin/wine"
-          test -x "$DESTINATION/Libraries/Wine/bin/wineserver"
-          test -f "$DESTINATION/Libraries/Wine/lib/wine/x86_64-unix/ntdll.so"
-          DYLD_LIBRARY_PATH="$DESTINATION/Libraries/Wine/lib" \
-            DYLD_FALLBACK_LIBRARY_PATH="$DESTINATION/Libraries/Wine/lib" \
-            "$DESTINATION/Libraries/Wine/bin/wine" --version
+          {
+            echo 'CI quarantine limitation: this DMG was built and mounted locally, not downloaded by Safari.'
+            echo 'dmg:'
+            xattr -l "$DMG_PATH" 2>&1 || true
+            echo 'app:'
+            xattr -l "$APP" 2>&1 || true
+          } > "$RUNNER_TEMP/bourbon-validation-logs/packaged-dmg-xattrs.txt"
 
       - name: Upload diagnostic DMG
         uses: actions/upload-artifact@v4

@@ -30,6 +30,7 @@ struct SetupView: View {
     @State private var path: [SetupStage] = []
     @State var tarLocation: URL = URL(fileURLWithPath: "")
     @State var runtimeVersion: String?
+    @State var runtimeSHA256: String?
     @State var manualRuntimeArchive = false
     @Binding var showSetup: Bool
     @Binding var showBottleCreation: Bool
@@ -68,6 +69,7 @@ struct SetupView: View {
                             WhiskyWineDownloadView(
                                 tarLocation: $tarLocation,
                                 runtimeVersion: $runtimeVersion,
+                                runtimeSHA256: $runtimeSHA256,
                                 manualRuntimeArchive: $manualRuntimeArchive,
                                 path: $path
                             )
@@ -75,6 +77,7 @@ struct SetupView: View {
                             WhiskyWineInstallView(
                                 tarLocation: $tarLocation,
                                 runtimeVersion: $runtimeVersion,
+                                runtimeSHA256: $runtimeSHA256,
                                 manualRuntimeArchive: $manualRuntimeArchive,
                                 path: $path,
                                 showSetup: $showSetup

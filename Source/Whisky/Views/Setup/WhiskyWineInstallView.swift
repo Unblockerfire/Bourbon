@@ -26,6 +26,7 @@ struct WhiskyWineInstallView: View {
     @State private var installStatus = "Preparing BourbonWine…"
     @Binding var tarLocation: URL
     @Binding var runtimeVersion: String?
+    @Binding var runtimeSHA256: String?
     @Binding var manualRuntimeArchive: Bool
     @Binding var path: [SetupStage]
     @Binding var showSetup: Bool
@@ -84,6 +85,7 @@ struct WhiskyWineInstallView: View {
         .onAppear {
             let archiveURL = tarLocation
             let installedRuntimeVersion = runtimeVersion
+            let installedRuntimeSHA256 = runtimeSHA256
             Task {
                 WhiskyWineInstaller.recordRuntimeEvent("runtime.archive.selected")
                 var outcome = "cancelled"
@@ -99,7 +101,8 @@ struct WhiskyWineInstallView: View {
                     try await Task.detached(priority: .userInitiated) {
                         try WhiskyWineInstaller.install(
                             from: archiveURL,
-                            runtimeVersion: installedRuntimeVersion
+                            runtimeVersion: installedRuntimeVersion,
+                            expectedSHA256: installedRuntimeSHA256
                         )
                     }.value
                     installStatus = "Checking BourbonWine…"

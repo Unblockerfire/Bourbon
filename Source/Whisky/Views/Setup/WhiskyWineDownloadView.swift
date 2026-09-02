@@ -6,12 +6,14 @@ import WhiskyKit
 struct WhiskyWineDownloadView: View {
     @Binding var tarLocation: URL
     @Binding var runtimeVersion: String?
+    @Binding var runtimeSHA256: String?
     @Binding var manualRuntimeArchive: Bool
     @Binding var path: [SetupStage]
 
     @State private var downloadTask: URLSessionDownloadTask?
     @State private var observation: NSKeyValueObservation?
     @State private var downloadProgress: Double = 0
+    @State private var verifyingDownload = false
     @State private var downloadError: String?
     @State private var manualDownloadMessage: String?
     @State private var localArchivePanel: NSOpenPanel?
@@ -71,6 +73,11 @@ struct WhiskyWineDownloadView: View {
                 .multilineTextAlignment(.center)
             Button("Retry") { download() }
                 .buttonStyle(BourbonPrimaryButtonStyle())
+        } else if verifyingDownload {
+            ProgressView()
+                .controlSize(.large)
+            Text("Verifying BourbonWine…")
+                .foregroundStyle(.secondary)
         } else {
             ProgressView(value: downloadProgress)
                 .frame(width: 320)
@@ -79,44 +86,60 @@ struct WhiskyWineDownloadView: View {
         }
     }
 
+    // swiftlint:disable:next function_body_length
     private func download() {
         downloadError = nil
         manualDownloadMessage = nil
         downloadProgress = 0
+        verifyingDownload = false
         manualRuntimeArchive = false
+        runtimeSHA256 = nil
         downloadTask?.cancel()
         observation?.invalidate()
 
         Task {
             do {
                 if await existingRuntimePreventsDownload() { return }
-                if try loadBundledDiagnosticRuntime() { return }
-
                 let runtimeInfo = try await WhiskyWineInstaller.latestRuntimeInfo()
                 let sourceURL = runtimeInfo.archiveUrl
                 runtimeVersion = runtimeInfo.version
+                runtimeSHA256 = runtimeInfo.sha256
 
                 let task = URLSession(configuration: .ephemeral).downloadTask(with: sourceURL) { url, response, error in
                     DispatchQueue.main.async {
                         if let error {
+                            verifyingDownload = false
                             downloadError = error.localizedDescription
                             return
                         }
 
                         guard let url else {
+                            verifyingDownload = false
                             downloadError = "Download failed."
                             return
                         }
 
-                        do {
-                            tarLocation = try WhiskyWineInstaller.persistDownloadedArchive(
-                                at: url,
-                                response: response,
-                                sourceURL: sourceURL
-                            )
-                            path.append(.whiskyWineInstall)
-                        } catch {
-                            downloadError = error.localizedDescription
+                        verifyingDownload = true
+                        Task {
+                            do {
+                                let persistedArchive = try await Task.detached(priority: .userInitiated) {
+                                    try WhiskyWineInstaller.persistDownloadedArchive(
+                                        at: url,
+                                        response: response,
+                                        sourceURL: sourceURL,
+                                        expectedSHA256: runtimeInfo.sha256
+                                    )
+                                }.value
+                                verifyingDownload = false
+                                tarLocation = persistedArchive
+                                path.append(.whiskyWineInstall)
+                            } catch is CancellationError {
+                                verifyingDownload = false
+                                downloadError = "BourbonWine download was cancelled. You can retry safely."
+                            } catch {
+                                verifyingDownload = false
+                                downloadError = error.localizedDescription
+                            }
                         }
                     }
                 }
@@ -178,18 +201,6 @@ struct WhiskyWineDownloadView: View {
         }
     }
 
-    private func loadBundledDiagnosticRuntime() throws -> Bool {
-        guard let bundledRuntime = WhiskyWineInstaller.bundledDiagnosticRuntime() else {
-            return false
-        }
-
-        runtimeVersion = bundledRuntime.info.runtimeVersion
-        tarLocation = try WhiskyWineInstaller.persistLocalArchive(at: bundledRuntime.archive)
-        downloadProgress = 1
-        path.append(.whiskyWineInstall)
-        return true
-    }
-
     private func chooseLocalArchive() {
         let panel = NSOpenPanel()
         localArchivePanel = panel
@@ -208,6 +219,7 @@ struct WhiskyWineDownloadView: View {
                 // version. This must match the exact artifact opened by the
                 // companion manual-download button, not this app bundle.
                 runtimeVersion = nil
+                runtimeSHA256 = nil
                 tarLocation = try WhiskyWineInstaller.persistLocalArchive(at: url)
                 path.append(.whiskyWineInstall)
             } catch {
@@ -229,16 +241,9 @@ struct WhiskyWineDownloadView: View {
     private func downloadManually() {
         Task {
             do {
-                if WhiskyWineInstaller.bundledDiagnosticRuntime() != nil {
-                    let archive = try WhiskyWineInstaller.exportBundledDiagnosticRuntimeForManualInstallation()
-                    manualDownloadMessage =
-                        "Saved \(archive.lastPathComponent) to Downloads. Select it with Install BourbonWine Manually."
-                    return
-                }
-                let runtimeInfo = try await WhiskyWineInstaller.latestRuntimeInfo()
-                guard NSWorkspace.shared.open(runtimeInfo.archiveUrl) else {
-                    throw CocoaError(.fileNoSuchFile)
-                }
+                let archive = try await WhiskyWineInstaller.downloadLatestRuntimeForManualInstallation()
+                manualDownloadMessage =
+                    "Saved \(archive.lastPathComponent) to Downloads. Select it with Install BourbonWine Manually."
             } catch {
                 downloadError = "Could not open the BourbonWine download: \(error.localizedDescription)"
             }
