@@ -52,8 +52,9 @@ public struct BottleData: Codable {
     public mutating func loadBottles() -> [Bottle] {
         var bottles: [Bottle] = []
         var validPaths: [URL] = []
+        var seenPaths = Set<URL>()
 
-        for path in paths {
+        for path in paths where seenPaths.insert(path).inserted {
             let bottlePath = path.path(percentEncoded: false)
             let bottleMetadata = path
                 .appending(path: "Metadata")

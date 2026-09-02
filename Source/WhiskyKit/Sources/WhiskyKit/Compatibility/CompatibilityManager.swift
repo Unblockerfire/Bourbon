@@ -185,8 +185,7 @@ struct ChromiumWebViewLaunchProfile: CompatibilityLaunchProfile {
         .electron,
         .chromium,
         .cef,
-        .squirrel,
-        .steamWebView
+        .squirrel
     ]
 
     func applies(to analysis: InstallerAnalysis, target: PreparedCompatibilityTarget) -> Bool {
@@ -205,7 +204,7 @@ struct ChromiumWebViewLaunchProfile: CompatibilityLaunchProfile {
             "--use-gl=swiftshader"
         ]
 
-        if analysis.technologies.contains(.cef) || analysis.technologies.contains(.steamWebView) {
+        if analysis.technologies.contains(.cef) {
             flags.append("-cef-disable-gpu")
         }
 

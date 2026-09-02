@@ -90,6 +90,36 @@ public enum WinVersion: String, CaseIterable, Codable, Sendable {
     case win10 = "win10"
     case win11 = "win11"
 
+    /// Windows versions offered for new Bottles and normal configuration.
+    /// Legacy cases remain Codable so existing metadata is never corrupted.
+    public static let supportedVersions: [WinVersion] = [.win11, .win10]
+
+    public var isLegacy: Bool {
+        !Self.supportedVersions.contains(self)
+    }
+
+    public var supportLabel: String {
+        switch self {
+        case .win11:
+            return "Recommended"
+        case .win10:
+            return "Compatibility"
+        case .winXP, .win7, .win8, .win81:
+            return "Legacy"
+        }
+    }
+
+    public var supportDescription: String {
+        switch self {
+        case .win11:
+            return "Recommended for modern Windows applications and games."
+        case .win10:
+            return "Compatibility mode for applications that work better when Windows 10 is reported."
+        case .winXP, .win7, .win8, .win81:
+            return "This Bottle uses a legacy Windows compatibility mode that Bourbon no longer supports."
+        }
+    }
+
     public func pretty() -> String {
         switch self {
         case .winXP:
@@ -115,7 +145,7 @@ public enum EnhancedSync: Codable, Equatable {
 public struct BottleWineConfig: Codable, Equatable {
     static let defaultWineVersion = SemanticVersion(7, 7, 0)
     var wineVersion: SemanticVersion = Self.defaultWineVersion
-    var windowsVersion: WinVersion = .win10
+    var windowsVersion: WinVersion = .win11
     var enhancedSync: EnhancedSync = .msync
     var avxEnabled: Bool = false
 
@@ -125,7 +155,7 @@ public struct BottleWineConfig: Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.wineVersion = try container.decodeIfPresent(SemanticVersion.self, forKey: .wineVersion) ?? Self.defaultWineVersion
-        self.windowsVersion = try container.decodeIfPresent(WinVersion.self, forKey: .windowsVersion) ?? .win10
+        self.windowsVersion = try container.decodeIfPresent(WinVersion.self, forKey: .windowsVersion) ?? .win11
         self.enhancedSync = try container.decodeIfPresent(EnhancedSync.self, forKey: .enhancedSync) ?? .msync
         self.avxEnabled = try container.decodeIfPresent(Bool.self, forKey: .avxEnabled) ?? false
     }

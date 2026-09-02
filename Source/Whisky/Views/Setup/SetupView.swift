@@ -18,6 +18,7 @@
 
 import SwiftUI
 @preconcurrency import Sparkle
+import WhiskyKit
 
 enum SetupStage {
     case rosetta
@@ -36,6 +37,7 @@ struct SetupView: View {
     @Binding var showBottleCreation: Bool
     let updater: SPUUpdater
     var firstTime: Bool = true
+    var runtimeRepairState: RuntimeDiscovery.State?
     @State private var showIntro = true
     @AppStorage("hasSeenIntroVideo") private var hasSeenIntroVideo = false
     @AppStorage("hasCompletedFirstRunOnboarding") private var hasCompletedFirstRunOnboarding = false
@@ -96,6 +98,7 @@ struct SetupView: View {
             if hasSeenIntroVideo {
                 showIntro = false
             }
+            routeReturningUserToRuntimeRecovery()
         }
     }
 
@@ -107,5 +110,18 @@ struct SetupView: View {
         }
 
         updater.checkForUpdatesInBackground()
+    }
+
+    private func routeReturningUserToRuntimeRecovery() {
+        guard !firstTime, path.isEmpty else { return }
+        switch RuntimeStartupRouting.route(
+            onboardingCompleted: hasCompletedFirstRunOnboarding,
+            runtimeState: runtimeRepairState
+        ) {
+        case .gatekeeperRecovery:
+            path = [.whiskyWineGatekeeperRecovery]
+        case .runtimeRepair, .onboarding, .home:
+            break
+        }
     }
 }

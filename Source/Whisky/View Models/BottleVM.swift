@@ -40,6 +40,7 @@ final class BottleVM: ObservableObject {
 
     var bottlesList = BottleData()
     @Published var bottles: [Bottle] = []
+    private var activeCreationOperations: [UUID: BottleWineOperation] = [:]
 
     @MainActor
     func loadBottles() {
@@ -52,7 +53,10 @@ final class BottleVM: ObservableObject {
 
     func createNewBottle(bottleName: String, winVersion: WinVersion, bottleURL: URL) async throws -> URL {
         let newBottleDir = bottleURL.appending(path: UUID().uuidString)
+        let wineOperation = BottleWineOperation(prefixURL: newBottleDir)
         var createdDirectory = false
+        var createdBottle: Bottle?
+        activeCreationOperations[wineOperation.id] = wineOperation
 
         do {
             try await runCreationStage(.directory) {
@@ -67,42 +71,84 @@ final class BottleVM: ObservableObject {
                 bottle.settings.windowsVersion = winVersion
                 bottle.settings.name = bottleName
                 bottles.append(bottle)
+                createdBottle = bottle
                 return bottle
             }
 
             let semanticWineVersion = try await runCreationStage(.wine) {
-                try await initializeWine(bottle: bottle, winVersion: winVersion)
+                try await initializeWine(
+                    bottle: bottle,
+                    winVersion: winVersion,
+                    operation: wineOperation
+                )
             }
 
             try await runCreationStage(.persistence) {
                 bottle.settings.wineVersion = semanticWineVersion
                 bottle.inFlight = false
-                bottlesList.paths.append(newBottleDir)
+                if !bottlesList.paths.contains(newBottleDir) {
+                    bottlesList.paths.append(newBottleDir)
+                }
             }
 
             try await runCreationStage(.reload) {
                 loadBottles()
             }
+            wineOperation.finish()
+            activeCreationOperations[wineOperation.id] = nil
             return newBottleDir
         } catch {
+            if let createdBottle,
+               wineOperation.invocationCount(for: "configuration") > 0 {
+                try? await Wine.stopBottleProcesses(
+                    bottle: createdBottle,
+                    operation: wineOperation,
+                    reason: error is CancellationError ? "creation_cancelled" : "creation_failed"
+                )
+            }
             cleanupPartialBottle(at: newBottleDir, removeDirectory: createdDirectory)
+            wineOperation.finish()
+            activeCreationOperations[wineOperation.id] = nil
             throw error
         }
     }
 
-    private func initializeWine(bottle: Bottle, winVersion: WinVersion) async throws -> SemanticVersion {
-        let runtime = try await runWineCreationProcess(phase: "preflight") {
-            try await Wine.preflightRuntime()
+    private func initializeWine(
+        bottle: Bottle,
+        winVersion: WinVersion,
+        operation: BottleWineOperation
+    ) async throws -> SemanticVersion {
+        let runtime: WineRuntimePreflightResult
+        do {
+            runtime = try await runWineCreationProcess(phase: "preflight") {
+                try await Wine.preflightRuntime(operation: operation)
+            }
+        } catch let error as WineRuntimePreflightError where error.diagnosticCode == "runtime_preflight_timeout" {
+            throw BottleWineOperationError.wineInitializationTimeout
         }
         try Task.checkCancellation()
-        _ = try await runWineCreationProcess(phase: "configuration") {
-            try await Wine.changeWinVersion(bottle: bottle, win: winVersion)
+        do {
+            _ = try await runWineCreationProcess(phase: "configuration") {
+                try await Wine.changeWinVersion(bottle: bottle, win: winVersion, operation: operation)
+            }
+        } catch is WineCommandTimeoutError {
+            throw BottleWineOperationError.wineConfigurationTimeout
+        }
+        try Task.checkCancellation()
+        try await runWineCreationProcess(phase: "settlement") {
+            try await Wine.settleBottleCreation(bottle: bottle, operation: operation)
         }
         try Task.checkCancellation()
         guard let semanticWineVersion = WineSemanticVersion.parse(runtime.version) else {
             throw BottleCreationError.invalidWineVersion
         }
         return semanticWineVersion
+    }
+
+    func cancelActiveBottleCreations() {
+        for operation in activeCreationOperations.values {
+            operation.cancel(reason: "application_termination")
+        }
     }
 
     private func runCreationStage<Result>(
@@ -174,6 +220,12 @@ final class BottleVM: ObservableObject {
             case .invalidWineVersion: return "invalid_wine_version"
             case .gatekeeperBlocked: return "gatekeeper_blocked"
             }
+        }
+        if let operationError = error as? BottleWineOperationError {
+            return operationError.diagnosticCode
+        }
+        if let timeoutError = error as? WineCommandTimeoutError {
+            return "wine_command_timeout_\(timeoutError.phase)"
         }
         if let wineError = error as? WineProcessError {
             return "wine_process_exit_status_\(wineError.status)"

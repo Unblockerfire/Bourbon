@@ -18,6 +18,7 @@
 //  If not, see https://www.gnu.org/licenses/.
 //
 
+import Darwin
 import Foundation
 import os.log
 
@@ -25,7 +26,6 @@ import os.log
 public class Wine {
     private enum WineProcessOutputMode {
         case captured
-        case normalGUI
     }
 
     private enum CustomWineSettings {
@@ -207,8 +207,6 @@ public class Wine {
             switch outputMode {
             case .captured:
                 return try process.runStream(name: processName, fileHandle: fileHandle)
-            case .normalGUI:
-                return try process.runUncaptured(name: processName, fileHandle: fileHandle)
             }
         } catch {
             debugLogProcessLaunchError(
@@ -335,6 +333,7 @@ public class Wine {
         }
 
         guard terminationStatus == 0 else {
+            let rawOutput = output.joined().trimmingCharacters(in: .whitespacesAndNewlines)
             Logger.wineKit.warning(
                 """
                 Failed to launch \(url.lastPathComponent, privacy: .public).
@@ -344,7 +343,7 @@ public class Wine {
             throw ProgramLaunchError(
                 url: url,
                 diagnostics: launchDiagnostics,
-                output: output.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+                output: rawOutput.isEmpty ? "" : WineDiagnosticSanitizer.excerpt(from: rawOutput)
             )
         }
     }
@@ -430,9 +429,23 @@ public class Wine {
         bottle: Bottle?,
         environment: [String: String] = [:],
         phase: String? = nil,
+        timeoutSeconds: TimeInterval? = nil,
+        operation: BottleWineOperation? = nil,
+        singleInvocation: Bool = false,
         executableURL: URL
     ) async throws -> String {
         let processReference = ProcessReference()
+        if let operation, let phase {
+            if singleInvocation {
+                try operation.beginSingleInvocation(phase: phase, command: args)
+            } else {
+                operation.beginInvocation(phase: phase, command: args)
+            }
+        }
+        if let timeoutSeconds {
+            processReference.armTimeout(after: timeoutSeconds)
+        }
+        defer { processReference.cancelDeadline() }
         return try await withTaskCancellationHandler(operation: {
             var standardOutput: [String] = []
             var standardError: [String] = []
@@ -460,6 +473,9 @@ public class Wine {
                 switch output {
                 case .started(let process):
                     processReference.register(process)
+                    if let operation, let phase {
+                        operation.register(process, phase: phase)
+                    }
                     if phase == "preflight" {
                         WhiskyWineInstaller.recordRuntimeEvent(
                             "runtime.preflight.process.started",
@@ -470,6 +486,9 @@ public class Wine {
                     terminationStatus = process.terminationStatus
                     terminationReason = process.terminationReason.runtimeDiagnosticDescription
                     processReference.clear(process)
+                    if let operation, let phase {
+                        operation.processTerminated(process, phase: phase)
+                    }
                     if phase == "preflight" {
                         WhiskyWineInstaller.recordRuntimeEvent(
                             "runtime.preflight.process.terminated",
@@ -483,6 +502,9 @@ public class Wine {
                 }
             }
 
+            if processReference.didTimeOut {
+                throw WineCommandTimeoutError(phase: phase ?? "wine_command")
+            }
             guard terminationStatus == 0 else {
                 throw WineProcessError(
                     command: args,
@@ -495,6 +517,7 @@ public class Wine {
             return standardOutput.joined() + standardError.joined()
         }, onCancel: {
             processReference.cancel()
+            operation?.cancel(reason: "task_cancelled")
         })
     }
 
@@ -505,7 +528,8 @@ public class Wine {
 
     // swiftlint:disable:next function_body_length
     public static func preflightRuntime(
-        executableURL selectedExecutableURL: URL? = nil
+        executableURL selectedExecutableURL: URL? = nil,
+        operation: BottleWineOperation? = nil
     ) async throws -> WineRuntimePreflightResult {
         let executableURL = selectedExecutableURL ?? resolveWineExecutable()
         let executablePath = executableURL.path(percentEncoded: false)
@@ -535,6 +559,9 @@ public class Wine {
                 ["--version"],
                 bottle: nil,
                 phase: "preflight",
+                timeoutSeconds: 30,
+                operation: operation,
+                singleInvocation: operation != nil,
                 executableURL: executableURL
             )
             let version = try preflightVersion(from: output, executablePath: executablePath)
@@ -566,6 +593,14 @@ public class Wine {
                 launchError: nil,
                 processError: error
             )
+            recordPreflightFailure(classifiedError, executableURL: executableURL)
+            throw classifiedError
+        } catch let error as WineCommandTimeoutError {
+            let classifiedError = WineRuntimePreflightError.timedOut(
+                path: executablePath,
+                details: "The bounded readiness check exceeded 30 seconds during \(error.phase)."
+            )
+            recordStructuredPreflightFailure(classifiedError, context: executableContext)
             recordPreflightFailure(classifiedError, executableURL: executableURL)
             throw classifiedError
         } catch {
@@ -785,13 +820,39 @@ private final class ProcessReference: @unchecked Sendable {
     private let lock = NSLock()
     private var process: Process?
     private var cancellationRequested = false
+    private var timedOut = false
+    private var deadline: DispatchWorkItem?
+
+    var didTimeOut: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return timedOut
+    }
+
+    func armTimeout(after seconds: TimeInterval) {
+        let item = DispatchWorkItem { [weak self] in
+            self?.timeout()
+        }
+        lock.lock()
+        deadline = item
+        lock.unlock()
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + seconds, execute: item)
+    }
+
+    func cancelDeadline() {
+        lock.lock()
+        let deadline = deadline
+        self.deadline = nil
+        lock.unlock()
+        deadline?.cancel()
+    }
 
     func register(_ process: Process) {
         lock.lock()
         self.process = process
         let shouldTerminate = cancellationRequested
         lock.unlock()
-        if shouldTerminate && process.isRunning { process.terminate() }
+        if shouldTerminate { terminate(process) }
     }
 
     func cancel() {
@@ -799,13 +860,32 @@ private final class ProcessReference: @unchecked Sendable {
         cancellationRequested = true
         let process = process
         lock.unlock()
-        if let process, process.isRunning { process.terminate() }
+        terminate(process)
     }
 
     func clear(_ process: Process) {
         lock.lock()
         if self.process === process { self.process = nil }
         lock.unlock()
+    }
+
+    private func timeout() {
+        lock.lock()
+        timedOut = true
+        cancellationRequested = true
+        let process = process
+        lock.unlock()
+        terminate(process)
+    }
+
+    private func terminate(_ process: Process?) {
+        guard let process, process.isRunning else { return }
+        process.terminate()
+        let processIdentifier = process.processIdentifier
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 2) {
+            guard process.isRunning else { return }
+            Darwin.kill(processIdentifier, SIGKILL)
+        }
     }
 }
 
@@ -852,7 +932,15 @@ public struct WineProcessError: LocalizedError {
     }
 }
 
-private extension Wine {
+public struct WineCommandTimeoutError: LocalizedError, Sendable {
+    public let phase: String
+
+    public var errorDescription: String? {
+        "BourbonWine command timed out during \(phase)."
+    }
+}
+
+extension Wine {
     // swiftlint:disable:next function_parameter_count
     static func debugLogWineLaunch(
         name: String,
@@ -1122,14 +1210,7 @@ private extension Wine {
         let output: String
 
         var errorDescription: String? {
-            var message = "Wine could not launch \(url.lastPathComponent)."
-            if diagnostics.peType == "PE32" || diagnostics.architecture == "32-bit" {
-                message += " This appears to be a 32-bit Windows app. " +
-                    "32-bit Windows apps may not be supported by this imported Sikarugir Wine runtime."
-            } else if diagnostics.hasLowFixedImageBase {
-                message += " This 64-bit Windows app has a fixed low image base and no relocation data. " +
-                    "The imported Sikarugir Wine runtime could not reserve the low memory range it needs."
-            }
+            var message = "BourbonWine could not launch \(url.lastPathComponent)."
             if !output.isEmpty {
                 message += "\n\nWine output:\n\(output)"
             }
@@ -1217,9 +1298,10 @@ private extension Wine {
         for plan: CompatibilityLaunchPlan,
         diagnostics: ProgramLaunchDiagnostics
     ) -> WineProcessOutputMode {
-        if diagnostics.isWindowsGUI || plan.analysis.technologies.contains(.electron) {
-            return .normalGUI
-        }
+        // GUI programs still present their own windows with stdout/stderr piped.  Capturing
+        // is essential for diagnosing a nonzero Wine exit; PE type must not discard it.
+        _ = plan
+        _ = diagnostics
         return .captured
     }
 
@@ -1229,8 +1311,6 @@ private extension Wine {
         switch mode {
         case .captured:
             description = "captured stdout/stderr"
-        case .normalGUI:
-            description = "normal GUI launch; stdout/stderr are not piped into Swift"
         }
 
         Logger.wineKit.info("Wine output mode: \(description, privacy: .public)")
@@ -1428,13 +1508,75 @@ extension Wine {
     }
 
     @discardableResult
-    public static func changeWinVersion(bottle: Bottle, win: WinVersion) async throws -> String {
+    public static func changeWinVersion(
+        bottle: Bottle,
+        win: WinVersion,
+        operation: BottleWineOperation? = nil
+    ) async throws -> String {
         let executableURL = resolveWineExecutable()
         return try await runWineCommand(
             ["winecfg", "-v", win.rawValue],
             bottle: bottle,
             phase: "configuration",
+            timeoutSeconds: operation == nil ? nil : 120,
+            operation: operation,
+            singleInvocation: operation != nil,
             executableURL: executableURL
         )
+    }
+
+    public static func settleBottleCreation(
+        bottle: Bottle,
+        operation: BottleWineOperation
+    ) async throws {
+        do {
+            _ = try await runWineCommand(
+                ["-w"],
+                bottle: bottle,
+                phase: "settlement",
+                timeoutSeconds: 30,
+                operation: operation,
+                executableURL: wineserverBinary
+            )
+        } catch is WineCommandTimeoutError {
+            try? await stopBottleProcesses(
+                bottle: bottle,
+                operation: operation,
+                reason: "settlement_timeout"
+            )
+            throw BottleWineOperationError.wineSettlementTimeout
+        }
+    }
+
+    /// Stops Wine activity only for this Bottle's WINEPREFIX, then waits for bounded settlement.
+    public static func stopBottleProcesses(
+        bottle: Bottle,
+        operation: BottleWineOperation? = nil,
+        reason: String
+    ) async throws {
+        operation?.cancel(reason: reason)
+        let cleanup = Task.detached(priority: .userInitiated) {
+            do {
+                _ = try await runWineCommand(
+                    ["-k"],
+                    bottle: bottle,
+                    phase: "prefix_cleanup",
+                    timeoutSeconds: 10,
+                    operation: operation,
+                    executableURL: wineserverBinary
+                )
+                _ = try await runWineCommand(
+                    ["-w"],
+                    bottle: bottle,
+                    phase: "prefix_cleanup_wait",
+                    timeoutSeconds: 10,
+                    operation: operation,
+                    executableURL: wineserverBinary
+                )
+            } catch is WineCommandTimeoutError {
+                throw BottleWineOperationError.wineCancellationTimeout
+            }
+        }
+        try await cleanup.value
     }
 }

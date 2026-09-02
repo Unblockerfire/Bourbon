@@ -36,6 +36,8 @@ struct ConfigView: View {
     @State private var retinaModeLoadingState: LoadingState = .loading
     @State private var dpiConfigLoadingState: LoadingState = .loading
     @State private var dpiSheetPresented: Bool = false
+    @State private var selectedWindowsVersion: WinVersion = .win11
+    @State private var windowsVersionError: String?
     @AppStorage("wineSectionExpanded") private var wineSectionExpanded: Bool = true
     @AppStorage("dxvkSectionExpanded") private var dxvkSectionExpanded: Bool = true
     @AppStorage("metalSectionExpanded") private var metalSectionExpanded: Bool = true
@@ -44,11 +46,35 @@ struct ConfigView: View {
         Form {
             Section("config.title.wine", isExpanded: $wineSectionExpanded) {
                 SettingItemView(title: "config.winVersion", loadingState: winVersionLoadingState) {
-                    Picker("config.winVersion", selection: $bottle.settings.windowsVersion) {
-                        ForEach(WinVersion.allCases.reversed(), id: \.self) {
-                            Text($0.pretty())
+                    if bottle.settings.windowsVersion.isLegacy {
+                        Text(bottle.settings.windowsVersion.pretty())
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker(
+                            "config.winVersion",
+                            selection: Binding(
+                                get: { selectedWindowsVersion },
+                                set: { requestWindowsVersionChange($0) }
+                            )
+                        ) {
+                            ForEach(WinVersion.supportedVersions, id: \.self) { version in
+                                Text("\(version.pretty()) — \(version.supportLabel)")
+                                    .tag(version)
+                            }
                         }
                     }
+                }
+                if bottle.settings.windowsVersion.isLegacy {
+                    legacyWindowsVersionMigration
+                } else {
+                    Text(selectedWindowsVersion.supportDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let windowsVersionError {
+                    Text(windowsVersionError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
                 SettingItemView(title: "config.buildVersion", loadingState: buildVersionLoadingState) {
                     TextField("config.buildVersion", value: $buildVersion, formatter: NumberFormatter())
@@ -191,6 +217,9 @@ struct ConfigView: View {
         }
         .navigationTitle("tab.config")
         .onAppear {
+            if !bottle.settings.windowsVersion.isLegacy {
+                selectedWindowsVersion = bottle.settings.windowsVersion
+            }
             winVersionLoadingState = .success
 
             loadBuildName()
@@ -215,23 +244,6 @@ struct ConfigView: View {
                 }
             }
         }
-        .onChange(of: bottle.settings.windowsVersion) { _, newValue in
-            if winVersionLoadingState == .success {
-                winVersionLoadingState = .loading
-                buildVersionLoadingState = .loading
-                Task(priority: .userInitiated) {
-                    do {
-                        try await Wine.changeWinVersion(bottle: bottle, win: newValue)
-                        winVersionLoadingState = .success
-                        bottle.settings.windowsVersion = newValue
-                        loadBuildName()
-                    } catch {
-                        print(error)
-                        winVersionLoadingState = .failed
-                    }
-                }
-            }
-        }
         .onChange(of: dpiConfig) {
             if dpiConfigLoadingState == .success {
                 Task(priority: .userInitiated) {
@@ -244,6 +256,54 @@ struct ConfigView: View {
                         dpiConfigLoadingState = .failed
                     }
                 }
+            }
+        }
+    }
+
+    private var legacyWindowsVersionMigration: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Legacy Windows compatibility mode")
+                .font(.headline)
+            Text(
+                "This Bottle reports \(bottle.settings.windowsVersion.pretty()), which Bourbon no longer " +
+                    "supports as a normal target. Choose a supported mode to migrate it."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            HStack {
+                Button("Use Windows 11 (recommended)") {
+                    requestWindowsVersionChange(.win11)
+                }
+                Button("Use Windows 10") {
+                    requestWindowsVersionChange(.win10)
+                }
+            }
+            .disabled(winVersionLoadingState == .modifying)
+        }
+    }
+
+    private func requestWindowsVersionChange(_ newValue: WinVersion) {
+        guard WinVersion.supportedVersions.contains(newValue),
+              winVersionLoadingState != .modifying else {
+            return
+        }
+
+        let previousValue = bottle.settings.windowsVersion
+        selectedWindowsVersion = newValue
+        windowsVersionError = nil
+        winVersionLoadingState = .modifying
+        buildVersionLoadingState = .loading
+        Task(priority: .userInitiated) { @MainActor in
+            do {
+                try await Wine.changeWinVersion(bottle: bottle, win: newValue)
+                bottle.settings.windowsVersion = newValue
+                selectedWindowsVersion = newValue
+                winVersionLoadingState = .success
+                loadBuildName()
+            } catch {
+                selectedWindowsVersion = previousValue.isLegacy ? .win11 : previousValue
+                winVersionLoadingState = .failed
+                windowsVersionError = "BourbonWine could not change this Bottle’s Windows version. Try again."
             }
         }
     }

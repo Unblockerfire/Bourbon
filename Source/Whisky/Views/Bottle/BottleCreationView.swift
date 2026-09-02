@@ -27,11 +27,8 @@ struct BottleCreationView: View {
     var cancel: () -> Void = {}
     var created: (URL) -> Void = { _ in }
 
-    private let supportedWindowsVersions: [WinVersion] = [.win11, .win10, .win81, .win8, .win7, .winXP]
-    private let deprecatedWindowsVersions: Set<WinVersion> = [.win7, .winXP]
-
     @State private var newBottleName: String = ""
-    @State private var newBottleVersion: WinVersion = .win10
+    @State private var newBottleVersion: WinVersion = .win11
     @State private var bottleType: BourbonBottleType = .applications
     @State private var creationState = BottleCreationActivityState()
     @State private var creationError: String?
@@ -110,6 +107,9 @@ struct BottleCreationView: View {
                 } else if let preflightError = error as? WineRuntimePreflightError {
                     outcome = .failed
                     creationError = preflightError.userFacingDiagnosticMessage
+                } else if let operationError = error as? BottleWineOperationError {
+                    outcome = .failed
+                    creationError = operationError.localizedDescription
                 } else {
                     outcome = .failed
                     creationError = "Bourbon couldn’t create this bottle. Try again."
@@ -160,18 +160,16 @@ struct BottleCreationView: View {
                 .help("Choose a simple starting profile for this bottle.")
 
                 Picker("Windows version", selection: $newBottleVersion) {
-                    ForEach(supportedWindowsVersions, id: \.self) { version in
-                        Text(versionTitle(version))
+                    ForEach(WinVersion.supportedVersions, id: \.self) { version in
+                        Text("\(version.pretty()) — \(version.supportLabel)")
                             .tag(version)
                     }
                 }
                 .help("Choose the Windows version this app should see.")
 
-                if deprecatedWindowsVersions.contains(newBottleVersion) {
-                    Text("This Windows version is deprecated. Some apps may not work correctly.")
-                        .font(.caption)
-                        .foregroundStyle(BourbonStyle.amber)
-                }
+                Text(newBottleVersion.supportDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -280,13 +278,6 @@ struct BottleCreationView: View {
         }
 
         return "Custom location selected"
-    }
-
-    private func versionTitle(_ version: WinVersion) -> String {
-        if deprecatedWindowsVersions.contains(version) {
-            return "\(version.pretty()) (deprecated)"
-        }
-        return version.pretty()
     }
 
     private func browseBottleLocation() {

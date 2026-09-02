@@ -36,15 +36,6 @@ public extension Process {
         return stream
     }
 
-    /// Run the process without piping stdout/stderr through Swift.
-    func runUncaptured(name: String, fileHandle: FileHandle?) throws -> AsyncStream<ProcessOutput> {
-        let stream = makeUncapturedStream(name: name, fileHandle: fileHandle)
-        self.logProcessInfo(name: name)
-        fileHandle?.writeInfo(for: self)
-        try run()
-        return stream
-    }
-
     private func makeStream(name: String, fileHandle: FileHandle?) -> AsyncStream<ProcessOutput> {
         let pipe = Pipe()
         let errorPipe = Pipe()
@@ -112,35 +103,6 @@ public extension Process {
                 self.terminate()
             @unknown default:
                 break
-            }
-        }
-    }
-
-    private func makeUncapturedStream(name: String, fileHandle: FileHandle?) -> AsyncStream<ProcessOutput> {
-        AsyncStream<ProcessOutput> { continuation in
-            continuation.onTermination = { termination in
-                switch termination {
-                case .finished:
-                    break
-                case .cancelled:
-                    guard self.isRunning else { return }
-                    self.terminate()
-                @unknown default:
-                    break
-                }
-            }
-
-            continuation.yield(.started(self))
-
-            terminationHandler = { (process: Process) in
-                process.logTermination(name: name, fileHandle: fileHandle)
-                do {
-                    try fileHandle?.close()
-                } catch {
-                    Logger.wineKit.error("Error while closing log: \(error)")
-                }
-                continuation.yield(.terminated(process))
-                continuation.finish()
             }
         }
     }

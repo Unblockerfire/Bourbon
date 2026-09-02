@@ -535,7 +535,11 @@ struct WelcomeView: View {
 
     private var currentStep: OnboardingStep {
         if hasCompletedFirstRunOnboarding {
-            return .welcomeHome
+            let route = RuntimeStartupRouting.route(
+                onboardingCompleted: true,
+                runtimeState: runtimeDiscovery?.state
+            )
+            return route == .home ? .welcomeHome : .dependencies
         }
         if !hasSeenWelcome {
             return .welcome

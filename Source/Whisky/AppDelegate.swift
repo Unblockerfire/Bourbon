@@ -44,6 +44,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        BottleVM.shared.cancelActiveBottleCreations()
         if UserDefaults.standard.bool(forKey: "killOnTerminate") {
             WhiskyApp.killBottles()
         }

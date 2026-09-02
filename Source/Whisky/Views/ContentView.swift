@@ -85,6 +85,7 @@ struct ContentView: View {
     @State private var selected: URL?
     @State private var showBottleCreation: Bool = false
     @State private var showBottleSelection: Bool = false
+    @State private var runtimeRepairState: RuntimeDiscovery.State?
     @State private var newlyCreatedBottleURL: URL?
     @State private var firstInstallBottleURL: URL?
     @State private var firstInstallerURL: URL?
@@ -253,6 +254,7 @@ struct ContentView: View {
             let discovery = await Task.detached(priority: .userInitiated) {
                 await WhiskyWineInstaller.discoverRuntime()
             }.value
+            runtimeRepairState = discovery.state
             WhiskyWineInstaller.recordRuntimeEvent(
                 "runtime.bootstrap.content_check.completed",
                 detail: "state=\(discovery.state.rawValue)"
@@ -472,7 +474,8 @@ struct ContentView: View {
                 showSetup: $showSetup,
                 showBottleCreation: $showBottleCreation,
                 updater: updater,
-                firstTime: !hasCompletedFirstRunOnboarding
+                firstTime: !hasCompletedFirstRunOnboarding,
+                runtimeRepairState: runtimeRepairState
             )
         } else if activePage == .createBottle {
             BottleCreationView(

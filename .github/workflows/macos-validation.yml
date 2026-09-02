@@ -129,6 +129,48 @@ jobs:
           "$ROOT/bin/wineserver" --version \
             | tee "$RUNNER_TEMP/bourbon-runtime-reports/corrected-wineserver-version.txt"
 
+      - name: Verify canonical BourbonWine PE32 and PE64 execution
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          brew install mingw-w64
+          ROOT="$RUNNER_TEMP/bourbon-runtime-work/production/Libraries/Wine"
+          FIXTURE_SOURCE="Scripts/fixtures/bourbon-pe-fixture.c"
+          FIXTURE_DIR="$RUNNER_TEMP/bourbon-pe-fixtures"
+          REPORT_DIR="$RUNNER_TEMP/bourbon-runtime-reports"
+          mkdir -p "$FIXTURE_DIR"
+
+          i686-w64-mingw32-gcc -O2 -o "$FIXTURE_DIR/BourbonPE32.exe" "$FIXTURE_SOURCE"
+          x86_64-w64-mingw32-gcc -O2 -o "$FIXTURE_DIR/BourbonPE64.exe" "$FIXTURE_SOURCE"
+
+          file "$FIXTURE_DIR/BourbonPE32.exe" "$FIXTURE_DIR/BourbonPE64.exe" \
+            | tee "$REPORT_DIR/canonical-pe-fixture-file.txt"
+          grep -Ei 'BourbonPE32.*(PE32|Intel 80386|i386)' \
+            "$REPORT_DIR/canonical-pe-fixture-file.txt"
+          grep -Ei 'BourbonPE64.*(PE32\+|x86-64|x86_64)' \
+            "$REPORT_DIR/canonical-pe-fixture-file.txt"
+
+          export PATH="$ROOT/bin:$PATH"
+          export DYLD_LIBRARY_PATH="$ROOT/lib"
+          export DYLD_FALLBACK_LIBRARY_PATH="$ROOT/lib"
+          export WINEDEBUG=-all
+
+          for architecture in PE32 PE64; do
+            prefix="$FIXTURE_DIR/prefix-$architecture"
+            stdout="$REPORT_DIR/canonical-$architecture-fixture-stdout.txt"
+            stderr="$REPORT_DIR/canonical-$architecture-fixture-stderr.txt"
+            status="$REPORT_DIR/canonical-$architecture-fixture-exit-status.txt"
+            set +e
+            WINEPREFIX="$prefix" "$ROOT/bin/wine" "$FIXTURE_DIR/Bourbon$architecture.exe" \
+              >"$stdout" 2>"$stderr"
+            exit_status=$?
+            set -e
+            printf '%s\n' "$exit_status" > "$status"
+            test "$exit_status" -eq 0
+            grep -Fq 'BOURBON_PE_FIXTURE_OK' "$stdout"
+          done
+
       - name: Upload corrected runtime
         uses: actions/upload-artifact@v4
         with:

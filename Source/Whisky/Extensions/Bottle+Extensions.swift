@@ -179,13 +179,19 @@ extension Bottle {
     }
 
     @MainActor
-    func remove(delete: Bool) {
+    func remove(delete: Bool) async {
         do {
             if let bottle = BottleVM.shared.bottles.first(where: { $0.url == url }) {
                 bottle.inFlight = true
             }
 
             if delete {
+                // wineserver receives this Bottle's WINEPREFIX, so it cannot affect a
+                // different Bottle's running Windows programs.
+                try? await Wine.stopBottleProcesses(
+                    bottle: self,
+                    reason: "bottle_deleted"
+                )
                 try FileManager.default.removeItem(at: url)
             }
 

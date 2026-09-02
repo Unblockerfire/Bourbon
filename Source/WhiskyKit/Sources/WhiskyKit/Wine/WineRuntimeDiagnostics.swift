@@ -15,6 +15,7 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
     case cannotExecute(path: String, details: String)
     case rosettaUnavailable(path: String, details: String)
     case runtimeLibraryFailure(path: String, details: String)
+    case timedOut(path: String, details: String)
     case processNonzero(path: String, status: Int32, details: String)
     case invalidWineOutput(path: String, details: String)
 
@@ -25,6 +26,7 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
         case .cannotExecute: return "cannot_execute"
         case .rosettaUnavailable: return "rosetta_unavailable"
         case .runtimeLibraryFailure: return "runtime_library_failure"
+        case .timedOut: return "runtime_preflight_timeout"
         case .processNonzero: return "process_nonzero"
         case .invalidWineOutput: return "invalid_wine_output"
         }
@@ -63,6 +65,8 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
             return "Wine could not start through Rosetta. \(details)"
         case .runtimeLibraryFailure(_, let details):
             return "Wine could not load its runtime libraries. \(details)"
+        case .timedOut(_, let details):
+            return "BourbonWine did not finish its readiness check. \(details)"
         case .processNonzero(_, let status, let details):
             return "Wine's runtime preflight exited with status \(status). \(details)"
         case .invalidWineOutput(_, let details):
@@ -77,6 +81,7 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
         case .cannotExecute: return "executable_permission_or_launch"
         case .rosettaUnavailable: return "process_architecture_launch"
         case .runtimeLibraryFailure: return "runtime_library_loading"
+        case .timedOut: return "bounded_process_timeout"
         case .processNonzero: return "process_exit_status"
         case .invalidWineOutput: return "wine_version_output"
         }
@@ -87,7 +92,7 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
         case .gatekeeperBlocked(let path, _),
              .executableMissing(let path), .cannotExecute(let path, _),
              .rosettaUnavailable(let path, _), .runtimeLibraryFailure(let path, _),
-             .processNonzero(let path, _, _), .invalidWineOutput(let path, _):
+             .timedOut(let path, _), .processNonzero(let path, _, _), .invalidWineOutput(let path, _):
             return path
         }
     }
@@ -103,7 +108,8 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
         case .executableMissing:
             return "The selected executable does not exist."
         case .cannotExecute(_, let details), .rosettaUnavailable(_, let details),
-             .runtimeLibraryFailure(_, let details), .processNonzero(_, _, let details),
+             .runtimeLibraryFailure(_, let details), .timedOut(_, let details),
+             .processNonzero(_, _, let details),
              .invalidWineOutput(_, let details):
             return WineDiagnosticSanitizer.excerpt(from: details)
         }
