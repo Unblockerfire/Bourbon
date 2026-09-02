@@ -268,6 +268,7 @@ public class WhiskyWineInstaller {
     /// Discovers an existing runtime without equating a failed preflight with a
     /// missing installation. In particular, Gatekeeper approval is recoverable
     /// and must never cause a replacement download on the next launch.
+    // swiftlint:disable:next function_body_length
     public static func discoverRuntime(
         in applicationFolder: URL = applicationFolder,
         expectedRuntimeVersion: String? = nil
