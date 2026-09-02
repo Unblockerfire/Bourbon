@@ -112,6 +112,37 @@ public class WhiskyWineInstaller {
         }
     }
 
+    /// Writes the exact archive embedded in a diagnostic Bourbon build to the
+    /// user's Downloads folder for the normal manual-installation flow. This
+    /// keeps the download and picker contracts identical without mutating the
+    /// read-only bundle archive.
+    public static func exportBundledDiagnosticRuntimeForManualInstallation(
+        in bundle: Bundle = .main,
+        downloadsDirectory: URL = FileManager.default.urls(
+            for: .downloadsDirectory,
+            in: .userDomainMask
+        )[0]
+    ) throws -> URL {
+        guard let bundledRuntime = bundledDiagnosticRuntime(in: bundle) else {
+            throw WhiskyWineInstallerError.missingBundledDiagnosticRuntime
+        }
+
+        try FileManager.default.createDirectory(
+            at: downloadsDirectory,
+            withIntermediateDirectories: true
+        )
+        let destination = uniqueManualDownloadURL(
+            in: downloadsDirectory,
+            preferredName: bundledRuntime.archive.lastPathComponent
+        )
+        try FileManager.default.copyItem(at: bundledRuntime.archive, to: destination)
+        recordRuntimeEvent(
+            "runtime.manual.download.completed",
+            detail: "source=bundled_diagnostic_runtime archive=\(destination.lastPathComponent)"
+        )
+        return destination
+    }
+
     /// Installs the runtime embedded in a diagnostic Bourbon app. The archive is
     /// first copied out of the read-only app bundle, so installation retains the
     /// same transactional staging and rollback behavior as a downloaded archive.
@@ -144,6 +175,26 @@ public class WhiskyWineInstaller {
             into: destinationApplicationFolder
         )
         return bundledRuntime.info.runtimeVersion
+    }
+
+    private static func uniqueManualDownloadURL(in directory: URL, preferredName: String) -> URL {
+        let preferred = directory.appending(path: preferredName)
+        guard FileManager.default.fileExists(atPath: preferred.path) else {
+            return preferred
+        }
+
+        let compressedTarSuffix = ".tar.gz"
+        let (base, suffix) = preferredName.hasSuffix(compressedTarSuffix)
+            ? (String(preferredName.dropLast(compressedTarSuffix.count)), compressedTarSuffix)
+            : (preferred.deletingPathExtension().lastPathComponent, ".\(preferred.pathExtension)")
+        for index in 2...10_000 {
+            let candidateName = "\(base) \(index)\(suffix)"
+            let candidate = directory.appending(path: candidateName)
+            if !FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return directory.appending(path: "\(base)-\(UUID().uuidString)\(suffix)")
     }
 
     /// Updates from the diagnostic archive when it is packaged in this app;

@@ -344,6 +344,9 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         let metadataPath = try XCTUnwrap(
             ProcessInfo.processInfo.environment["BOURBON_PACKAGED_DIAGNOSTIC_METADATA"]
         )
+        let appPath = try XCTUnwrap(
+            ProcessInfo.processInfo.environment["BOURBON_PACKAGED_DIAGNOSTIC_APP"]
+        )
         let metadata = try JSONDecoder().decode(
             WhiskyWineInstaller.BundledDiagnosticRuntimeInfo.self,
             from: Data(contentsOf: URL(fileURLWithPath: metadataPath))
@@ -352,9 +355,14 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: fixture.applicationFolder.appending(path: "Libraries/Wine/bin/wine").path
         ))
-        let persistedArchive = try WhiskyWineInstaller.persistLocalArchive(
-            at: URL(fileURLWithPath: archivePath)
+        let bundle = try XCTUnwrap(Bundle(url: URL(fileURLWithPath: appPath)))
+        let manualDownloadDirectory = fixture.root.appending(path: "Downloads")
+        let manualDownload = try WhiskyWineInstaller.exportBundledDiagnosticRuntimeForManualInstallation(
+            in: bundle,
+            downloadsDirectory: manualDownloadDirectory
         )
+        XCTAssertEqual(try Data(contentsOf: manualDownload), try Data(contentsOf: URL(fileURLWithPath: archivePath)))
+        let persistedArchive = try WhiskyWineInstaller.persistLocalArchive(at: manualDownload)
         try WhiskyWineInstaller.install(
             from: persistedArchive,
             // Match the manual picker: the untouched archive manifest, rather

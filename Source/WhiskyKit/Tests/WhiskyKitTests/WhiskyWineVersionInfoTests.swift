@@ -77,5 +77,16 @@ final class WhiskyWineVersionInfoTests: XCTestCase {
         XCTAssertEqual(bundledRuntime.info.wineVersion, "wine-11.16")
         XCTAssertEqual(bundledRuntime.info.maximumMinimumMacOS, "14.0")
         XCTAssertEqual(bundledRuntime.archive.lastPathComponent, "BourbonWineDiagnosticRuntime.tar.gz")
+
+        let downloadsURL = FileManager.default.temporaryDirectory
+            .appending(path: "BourbonWineManualDownloadTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: downloadsURL) }
+        let manualDownload = try WhiskyWineInstaller.exportBundledDiagnosticRuntimeForManualInstallation(
+            in: bundle,
+            downloadsDirectory: downloadsURL
+        )
+
+        XCTAssertEqual(manualDownload.lastPathComponent, "BourbonWineDiagnosticRuntime.tar.gz")
+        XCTAssertEqual(try Data(contentsOf: manualDownload), try Data(contentsOf: bundledRuntime.archive))
     }
 }

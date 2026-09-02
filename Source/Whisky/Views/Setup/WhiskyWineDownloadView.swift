@@ -13,6 +13,7 @@ struct WhiskyWineDownloadView: View {
     @State private var observation: NSKeyValueObservation?
     @State private var downloadProgress: Double = 0
     @State private var downloadError: String?
+    @State private var manualDownloadMessage: String?
     @State private var localArchivePanel: NSOpenPanel?
 
     var body: some View {
@@ -49,7 +50,12 @@ struct WhiskyWineDownloadView: View {
                     .help("Use a BourbonWine archive already saved on this Mac.")
                 Button("Download BourbonWine Manually") { downloadManually() }
                     .buttonStyle(BourbonSecondaryButtonStyle())
-                    .help("Open the official BourbonWine archive download in your browser.")
+                    .help("Save the official BourbonWine archive for manual installation.")
+                if let manualDownloadMessage {
+                    Text(manualDownloadMessage)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
             }
         }
     }
@@ -75,6 +81,7 @@ struct WhiskyWineDownloadView: View {
 
     private func download() {
         downloadError = nil
+        manualDownloadMessage = nil
         downloadProgress = 0
         manualRuntimeArchive = false
         downloadTask?.cancel()
@@ -222,6 +229,12 @@ struct WhiskyWineDownloadView: View {
     private func downloadManually() {
         Task {
             do {
+                if WhiskyWineInstaller.bundledDiagnosticRuntime() != nil {
+                    let archive = try WhiskyWineInstaller.exportBundledDiagnosticRuntimeForManualInstallation()
+                    manualDownloadMessage =
+                        "Saved \(archive.lastPathComponent) to Downloads. Select it with Install BourbonWine Manually."
+                    return
+                }
                 let runtimeInfo = try await WhiskyWineInstaller.latestRuntimeInfo()
                 guard NSWorkspace.shared.open(runtimeInfo.archiveUrl) else {
                     throw CocoaError(.fileNoSuchFile)

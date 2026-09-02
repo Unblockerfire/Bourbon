@@ -540,7 +540,14 @@ jobs:
           printf '%s  %s\n' "$RUNTIME_SHA256" "$RUNTIME_ARCHIVE" | shasum -a 256 --check
 
           tar -tzf "$RUNTIME_ARCHIVE" > "$RUNTIME_LISTING"
-          grep -Fx 'Libraries/Wine/bin/wineserver' "$RUNTIME_LISTING"
+          for REQUIRED_PATH in \
+            Libraries/Wine/bin/wineserver \
+            Libraries/Wine/lib/wine/x86_64-unix/ntdll.so \
+            Libraries/Wine/lib/libvulkan.1.dylib \
+            Libraries/BourbonWineRuntime.json \
+            Libraries/BourbonWineVersion.plist; do
+            grep -Fx "$REQUIRED_PATH" "$RUNTIME_LISTING"
+          done
 
           if grep -Fxq 'Libraries/Wine/bin/wine' "$RUNTIME_LISTING"; then
             SELECTED_LAUNCHER='Libraries/Wine/bin/wine'
@@ -552,8 +559,19 @@ jobs:
           fi
 
           mkdir -p "$RUNTIME_EXTRACT"
-          tar -xzf "$RUNTIME_ARCHIVE" -C "$RUNTIME_EXTRACT" "$SELECTED_LAUNCHER"
+          tar -xzf "$RUNTIME_ARCHIVE" -C "$RUNTIME_EXTRACT"
           test -x "$RUNTIME_EXTRACT/$SELECTED_LAUNCHER"
+
+          RUNTIME_MANIFEST_VERSION="$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["runtimeVersion"])' \
+            "$RUNTIME_EXTRACT/Libraries/BourbonWineRuntime.json")"
+          RUNTIME_MARKER_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :version' \
+            "$RUNTIME_EXTRACT/Libraries/BourbonWineVersion.plist")"
+          RUNTIME_API_VERSION="$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["version"])' \
+            "$RUNTIME_JSON")"
+          test "$RUNTIME_MANIFEST_VERSION" = "$RUNTIME_API_VERSION"
+          test "$RUNTIME_MARKER_VERSION" = "$RUNTIME_API_VERSION"
 
           echo "Resolver-selected production runtime launcher: $SELECTED_LAUNCHER"
           echo "Production runtime Wine version: $RUNTIME_WINE_VERSION"
