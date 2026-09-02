@@ -15,8 +15,10 @@ app.use(express.json({ limit: "256kb" }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const updateConfigPath = path.join(__dirname, "updates.json");
+const runtimeConfigPath = path.join(__dirname, "runtime-latest.json");
 const reportsPath = process.env.REPORTS_PATH || path.join(__dirname, "reports.json");
 const updateChannels = JSON.parse(fs.readFileSync(updateConfigPath, "utf8"));
+const runtimeLatest = JSON.parse(fs.readFileSync(runtimeConfigPath, "utf8"));
 
 const requiredEnv = [
   "R2_ACCOUNT_ID",
@@ -55,15 +57,13 @@ app.get("/health", (_, res) => {
 });
 
 app.get("/runtime/latest", async (_, res) => {
-  const archiveName = "BourbonWine-1.0.0-macOS-x86_64.tar.gz";
-
   res.json({
-    version: "1.0.1",
-    wineVersion: "wine-11.11-199-ge3bb4552d76",
-    archiveName,
-    sha256: "3c3e5cec14e47058b90932f08a1650dacb4ccd15129c4dd6785321e4ab456bd1",
-    plistUrl: await signedUrl("BourbonWineVersion.plist"),
-    archiveUrl: await signedUrl(archiveName),
+    version: runtimeLatest.version,
+    wineVersion: runtimeLatest.wineVersion,
+    archiveName: runtimeLatest.archiveName,
+    sha256: runtimeLatest.archiveSHA256,
+    plistUrl: await signedUrl(runtimeLatest.versionMarkerObjectKey),
+    archiveUrl: await signedUrl(runtimeLatest.archiveObjectKey),
     expiresInSeconds: 300
   });
 });

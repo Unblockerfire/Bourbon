@@ -1,0 +1,11 @@
+{
+  "version": "1.0.2",
+  "wineVersion": "wine-11.16",
+  "archiveName": "BourbonWine-1.0.2-macOS-x86_64.tar.gz",
+  "archiveObjectKey": "BourbonWine-1.0.2-macOS-x86_64.tar.gz",
+  "archiveSHA256": "6e070803fb5d1f9f92152b82ec6a1dab4cb82bcc1bc719663dda4a492875fce8",
+  "versionMarkerObjectKey": "BourbonWineVersion-1.0.2.plist",
+  "versionMarkerSHA256": "b3867feab175a8db79e6d1a4c355124d10a12cd47c44ff2bd32c8eede8edb3f0",
+  "manifestRuntimeVersion": "1.0.2",
+  "markerVersion": "1.0.2"
+}
