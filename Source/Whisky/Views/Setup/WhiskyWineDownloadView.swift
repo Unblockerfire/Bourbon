@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import WhiskyKit
 
 struct WhiskyWineDownloadView: View {
@@ -133,10 +134,12 @@ struct WhiskyWineDownloadView: View {
         let discovery = await WhiskyWineInstaller.discoverRuntime()
         switch discovery.state {
         case .ready:
+            WhiskyWineInstaller.recordRuntimeEvent("runtime.download.reason", detail: "existing_runtime_ready")
             WhiskyWineInstaller.recordRuntimeEvent("runtime.download.skipped_existing", detail: "state=ready")
             path.removeAll()
             return true
         case .gatekeeperBlocked:
+            WhiskyWineInstaller.recordRuntimeEvent("runtime.download.reason", detail: "gatekeeper_blocked")
             WhiskyWineInstaller.recordRuntimeEvent(
                 "runtime.download.skipped_existing",
                 detail: "state=gatekeeper_blocked"
@@ -145,6 +148,10 @@ struct WhiskyWineDownloadView: View {
             return true
         case .installedUnverified, .verificationFailed:
             WhiskyWineInstaller.recordRuntimeEvent(
+                "runtime.download.reason",
+                detail: "existing_runtime_\(discovery.state.rawValue)"
+            )
+            WhiskyWineInstaller.recordRuntimeEvent(
                 "runtime.download.skipped_existing",
                 detail: "state=\(discovery.state.rawValue)"
             )
@@ -152,6 +159,10 @@ struct WhiskyWineDownloadView: View {
                 ?? "BourbonWine is already installed. Retry its readiness check before replacing it."
             return true
         case .missing, .corruptOrIncomplete, .unsupported:
+            WhiskyWineInstaller.recordRuntimeEvent(
+                "runtime.download.reason",
+                detail: discovery.state.rawValue
+            )
             WhiskyWineInstaller.recordRuntimeEvent(
                 "runtime.download.required",
                 detail: "state=\(discovery.state.rawValue)"
@@ -178,7 +189,7 @@ struct WhiskyWineDownloadView: View {
         defer {
             localArchivePanel = nil
         }
-        panel.allowedContentTypes = [.gzip]
+        panel.allowedContentTypes = manualArchiveContentTypes
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
 
@@ -196,6 +207,12 @@ struct WhiskyWineDownloadView: View {
                 )
                 downloadError = error.localizedDescription
             }
+        }
+    }
+
+    private var manualArchiveContentTypes: [UTType] {
+        WhiskyWineInstaller.supportedManualArchiveExtensions.compactMap {
+            UTType(filenameExtension: $0)
         }
     }
 

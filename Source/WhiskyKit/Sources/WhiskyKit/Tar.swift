@@ -21,6 +21,12 @@ import Foundation
 public class Tar {
     static let tarBinary: URL = URL(fileURLWithPath: "/usr/bin/tar")
 
+    public static func isGzipArchive(_ tarBall: URL) throws -> Bool {
+        let handle = try FileHandle(forReadingFrom: tarBall)
+        defer { try? handle.close() }
+        return try handle.read(upToCount: 2) == Data([0x1f, 0x8b])
+    }
+
     public static func tar(folder: URL, toURL: URL) throws {
         let process = Process()
         let pipe = Pipe()
@@ -47,7 +53,8 @@ public class Tar {
         let pipe = Pipe()
 
         process.executableURL = tarBinary
-        process.arguments = ["-xzf", "\(tarBall.path)", "-C", "\(toURL.path)"]
+        let argument = try isGzipArchive(tarBall) ? "-xzf" : "-xf"
+        process.arguments = [argument, "\(tarBall.path)", "-C", "\(toURL.path)"]
         process.standardOutput = pipe
         process.standardError = pipe
 
@@ -68,7 +75,8 @@ public class Tar {
         let pipe = Pipe()
 
         process.executableURL = tarBinary
-        process.arguments = ["-tzf", "\(tarBall.path)"]
+        let argument = try isGzipArchive(tarBall) ? "-tzf" : "-tf"
+        process.arguments = [argument, "\(tarBall.path)"]
         process.standardOutput = pipe
         process.standardError = pipe
 

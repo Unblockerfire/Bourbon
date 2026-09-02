@@ -1,6 +1,7 @@
 import XCTest
 @testable import WhiskyKit
 
+// swiftlint:disable file_length
 // swiftlint:disable:next type_body_length
 final class WhiskyWineRuntimeReadinessTests: XCTestCase {
     func testExpectedRuntimeDestinationUsesBundleIdentifier() {
@@ -141,6 +142,29 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: wineserver.path))
     }
 
+    func testManualPlainTarArchiveInstallsWithoutRenaming() throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        let archive = try fixture.archiveRuntime(version: "1.0.2", compressed: false)
+
+        XCTAssertEqual(archive.pathExtension, "tar")
+        let persisted = try WhiskyWineInstaller.persistLocalArchive(at: archive)
+        try WhiskyWineInstaller.install(
+            from: persisted,
+            runtimeVersion: "1.0.2",
+            into: fixture.applicationFolder
+        )
+
+        XCTAssertTrue(WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder).isReady)
+    }
+
+    func testManualArchiveFormatsIncludeBourbonDownloadFormats() {
+        XCTAssertEqual(
+            WhiskyWineInstaller.supportedManualArchiveExtensions,
+            ["tar", "tar.gz", "tgz"]
+        )
+    }
+
     func testIncompleteExtractionNeverWritesInstalledMarker() throws {
         let fixture = try RuntimeFixture()
         defer { fixture.remove() }
@@ -219,6 +243,15 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: fixture.applicationFolder.appending(path: "Libraries/Wine/bin/wine").path
         ))
+
+        // Simulate the user approving the same installed executable and reopening Bourbon.
+        try fixture.writeWine(contents: "#!/bin/sh\necho wine-11.16\n")
+        let reopened = await WhiskyWineInstaller.discoverRuntime(
+            in: fixture.applicationFolder,
+            expectedRuntimeVersion: "1.0.2"
+        )
+        XCTAssertEqual(reopened.state, .ready)
+        XCTAssertFalse(reopened.requiresDownload)
     }
 
     func testInstalledUsableRuntimeIsReadyOnNextLaunch() async throws {
@@ -366,16 +399,20 @@ private final class RuntimeFixture {
         try marker.write(to: libraries.appending(path: "BourbonWineVersion.plist"))
     }
 
-    func archiveRuntime(version: String, includeNTDLL: Bool = true) throws -> URL {
+    func archiveRuntime(
+        version: String,
+        includeNTDLL: Bool = true,
+        compressed: Bool = true
+    ) throws -> URL {
         let source = root.appending(path: "archive-source")
         if FileManager.default.fileExists(atPath: source.path) {
             try FileManager.default.removeItem(at: source)
         }
         try makeRuntime(in: source, version: version, includeNTDLL: includeNTDLL)
-        let archive = root.appending(path: "runtime.tar.gz")
+        let archive = root.appending(path: compressed ? "runtime.tar.gz" : "runtime.tar")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-        process.arguments = ["-zcf", archive.path, "-C", source.path, "Libraries"]
+        process.arguments = [compressed ? "-zcf" : "-cf", archive.path, "-C", source.path, "Libraries"]
         try process.run()
         process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0)

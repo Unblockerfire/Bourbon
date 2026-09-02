@@ -211,6 +211,7 @@ struct WelcomeView: View {
                     continueFromDependencies()
                 }
                 .buttonStyle(BourbonPrimaryButtonStyle())
+                .disabled(rosettaInstalled == nil || runtimeDiscovery == nil)
                 .keyboardShortcut(.defaultAction)
                 .help("Install the missing setup item.")
             }

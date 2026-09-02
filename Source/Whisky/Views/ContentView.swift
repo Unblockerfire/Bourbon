@@ -250,17 +250,17 @@ struct ContentView: View {
             print("bottle.list.refresh.completed")
 
             WhiskyWineInstaller.recordRuntimeEvent("runtime.bootstrap.content_check.started")
-            let runtimeReadiness = await Task.detached(priority: .userInitiated) {
-                WhiskyWineInstaller.runtimeReadiness(in: WhiskyWineInstaller.applicationFolder)
+            let discovery = await Task.detached(priority: .userInitiated) {
+                await WhiskyWineInstaller.discoverRuntime()
             }.value
             WhiskyWineInstaller.recordRuntimeEvent(
                 "runtime.bootstrap.content_check.completed",
-                detail: "ready=\(runtimeReadiness.isReady)"
+                detail: "state=\(discovery.state.rawValue)"
             )
-            if !runtimeReadiness.isReady {
+            if discovery.state != .ready {
                 WhiskyWineInstaller.recordRuntimeEvent(
                     "runtime.install.required",
-                    detail: "reason=readiness_failed"
+                    detail: "reason=\(discovery.state.rawValue)"
                 )
                 WhiskyWineInstaller.recordRuntimeEvent(
                     "runtime.install.destination",

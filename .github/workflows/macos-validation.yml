@@ -452,7 +452,14 @@ jobs:
             runtime.discovery.incomplete \
             runtime.discovery.gatekeeper_blocked \
             runtime.discovery.ready \
+            runtime.discovery.path \
+            runtime.discovery.files_present \
+            runtime.discovery.permissions \
+            runtime.discovery.manifest \
+            runtime.discovery.preflight \
+            runtime.discovery.classification \
             runtime.download.required \
+            runtime.download.reason \
             runtime.download.skipped_existing \
             runtime.manual.install.started \
             runtime.manual.install.succeeded \

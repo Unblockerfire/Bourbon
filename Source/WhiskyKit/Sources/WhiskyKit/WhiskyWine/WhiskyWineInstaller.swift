@@ -38,6 +38,9 @@ public class WhiskyWineInstaller {
         "BourbonWineVersion.plist"
     ].joined(separator: "/")
 
+    /// Formats offered by Bourbon's download and accepted by manual installation.
+    public static let supportedManualArchiveExtensions = ["tar", "tar.gz", "tgz"]
+
     public static let runtimeAPIBaseURLDefaultsKey = "bourbonRuntimeAPIBaseURL"
     public static let defaultRuntimeAPIBaseURLString = "https://api.getbourbon.app"
 
@@ -272,21 +275,43 @@ public class WhiskyWineInstaller {
         recordRuntimeEvent("runtime.discovery.started")
         let requiredRuntimeVersion = expectedRuntimeVersion ?? bundledDiagnosticRuntime()?.info.runtimeVersion
         let fileManager = FileManager.default
+        let libraries = applicationFolder.appending(path: "Libraries")
         let wineRoot = applicationFolder.appending(path: "Libraries/Wine")
-        guard fileManager.fileExists(atPath: wineRoot.path) else {
+        recordRuntimeEvent(
+            "runtime.discovery.path",
+            detail: "path=\(WineDiagnosticSanitizer.redact(applicationFolder.path))"
+        )
+        guard fileManager.fileExists(atPath: libraries.path) else {
             recordRuntimeEvent("runtime.discovery.missing")
-            return RuntimeDiscovery(state: .missing)
+            return recordDiscoveryClassification(.missing)
         }
 
         recordRuntimeEvent("runtime.discovery.found")
+        recordRuntimeEvent(
+            "runtime.discovery.files_present",
+            detail: discoveryFilePresence(in: wineRoot, fileManager: fileManager)
+        )
+        recordRuntimeEvent(
+            "runtime.discovery.permissions",
+            detail: discoveryPermissions(in: wineRoot, fileManager: fileManager)
+        )
+        guard fileManager.fileExists(atPath: wineRoot.path) else {
+            recordRuntimeEvent("runtime.discovery.incomplete", detail: "reason=missing_wine_root")
+            return recordDiscoveryClassification(.corruptOrIncomplete)
+        }
         let files = RuntimeReadiness.validate(
             applicationFolder: applicationFolder,
             expectedRuntimeVersion: requiredRuntimeVersion,
             runWineVersion: false
         )
+        recordRuntimeEvent(
+            "runtime.discovery.manifest",
+            detail: discoveryManifestStatus(from: files)
+        )
         if let discovery = discoveryForInvalidFiles(files) { return discovery }
 
         recordRuntimeEvent("runtime.discovery.valid")
+        recordRuntimeEvent("runtime.discovery.preflight", detail: "started=true")
         do {
             let result = try await Wine.preflightRuntime(
                 executableURL: applicationFolder.appending(path: "Libraries/Wine/bin/wine")
@@ -295,15 +320,13 @@ public class WhiskyWineInstaller {
                 "runtime.discovery.ready",
                 detail: "wine_version=\(result.version)"
             )
-            return RuntimeDiscovery(
-                state: .ready,
-                readiness: files,
-                wineVersion: result.version
-            )
+            recordRuntimeEvent("runtime.discovery.preflight", detail: "result=ready")
+            return recordDiscoveryClassification(.ready, readiness: files, wineVersion: result.version)
         } catch let error as WineRuntimePreflightError where error.isGatekeeperBlocked {
             recordRuntimeEvent("runtime.discovery.gatekeeper_blocked")
-            return RuntimeDiscovery(
-                state: .gatekeeperBlocked,
+            recordRuntimeEvent("runtime.discovery.preflight", detail: "result=gatekeeper_blocked")
+            return recordDiscoveryClassification(
+                .gatekeeperBlocked,
                 readiness: files,
                 errorDescription: error.localizedDescription
             )
@@ -313,8 +336,9 @@ public class WhiskyWineInstaller {
                 detail: "state=verification_failed error=" +
                     WineDiagnosticSanitizer.singleLine(error.localizedDescription)
             )
-            return RuntimeDiscovery(
-                state: .verificationFailed,
+            recordRuntimeEvent("runtime.discovery.preflight", detail: "result=failed")
+            return recordDiscoveryClassification(
+                .verificationFailed,
                 readiness: files,
                 errorDescription: error.localizedDescription
             )
@@ -340,7 +364,40 @@ public class WhiskyWineInstaller {
             event,
             detail: "state=\(state.rawValue) failures=\(files.failures.joined(separator: ","))"
         )
-        return RuntimeDiscovery(state: state, readiness: files)
+        return recordDiscoveryClassification(state, readiness: files)
+    }
+
+    private static func recordDiscoveryClassification(
+        _ state: RuntimeDiscovery.State,
+        readiness: RuntimeReadiness? = nil,
+        wineVersion: String? = nil,
+        errorDescription: String? = nil
+    ) -> RuntimeDiscovery {
+        recordRuntimeEvent("runtime.discovery.classification", detail: "state=\(state.rawValue)")
+        return RuntimeDiscovery(
+            state: state,
+            readiness: readiness,
+            wineVersion: wineVersion,
+            errorDescription: errorDescription
+        )
+    }
+
+    private static func discoveryFilePresence(in wineRoot: URL, fileManager: FileManager) -> String {
+        let entries = ["wine": "bin/wine", "wineserver": "bin/wineserver", "ntdll": "lib/wine/x86_64-unix/ntdll.so"]
+        return entries.map { name, path in
+            "\(name)=\(fileManager.fileExists(atPath: wineRoot.appending(path: path).path))"
+        }.sorted().joined(separator: " ")
+    }
+
+    private static func discoveryPermissions(in wineRoot: URL, fileManager: FileManager) -> String {
+        ["wine", "wineserver"].map { name in
+            "\(name)_executable=\(fileManager.isExecutableFile(atPath: wineRoot.appending(path: "bin/\(name)").path))"
+        }.joined(separator: " ")
+    }
+
+    private static func discoveryManifestStatus(from readiness: RuntimeReadiness) -> String {
+        let invalid = readiness.failures.contains { $0.contains("manifest") || $0.contains("marker") }
+        return "valid=\(!invalid) failures=\(readiness.failures.count)"
     }
 
     /// Re-checks an existing runtime after the user approves Wine in macOS
@@ -750,16 +807,6 @@ public class WhiskyWineInstaller {
     }
 
     private static func validateArchive(at url: URL, sourceURL: URL?) throws {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer {
-            try? handle.close()
-        }
-
-        let header = try handle.read(upToCount: 2) ?? Data()
-        guard header == Data([0x1f, 0x8b]) else {
-            throw WhiskyWineInstallerError.invalidArchive(sourceURL, url, nil)
-        }
-
         do {
             let entries = try Tar.list(tarBall: url)
             guard entries.contains(where: isLibrariesRootEntry) else {
