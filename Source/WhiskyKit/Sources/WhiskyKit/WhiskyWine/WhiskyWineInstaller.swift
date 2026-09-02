@@ -265,7 +265,7 @@ public class WhiskyWineInstaller {
         RuntimeReadiness.validate(applicationFolder: applicationFolder)
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable function_body_length
     /// Discovers an existing runtime without equating a failed preflight with a
     /// missing installation. In particular, Gatekeeper approval is recoverable
     /// and must never cause a replacement download on the next launch.
@@ -345,6 +345,7 @@ public class WhiskyWineInstaller {
             )
         }
     }
+    // swiftlint:enable function_body_length
 
     private static func discoveryForInvalidFiles(_ files: RuntimeReadiness) -> RuntimeDiscovery? {
         guard !files.isReady else { return nil }
