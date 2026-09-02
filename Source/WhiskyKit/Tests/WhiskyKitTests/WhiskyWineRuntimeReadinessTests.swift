@@ -373,7 +373,6 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         XCTAssertEqual(WhiskyWineInstaller.runtimeAcquisitionSource(in: bundle), .runtimeAPI)
     }
 
-    // swiftlint:disable:next function_body_length
     func testManualDownloadArtifactStagesInstallsAndPreflightsUntouched() async throws {
         let fixture = try RuntimeFixture()
         defer { fixture.remove() }
