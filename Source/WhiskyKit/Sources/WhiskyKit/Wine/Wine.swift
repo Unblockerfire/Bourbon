@@ -276,7 +276,7 @@ public class Wine {
     }
 
     // Execute a program with Wine, using direct execution for Windows installer binaries.
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next function_body_length cyclomatic_complexity
     public static func runProgram(
         at url: URL,
         args: [String] = [],

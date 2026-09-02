@@ -20,7 +20,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WhiskyKit
 
-// swiftlint:disable:next type_body_length
 struct BottleCreationView: View {
     @Binding var newlyCreatedBottleURL: URL?
     @Binding var selectedInstallerURL: URL?

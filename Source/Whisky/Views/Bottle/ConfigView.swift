@@ -19,6 +19,9 @@
 import SwiftUI
 import WhiskyKit
 
+// The migration UI is intentionally colocated with the existing Bottle settings.
+// swiftlint:disable file_length
+
 enum LoadingState {
     case loading
     case modifying
@@ -26,6 +29,7 @@ enum LoadingState {
     case failed
 }
 
+// swiftlint:disable:next type_body_length
 struct ConfigView: View {
     @ObservedObject var bottle: Bottle
     @State private var buildVersion: Int = 0

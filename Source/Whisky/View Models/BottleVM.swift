@@ -51,6 +51,7 @@ final class BottleVM: ObservableObject {
         return bottles.filter { $0.isAvailable == true }.count
     }
 
+    // swiftlint:disable:next function_body_length
     func createNewBottle(bottleName: String, winVersion: WinVersion, bottleURL: URL) async throws -> URL {
         let newBottleDir = bottleURL.appending(path: UUID().uuidString)
         let wineOperation = BottleWineOperation(prefixURL: newBottleDir)
