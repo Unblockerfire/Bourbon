@@ -11,6 +11,15 @@ final class WineRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertTrue(error.isGatekeeperBlocked)
         XCTAssertEqual(error.diagnosticCode, "gatekeeper_blocked")
     }
+
+    func testGatekeeperCodeSignatureStatusIsClassifiedSeparately() {
+        let error = WineDiagnosticSanitizer.classifiedFailure(
+            details: "The operation couldn’t be completed. (OSStatus error -67062.)",
+            executablePath: "/runtime/Libraries/Wine/bin/wine"
+        )
+
+        XCTAssertTrue(error.isGatekeeperBlocked)
+    }
     func testRedactsSensitiveProcessOutput() {
         let input = "password=hunter2 token: abcdefghijk user@example.com BRBN-1234567890ABCDEF"
         let output = WineDiagnosticSanitizer.redact(input)

@@ -197,7 +197,10 @@ struct WhiskyWineDownloadView: View {
             do {
                 WhiskyWineInstaller.recordRuntimeEvent("runtime.manual.install.started")
                 manualRuntimeArchive = true
-                runtimeVersion = WhiskyWineInstaller.bundledDiagnosticRuntime()?.info.runtimeVersion
+                // The selected archive is authoritative for its own manifest
+                // version. This must match the exact artifact opened by the
+                // companion manual-download button, not this app bundle.
+                runtimeVersion = nil
                 tarLocation = try WhiskyWineInstaller.persistLocalArchive(at: url)
                 path.append(.whiskyWineInstall)
             } catch {

@@ -209,9 +209,13 @@ enum WineDiagnosticSanitizer {
         let lowercased = details.lowercased()
 
         if lowercased.contains("cannot be opened because the developer cannot be verified")
+            || lowercased.contains("cannot be opened because it is from an unidentified developer")
             || lowercased.contains("apple cannot verify")
+            || lowercased.contains("unable to verify the developer")
             || lowercased.contains("not opened")
             || lowercased.contains("gatekeeper")
+            || lowercased.contains("osstatus error -67062")
+            || lowercased.contains("code object is not signed")
             || lowercased.contains("malware check") {
             return .gatekeeperBlocked(path: executablePath, details: excerpt)
         }

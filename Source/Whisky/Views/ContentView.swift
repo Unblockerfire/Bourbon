@@ -258,10 +258,17 @@ struct ContentView: View {
                 detail: "state=\(discovery.state.rawValue)"
             )
             if discovery.state != .ready {
-                WhiskyWineInstaller.recordRuntimeEvent(
-                    "runtime.install.required",
-                    detail: "reason=\(discovery.state.rawValue)"
-                )
+                if discovery.requiresDownload {
+                    WhiskyWineInstaller.recordRuntimeEvent(
+                        "runtime.install.required",
+                        detail: "reason=\(discovery.state.rawValue)"
+                    )
+                } else {
+                    WhiskyWineInstaller.recordRuntimeEvent(
+                        "runtime.install.recovery_required",
+                        detail: "reason=\(discovery.state.rawValue)"
+                    )
+                }
                 WhiskyWineInstaller.recordRuntimeEvent(
                     "runtime.install.destination",
                     detail: "bundle_identifier=\(Bundle.whiskyBundleIdentifier)"

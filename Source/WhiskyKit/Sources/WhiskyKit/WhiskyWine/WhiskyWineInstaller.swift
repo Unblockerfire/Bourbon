@@ -274,7 +274,11 @@ public class WhiskyWineInstaller {
         expectedRuntimeVersion: String? = nil
     ) async -> RuntimeDiscovery {
         recordRuntimeEvent("runtime.discovery.started")
-        let requiredRuntimeVersion = expectedRuntimeVersion ?? bundledDiagnosticRuntime()?.info.runtimeVersion
+        // A diagnostic build may embed a newer archive than the runtime already
+        // installed by the normal download path. Only a caller that has an
+        // explicit compatibility requirement may reject an otherwise complete
+        // runtime by version; startup discovery must never infer one here.
+        let requiredRuntimeVersion = expectedRuntimeVersion
         let fileManager = FileManager.default
         let libraries = applicationFolder.appending(path: "Libraries")
         let wineRoot = applicationFolder.appending(path: "Libraries/Wine")
@@ -296,6 +300,10 @@ public class WhiskyWineInstaller {
             "runtime.discovery.permissions",
             detail: discoveryPermissions(in: wineRoot, fileManager: fileManager)
         )
+        recordRuntimeEvent(
+            "runtime.discovery.quarantine",
+            detail: discoveryQuarantineState(for: wineRoot.appending(path: "bin/wine"))
+        )
         guard fileManager.fileExists(atPath: wineRoot.path) else {
             recordRuntimeEvent("runtime.discovery.incomplete", detail: "reason=missing_wine_root")
             return recordDiscoveryClassification(.corruptOrIncomplete)
@@ -307,7 +315,7 @@ public class WhiskyWineInstaller {
         )
         recordRuntimeEvent(
             "runtime.discovery.manifest",
-            detail: discoveryManifestStatus(from: files)
+            detail: discoveryManifestStatus(from: files, libraries: libraries)
         )
         if let discovery = discoveryForInvalidFiles(files) { return discovery }
 
@@ -375,7 +383,12 @@ public class WhiskyWineInstaller {
         wineVersion: String? = nil,
         errorDescription: String? = nil
     ) -> RuntimeDiscovery {
-        recordRuntimeEvent("runtime.discovery.classification", detail: "state=\(state.rawValue)")
+        let failures = readiness?.failures.joined(separator: ",") ?? "none"
+        let error = errorDescription.map(WineDiagnosticSanitizer.singleLine) ?? "none"
+        recordRuntimeEvent(
+            "runtime.discovery.classification",
+            detail: "state=\(state.rawValue) failures=\(failures) error=\(error)"
+        )
         return RuntimeDiscovery(
             state: state,
             readiness: readiness,
@@ -385,7 +398,14 @@ public class WhiskyWineInstaller {
     }
 
     private static func discoveryFilePresence(in wineRoot: URL, fileManager: FileManager) -> String {
-        let entries = ["wine": "bin/wine", "wineserver": "bin/wineserver", "ntdll": "lib/wine/x86_64-unix/ntdll.so"]
+        let entries = [
+            "wine": "bin/wine",
+            "wineserver": "bin/wineserver",
+            "ntdll": "lib/wine/x86_64-unix/ntdll.so",
+            "vulkan": "lib/libvulkan.1.dylib",
+            "manifest": "../BourbonWineRuntime.json",
+            "marker": "../BourbonWineVersion.plist"
+        ]
         return entries.map { name, path in
             "\(name)=\(fileManager.fileExists(atPath: wineRoot.appending(path: path).path))"
         }.sorted().joined(separator: " ")
@@ -393,13 +413,33 @@ public class WhiskyWineInstaller {
 
     private static func discoveryPermissions(in wineRoot: URL, fileManager: FileManager) -> String {
         ["wine", "wineserver"].map { name in
-            "\(name)_executable=\(fileManager.isExecutableFile(atPath: wineRoot.appending(path: "bin/\(name)").path))"
+            let executable = wineRoot.appending(path: "bin/\(name)")
+            let mode = (try? fileManager.attributesOfItem(atPath: executable.path)[.posixPermissions] as? NSNumber)
+                .map { String(format: "%03o", $0.intValue) } ?? "unavailable"
+            return "\(name)_executable=\(fileManager.isExecutableFile(atPath: executable.path)) mode=\(mode)"
         }.joined(separator: " ")
     }
 
-    private static func discoveryManifestStatus(from readiness: RuntimeReadiness) -> String {
+    private static func discoveryQuarantineState(for executable: URL) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+        process.arguments = ["-p", "com.apple.quarantine", executable.path]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0 ? "present" : "absent_or_unreadable"
+        } catch {
+            return "unavailable"
+        }
+    }
+
+    private static func discoveryManifestStatus(from readiness: RuntimeReadiness, libraries: URL) -> String {
         let invalid = readiness.failures.contains { $0.contains("manifest") || $0.contains("marker") }
-        return "valid=\(!invalid) failures=\(readiness.failures.count)"
+        let version = runtimeVersionFromManifest(in: libraries) ?? "missing_or_invalid"
+        return "valid=\(!invalid) runtime_version=\(version) failures=\(readiness.failures.count)"
     }
 
     /// Re-checks an existing runtime after the user approves Wine in macOS
@@ -536,10 +576,16 @@ public class WhiskyWineInstaller {
             recordRuntimeEvent("runtime.extract.completed")
             recordUpdateEvent("runtime.update.extraction.completed")
 
+            let resolvedRuntimeVersion = runtimeVersion
+                ?? runtimeVersionFromManifest(in: staging.appending(path: "Libraries"))
             let stagedReadiness = RuntimeReadiness.validate(
                 applicationFolder: staging,
-                expectedRuntimeVersion: runtimeVersion,
-                requireVersionMarker: false
+                expectedRuntimeVersion: resolvedRuntimeVersion,
+                requireVersionMarker: false,
+                // Do not execute Wine from the temporary staging directory.
+                // Gatekeeper approval belongs to the final installed binary and
+                // must lead to recovery rather than discarding this runtime.
+                runWineVersion: false
             )
             guard stagedReadiness.isReady else {
                 let failures = stagedReadiness.failures
@@ -565,12 +611,15 @@ public class WhiskyWineInstaller {
             do {
                 recordUpdateEvent("runtime.update.install.started")
                 try fileManager.moveItem(at: staging.appending(path: "Libraries"), to: destinationLibraryFolder)
-                try writeInstalledVersionMarkerIfNeeded(runtimeVersion: runtimeVersion, in: destinationLibraryFolder)
+                try writeInstalledVersionMarkerIfNeeded(
+                    runtimeVersion: resolvedRuntimeVersion,
+                    in: destinationLibraryFolder
+                )
                 recordUpdateEvent("runtime.update.preflight.started")
                 recordRuntimeEvent("runtime.preflight.started", detail: "purpose=runtime_install")
                 let installedReadiness = RuntimeReadiness.validate(
                     applicationFolder: destinationApplicationFolder,
-                    expectedRuntimeVersion: runtimeVersion,
+                    expectedRuntimeVersion: resolvedRuntimeVersion,
                     runWineVersion: false
                 )
                 guard installedReadiness.isReady else {
@@ -742,6 +791,16 @@ public class WhiskyWineInstaller {
             return
         }
         try data.write(to: marker, options: .atomic)
+    }
+
+    private static func runtimeVersionFromManifest(in libraries: URL) -> String? {
+        let manifest = libraries.appending(path: "BourbonWineRuntime.json")
+        guard let data = try? Data(contentsOf: manifest),
+              let value = try? JSONDecoder().decode(InstalledRuntimeManifest.self, from: data),
+              SemanticVersion(value.runtimeVersion) != nil else {
+            return nil
+        }
+        return value.runtimeVersion
     }
 
     static func installedVersionMarkerData(runtimeVersion: String?) throws -> Data? {
