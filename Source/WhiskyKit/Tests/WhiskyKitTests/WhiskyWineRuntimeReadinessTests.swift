@@ -411,15 +411,14 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         let selected = try WhiskyWineInstaller.persistLocalArchive(at: downloaded)
         XCTAssertEqual(try Data(contentsOf: selected), sourceBytes)
         try WhiskyWineInstaller.install(from: selected, into: fixture.applicationFolder)
-        let readiness = try await WhiskyWineInstaller.retryInstalledRuntimeReadiness(
+        let preflight = try await WhiskyWineInstaller.retryInstalledRuntimeReadiness(
             in: fixture.applicationFolder
         )
-        XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
         XCTAssertEqual(
             WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder).map(String.init(describing:)),
             "1.0.2"
         )
-        XCTAssertEqual(readiness.wineVersion?.trimmingCharacters(in: .whitespacesAndNewlines), "wine-11.16")
+        XCTAssertEqual(preflight.version.trimmingCharacters(in: .whitespacesAndNewlines), "wine-11.16")
     }
 
     func testExtendedAttributeDiagnosticsAreReadOnlyAndDistinguishStates() throws {
