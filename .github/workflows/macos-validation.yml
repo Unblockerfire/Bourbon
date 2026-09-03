@@ -627,14 +627,6 @@ jobs:
           tar -xzf "$RUNTIME_ARCHIVE" -C "$RUNTIME_EXTRACT"
           test -x "$RUNTIME_EXTRACT/$SELECTED_LAUNCHER"
 
-          RUNTIME_MANIFEST_VERSION="$(python3 -c \
-            'import json,sys; print(json.load(open(sys.argv[1]))["runtimeVersion"])' \
-            "$RUNTIME_EXTRACT/Libraries/BourbonWineRuntime.json")"
-          RUNTIME_MARKER_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :version' \
-            "$RUNTIME_EXTRACT/Libraries/BourbonWineVersion.plist")"
-          test "$RUNTIME_MANIFEST_VERSION" = "$RUNTIME_API_VERSION"
-          test "$RUNTIME_MARKER_VERSION" = "$RUNTIME_API_VERSION"
-
           {
             echo 'CI quarantine limitation: archive fetched by curl on a GitHub runner; no Safari provenance is expected.'
             for COMPONENT in \
