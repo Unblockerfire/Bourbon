@@ -511,7 +511,8 @@ final class InstallManager: ObservableObject {
                     self.lastError = InstallerErrorInfo(
                         bottleName: bottle.settings.name,
                         installerURL: self.lastInstallerURL ?? bottle.url,
-                        message: "Installation was cancelled, but prefix cleanup did not finish: \(error.localizedDescription)"
+                        message: "Installation was cancelled, but prefix cleanup did not finish: " +
+                            error.localizedDescription
                     )
                 }
             }

@@ -3,7 +3,9 @@ import XCTest
 
 final class BottleWineLifecycleTests: XCTestCase {
     func testOrphanedWineChildIsStillOwnedByItsBottlePrefix() {
-        let bottle = Bottle(bottleUrl: URL(fileURLWithPath: "/private/var/folders/test/11111111-1111-1111-1111-111111111111"))
+        let bottle = Bottle(
+            bottleUrl: URL(fileURLWithPath: "/private/var/folders/test/11111111-1111-1111-1111-111111111111")
+        )
         BottleWineLifecycle.shared.registerLaunch(
             bottle: bottle,
             pid: 17471,

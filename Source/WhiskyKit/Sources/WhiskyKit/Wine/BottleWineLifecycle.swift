@@ -62,7 +62,11 @@ public final class BottleWineLifecycle: @unchecked Sendable {
         entry.cleanupResult = "started"
         entries[key] = entry
         lock.unlock()
-        record(bottle: bottle, event: "cleanup.started", detail: "reason=\(safe(reason)) wineserver=\(wineserver.lastPathComponent)")
+        record(
+            bottle: bottle,
+            event: "cleanup.started",
+            detail: "reason=\(safe(reason)) wineserver=\(wineserver.lastPathComponent)"
+        )
     }
 
     public func finishCleanup(bottle: Bottle, result: String) {
@@ -104,7 +108,8 @@ public final class BottleWineLifecycle: @unchecked Sendable {
 
     private func record(bottle: Bottle, event: String, detail: String) {
         Logger.wineKit.notice(
-            "wine.prefix.lifecycle \(event, privacy: .public) bottle_uuid=\(bottle.url.lastPathComponent, privacy: .public) " +
+            "wine.prefix.lifecycle \(event, privacy: .public) " +
+                "bottle_uuid=\(bottle.url.lastPathComponent, privacy: .public) " +
                 "wineprefix_id=\(prefixKey(for: bottle), privacy: .public) \(detail, privacy: .public)"
         )
     }
