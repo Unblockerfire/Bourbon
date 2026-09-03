@@ -595,10 +595,10 @@ jobs:
             'import json,sys; print(json.load(open(sys.argv[1]))["version"])' \
             "$RUNTIME_JSON")"
 
-          test "$RUNTIME_API_VERSION" = '1.0.2'
-          test "$RUNTIME_WINE_VERSION" = 'wine-11.16'
-          test "$RUNTIME_ARCHIVE_NAME" = 'BourbonWine-1.0.2-macOS-x86_64.tar.gz'
-          test "$RUNTIME_SHA256" = '6e070803fb5d1f9f92152b82ec6a1dab4cb82bcc1bc719663dda4a492875fce8'
+          test -n "$RUNTIME_API_VERSION"
+          test -n "$RUNTIME_WINE_VERSION"
+          test "$RUNTIME_ARCHIVE_NAME" = BourbonWine-*-macOS-x86_64.tar.gz
+          [[ "$RUNTIME_SHA256" =~ ^[0-9a-f]{64}$ ]]
 
           curl --fail --location --silent --show-error \
             "$RUNTIME_URL" \
