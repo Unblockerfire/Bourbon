@@ -94,7 +94,7 @@ struct DiagnosticAppIcon: View {
     var body: some View {
         Image(nsImage: image)
             .resizable()
-            .aspectRatio(contentMode: .fit)
+            .scaledToFit()
             .frame(width: size, height: size)
     }
 }
