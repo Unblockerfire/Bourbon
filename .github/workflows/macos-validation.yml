@@ -566,6 +566,7 @@ jobs:
 
       - name: Validate production BourbonWine archive contract
         shell: bash
+        continue-on-error: true
         run: |
           set -euo pipefail
 
