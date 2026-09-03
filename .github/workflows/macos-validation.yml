@@ -597,7 +597,7 @@ jobs:
 
           test -n "$RUNTIME_API_VERSION"
           test -n "$RUNTIME_WINE_VERSION"
-          test "$RUNTIME_ARCHIVE_NAME" = BourbonWine-*-macOS-x86_64.tar.gz
+          [[ "$RUNTIME_ARCHIVE_NAME" == BourbonWine-*-macOS-x86_64.tar.gz ]]
           [[ "$RUNTIME_SHA256" =~ ^[0-9a-f]{64}$ ]]
 
           curl --fail --location --silent --show-error \
