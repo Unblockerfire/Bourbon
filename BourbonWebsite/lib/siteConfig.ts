@@ -7,8 +7,9 @@ export const siteConfig = {
   githubRepository: "Unblockerfire/Bourbon",
   githubRepositoryUrl: "https://github.com/Unblockerfire/Bourbon",
   releasesPageUrl: "https://github.com/Unblockerfire/Bourbon/releases",
-  directDownloadUrl:
-    "https://github.com/Unblockerfire/Bourbon/releases/download/v2.0.19/Bourbon2.0.19.dmg",
+  downloadsPaused: true,
+  downloadsPauseMessage:
+    "Bourbon downloads are temporarily paused while we validate an important runtime update. We're actively testing the corrected build and expect downloads to return by the end of the week.",
   documentationUrl: "/docs",
   supportUrl: "/support",
   privacyUrl: "/privacy",

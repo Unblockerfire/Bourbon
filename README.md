@@ -6,13 +6,20 @@
 
 Run Windows applications and games on macOS with a native SwiftUI experience.
 
-[![Release](https://img.shields.io/github/v/release/Unblockerfire/Bourbon?style=for-the-badge)](https://github.com/Unblockerfire/Bourbon/releases)
+![Release](https://img.shields.io/github/v/release/Unblockerfire/Bourbon?style=for-the-badge)
 [![Build](https://img.shields.io/github/actions/workflow/status/Unblockerfire/Bourbon/release.yml?style=for-the-badge&label=BUILD)](https://github.com/Unblockerfire/Bourbon/actions/workflows/release.yml)
 [![Discord](https://img.shields.io/badge/CHAT-JOIN%20DISCORD-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/bpm6EGSVMR)
 
 </div>
 
 ---
+
+> [!IMPORTANT]
+> **Bourbon downloads are temporarily paused**
+>
+> We're currently validating an important Wine/runtime update after identifying issues affecting some macOS users. Development builds are being actively tested and a corrected public build is expected by the end of the week.
+>
+> Please avoid installing the current public build while this work is in progress. Diagnostic builds are intended only for approved testers.
 
 ## Welcome to Bourbon
 
@@ -79,9 +86,7 @@ Originally inspired by Whisky, Bourbon has grown into its own actively maintaine
 
 ## Installation
 
-Download the latest release from the Releases page.
-
-Bourbon includes automatic updates through Sparkle, so once installed you'll always stay up to date.
+Bourbon downloads are temporarily paused while the runtime update is validated. Please wait for the corrected public build before installing or updating.
 
 ---
 

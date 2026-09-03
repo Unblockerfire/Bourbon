@@ -8,8 +8,9 @@ export async function GET() {
   const release = await getLatestRelease();
 
   return NextResponse.json(release, {
+    status: 503,
     headers: {
-      "Cache-Control": "public, max-age=300, stale-while-revalidate=900"
+      "Cache-Control": "no-store"
     }
   });
 }

@@ -224,30 +224,23 @@ function InstallingBourbon() {
       <p className="eyebrow">Installation</p>
       <h1>Install Bourbon on your Mac.</h1>
       <p className="docsLead">
-        Choose GitHub Releases or Homebrew, then open Bourbon from Applications.
+        Public Bourbon downloads are temporarily paused while we validate an
+        important runtime update. A corrected public build is expected by the
+        end of the week.
       </p>
       <section className="docsSection">
-        <h2>From GitHub Releases</h2>
-        <ol>
-          <li>
-            Download the Bourbon DMG from the official GitHub Releases page.
-          </li>
-          <li>Open the downloaded DMG.</li>
-          <li>
-            Drag <code>Bourbon.app</code> to your Applications folder.
-          </li>
-          <li>Open Bourbon from Applications.</li>
-        </ol>
-        <a className="docsTextLink" href={siteConfig.releasesPageUrl}>
-          Open GitHub Releases <ExternalLink aria-hidden="true" size={16} />
-        </a>
+        <h2>Downloads paused</h2>
+        <p>
+          Please avoid installing the current public build while this work is in
+          progress. Diagnostic builds are intended only for approved testers.
+        </p>
       </section>
       <section className="docsSection">
-        <h2>With Homebrew</h2>
-        <pre>
-          <code>brew install --cask Unblockerfire/Bourbon/bourbon</code>
-        </pre>
-        <p>After installation, open Bourbon from Applications as usual.</p>
+        <h2>Homebrew</h2>
+        <p>
+          Homebrew installation is also paused until the corrected build is
+          ready.
+        </p>
       </section>
       <Callout>
         If macOS asks for permission on first launch, follow the prompt and

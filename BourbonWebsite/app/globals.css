@@ -220,6 +220,19 @@ video {
   transform: translateY(-1px);
 }
 
+.buttonDisabled,
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  pointer-events: none;
+}
+
+.buttonDisabled:hover,
+.button:disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .buttonPrimary,
 .buttonCompact {
   background: linear-gradient(135deg, var(--amber), var(--orange));

@@ -14,11 +14,11 @@ import {
   Sparkles
 } from "lucide-react";
 
-import { DownloadButton, ReleasesLink } from "@/components/DownloadButton";
+import { DownloadButton } from "@/components/DownloadButton";
 import { featureCards, siteConfig } from "@/lib/siteConfig";
 
 const facts = [
-  { value: `v${siteConfig.currentVersion}`, label: "Latest release" },
+  { value: "Temporarily paused", label: "Downloads" },
   { value: `macOS ${siteConfig.minimumMacOSVersion}+`, label: "System" },
   { value: "Apple Silicon", label: "Architecture" },
   { value: "Free", label: "Price" }
@@ -59,7 +59,6 @@ export default function HomePage() {
     operatingSystem: `macOS ${siteConfig.minimumMacOSVersion} or later`,
     applicationCategory: "UtilitiesApplication",
     url: siteConfig.canonicalDomain,
-    downloadUrl: siteConfig.directDownloadUrl,
     softwareVersion: siteConfig.currentVersion,
     offers: {
       "@type": "Offer",
@@ -79,8 +78,7 @@ export default function HomePage() {
         <div className="heroCopy heroEntrance">
           <div className="releasePill">
             <BadgeCheck aria-hidden="true" size={16} />
-            <span>Bourbon {siteConfig.currentVersion} is available</span>
-            <ChevronRight aria-hidden="true" size={15} />
+            <span>Downloads temporarily paused</span>
           </div>
           <p className="eyebrow">A native home for Windows apps</p>
           <h1>
@@ -94,8 +92,8 @@ export default function HomePage() {
           </p>
           <div className="buttonRow">
             <DownloadButton />
-            <ReleasesLink />
           </div>
+          <p className="heroFinePrint">{siteConfig.downloadsPauseMessage}</p>
           <p className="heroFinePrint">
             <Apple aria-hidden="true" size={15} />
             Built for Apple Silicon · Requires macOS{" "}
@@ -244,10 +242,7 @@ export default function HomePage() {
         <div>
           <p className="eyebrow">Your next pour</p>
           <h2 id="download-title">Bring your Windows apps home.</h2>
-          <p>
-            Download Bourbon {siteConfig.currentVersion} for an Apple Silicon
-            Mac running macOS {siteConfig.minimumMacOSVersion} or later.
-          </p>
+          <p>{siteConfig.downloadsPauseMessage}</p>
         </div>
         <div className="buttonRow">
           <DownloadButton />
