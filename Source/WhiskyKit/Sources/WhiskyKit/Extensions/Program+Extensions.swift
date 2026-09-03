@@ -34,6 +34,10 @@ extension Program {
                 try await Wine.runProgram(
                     at: self.url, args: arguments, bottle: self.bottle, environment: environment
                 )
+            } catch is Wine.ProgramLaunchIntentionalTermination {
+                // Bourbon deliberately ended this Bottle's prefix. Its original launcher
+                // may report a nonzero exit, but that is not a failed user launch.
+                return
             } catch {
                 await MainActor.run {
                     self.showRunError(message: error.localizedDescription)
@@ -74,13 +78,14 @@ extension Program {
     @MainActor private func showRunError(message: String) {
         let alert = NSAlert()
         alert.messageText = String(localized: "alert.message")
-        alert.informativeText = String(localized: "alert.info")
-        + " \(self.url.lastPathComponent): "
-        + message
+        alert.informativeText = String(localized: "alert.info") + " \(self.url.lastPathComponent)"
         alert.alertStyle = .critical
+        alert.accessoryView = diagnosticScrollView(message: message)
         alert.addButton(withTitle: String(localized: "button.ok"))
         alert.addButton(withTitle: "Report")
-        if alert.runModal() == .alertSecondButtonReturn {
+        alert.addButton(withTitle: "Copy Diagnostics")
+        let response = alert.runModal()
+        if response == .alertSecondButtonReturn {
             NotificationCenter.default.post(
                 name: Notification.Name("BourbonOpenProblemReport"),
                 object: nil,
@@ -89,6 +94,33 @@ extension Program {
                     "message": message
                 ]
             )
+        } else if response == .alertThirdButtonReturn {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(message, forType: .string)
         }
     }
+}
+
+@MainActor
+private func diagnosticScrollView(message: String) -> NSScrollView {
+    let availableHeight = max(96, (NSScreen.main?.visibleFrame.height ?? 800) - 300)
+    let height = min(360, availableHeight)
+    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: height))
+    scrollView.borderType = .bezelBorder
+    scrollView.hasVerticalScroller = true
+    scrollView.autohidesScrollers = true
+
+    let textView = NSTextView(frame: scrollView.bounds)
+    textView.string = message
+    textView.isEditable = false
+    textView.isSelectable = true
+    textView.drawsBackground = false
+    textView.isVerticallyResizable = true
+    textView.isHorizontallyResizable = false
+    textView.minSize = NSSize(width: 0, height: height)
+    textView.maxSize = NSSize(width: .greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+    textView.textContainer?.widthTracksTextView = true
+    textView.textContainerInset = NSSize(width: 8, height: 8)
+    scrollView.documentView = textView
+    return scrollView
 }

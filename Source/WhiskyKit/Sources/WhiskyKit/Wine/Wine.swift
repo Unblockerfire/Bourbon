@@ -349,6 +349,11 @@ public class Wine {
         }
 
         guard terminationStatus == 0 else {
+            if BottleWineLifecycle.shared.hasIntentionalTermination(for: bottle) {
+                // swiftlint:disable:next line_length
+                Logger.wineKit.info("Program launcher ended after intentional prefix cleanup for \(url.lastPathComponent, privacy: .public).")
+                throw ProgramLaunchIntentionalTermination(url: url)
+            }
             try? await stopBottleProcesses(bottle: bottle, reason: "program_launch_exit_\(terminationStatus)")
             let rawOutput = output.joined().trimmingCharacters(in: .whitespacesAndNewlines)
             Logger.wineKit.warning(
@@ -1234,6 +1239,15 @@ extension Wine {
                 message += "\n\nWine output:\n\(output)"
             }
             return message
+        }
+    }
+
+    /// Distinguishes a deliberate prefix shutdown from a genuine Wine launch failure.
+    public struct ProgramLaunchIntentionalTermination: Error, Sendable {
+        public let url: URL
+
+        public init(url: URL) {
+            self.url = url
         }
     }
 

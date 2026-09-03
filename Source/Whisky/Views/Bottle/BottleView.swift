@@ -69,6 +69,11 @@ struct BottleView: View {
                 guard oldValue != newValue else { return }
                 BottleVM.shared.bottles = BottleVM.shared.bottles
             }
+            .overlay {
+                if installManager.isInstalling || installManager.lastError != nil {
+                    installerActivityOverlay
+                }
+            }
             .navigationDestination(for: BottleStage.self) { stage in
                 switch stage {
                 case .config:
@@ -260,6 +265,26 @@ struct BottleView: View {
             }
     }
 
+    private var installerActivityOverlay: some View {
+        Color.black.opacity(0.45)
+            .ignoresSafeArea()
+            .overlay {
+                if let error = installManager.lastError {
+                    InstallerErrorCard(
+                        error: error,
+                        tryAgain: { installManager.retryLastInstall() },
+                        cancel: { installManager.clearFinishedInstall() },
+                        reportIssue: { reportIssue(for: error) }
+                    )
+                } else {
+                    InstallerProgressCard(
+                        status: installManager.progressStage.title,
+                        steps: installManager.pipelineSteps
+                    )
+                }
+            }
+    }
+
     private func chooseInstaller() {
         DispatchQueue.main.async {
             guard let url = selectInstaller(startingDirectory: bottle.url.appending(path: "drive_c")) else { return }
@@ -399,6 +424,7 @@ enum InstallStage: String {
     case waitingForInstaller
     case refreshingAppList
     case completed
+    case cancelled
     case failed
 
     var title: String {
@@ -417,6 +443,8 @@ enum InstallStage: String {
             return "Refreshing app list..."
         case .completed:
             return "Install finished."
+        case .cancelled:
+            return "Installation cancelled."
         case .failed:
             return "Install failed."
         }
@@ -432,6 +460,7 @@ final class InstallManager: ObservableObject {
     @Published var installerName: String?
     @Published var progressStage: InstallStage = .choosingInstaller
     @Published var progressDetail = ""
+    @Published var pipelineSteps = InstallerPipelineStep.initialSteps
     @Published var startedAt: Date?
     @Published var canCancel = false
     @Published var lastError: InstallerErrorInfo?
@@ -458,6 +487,7 @@ final class InstallManager: ObservableObject {
         installerName = url.lastPathComponent
         startedAt = Date()
         canCancel = true
+        pipelineSteps = InstallerPipelineStep.initialSteps
         update(.analyzingInstaller, detail: "Opening \(url.lastPathComponent)...")
 
         installTask = Task(priority: .userInitiated) {
@@ -493,21 +523,19 @@ final class InstallManager: ObservableObject {
 
     func cancelInstall() {
         guard isInstalling, let bottle = lastBottle else { return }
-        update(.failed, detail: "Cancelling and stopping Wine processes for this bottle...")
+        update(.cancelled, detail: "Cancelling and stopping Wine processes for this bottle...")
         canCancel = false
         installTask?.cancel()
         Task(priority: .userInitiated) {
             do {
                 try await Wine.stopBottleProcesses(bottle: bottle, reason: "installer_cancelled")
                 await MainActor.run {
-                    self.lastError = InstallerErrorInfo(
-                        bottleName: bottle.settings.name,
-                        installerURL: self.lastInstallerURL ?? bottle.url,
-                        message: "Installation was cancelled and Wine processes for this bottle were stopped."
-                    )
+                    self.isInstalling = false
+                    self.noticeMessage = "Installation cancelled. Wine processes for this bottle were stopped."
                 }
             } catch {
                 await MainActor.run {
+                    self.isInstalling = false
                     self.lastError = InstallerErrorInfo(
                         bottleName: bottle.settings.name,
                         installerURL: self.lastInstallerURL ?? bottle.url,
@@ -525,6 +553,8 @@ final class InstallManager: ObservableObject {
             update(.refreshingAppList, detail: "Refreshing app list...")
             bottle.updateInstalledPrograms()
             update(.completed, detail: "\(url.lastPathComponent) finished.")
+        } catch is Wine.ProgramLaunchIntentionalTermination {
+            // cancelInstall() owns the user-facing completion state for deliberate cleanup.
         } catch {
             try? await Wine.stopBottleProcesses(bottle: bottle, reason: "installer_failed")
             update(.failed, detail: "Bourbon tried the normal path and a recovery path.")
@@ -608,6 +638,32 @@ final class InstallManager: ObservableObject {
     private func update(_ stage: InstallStage, detail: String) {
         progressStage = stage
         progressDetail = detail
+        let step: InstallerPipelineStep.Kind
+        switch stage {
+        case .choosingInstaller:
+            step = .opening
+        case .analyzingInstaller:
+            step = .metadata
+        case .checkingCompatibility:
+            step = .recovering
+        case .launchingInstaller:
+            step = .launching
+        case .waitingForInstaller:
+            step = .installing
+        case .refreshingAppList:
+            step = .refreshing
+        case .completed, .cancelled, .failed:
+            step = .done
+        }
+        pipelineSteps = pipelineSteps.map { item in
+            if item.kind.order < step.order {
+                return item.completed()
+            }
+            if item.kind == step {
+                return item.active()
+            }
+            return item.waiting()
+        }
     }
 }
 

@@ -43,6 +43,9 @@ public final class BottleWineLifecycle: @unchecked Sendable {
         )
         entry.launchPID = pid
         entry.wineserverIdentifier = wineserver.lastPathComponent
+        // A new launch must not inherit a completed cleanup from an earlier run.
+        entry.terminationReason = nil
+        entry.cleanupResult = nil
         entries[key] = entry
         lock.unlock()
         record(bottle: bottle, event: "launch", detail: "launch_pid=\(pid) wineserver=\(wineserver.lastPathComponent)")
@@ -96,6 +99,23 @@ public final class BottleWineLifecycle: @unchecked Sendable {
             cleanupResult: entry.cleanupResult
         )
     }
+
+    /// A nonzero launcher exit is expected only when Bourbon deliberately stopped this
+    /// Bottle's prefix. The reason is scoped to the current launch above.
+    public func hasIntentionalTermination(for bottle: Bottle) -> Bool {
+        guard let reason = snapshot(for: bottle)?.terminationReason else { return false }
+        return Self.intentionalTerminationReasons.contains(reason)
+    }
+
+    private static let intentionalTerminationReasons: Set<String> = [
+        "application_termination",
+        "bottle_deleted",
+        "bottle_terminated",
+        "creation_cancelled",
+        "installer_cancelled",
+        "program_launch_cancelled",
+        "program_terminated"
+    ]
 
     private func prefixKey(for bottle: Bottle) -> String {
         // UUID-only bottle directories are safe to include in diagnostics; never log a user path.

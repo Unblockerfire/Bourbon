@@ -34,4 +34,36 @@ final class BottleWineLifecycleTests: XCTestCase {
         XCTAssertNil(BottleWineLifecycle.shared.snapshot(for: second)?.cleanupResult)
         XCTAssertEqual(BottleWineLifecycle.shared.snapshot(for: second)?.launchPID, 202)
     }
+
+    func testIntentionalTerminationIsScopedAndClearedByANewLaunch() {
+        let first = Bottle(
+            bottleUrl: URL(fileURLWithPath: "/tmp/cccccccc-cccc-cccc-cccc-cccccccccccc")
+        )
+        let second = Bottle(
+            bottleUrl: URL(fileURLWithPath: "/tmp/dddddddd-dddd-dddd-dddd-dddddddddddd")
+        )
+        let wineserver = URL(fileURLWithPath: "/runtime/bin/wineserver")
+
+        BottleWineLifecycle.shared.registerLaunch(bottle: first, pid: 303, wineserver: wineserver)
+        BottleWineLifecycle.shared.beginCleanup(
+            bottle: first,
+            reason: "program_terminated",
+            wineserver: wineserver
+        )
+
+        XCTAssertTrue(BottleWineLifecycle.shared.hasIntentionalTermination(for: first))
+        XCTAssertFalse(BottleWineLifecycle.shared.hasIntentionalTermination(for: second))
+
+        BottleWineLifecycle.shared.beginCleanup(
+            bottle: second,
+            reason: "program_launch_failed",
+            wineserver: wineserver
+        )
+        XCTAssertFalse(BottleWineLifecycle.shared.hasIntentionalTermination(for: second))
+
+        BottleWineLifecycle.shared.registerLaunch(bottle: first, pid: 404, wineserver: wineserver)
+
+        XCTAssertFalse(BottleWineLifecycle.shared.hasIntentionalTermination(for: first))
+        XCTAssertNil(BottleWineLifecycle.shared.snapshot(for: first)?.cleanupResult)
+    }
 }
