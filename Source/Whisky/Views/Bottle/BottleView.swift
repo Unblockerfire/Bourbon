@@ -478,7 +478,9 @@ final class InstallManager: ObservableObject {
         } catch {
             guard workflow.installID == installID else { return }
             try? await Wine.stopBottleProcesses(bottle: bottle, reason: "installer_failed")
-            guard workflow.fail(detail: "Bourbon tried the normal path and a recovery path.", for: installID) else { return }
+            guard workflow.fail(
+                detail: "Bourbon tried the normal path and a recovery path.", for: installID
+            ) else { return }
             lastError = InstallerErrorInfo(
                 bottleName: bottle.settings.name,
                 installerURL: url,
@@ -528,7 +530,11 @@ final class InstallManager: ObservableObject {
         )
         let candidates = findCandidateExecutables(in: url.deletingLastPathComponent())
         if let candidate = candidates.first {
-            update(.waitingForInstaller, detail: "Waiting for \(candidate.lastPathComponent) to finish...", installID: installID)
+            update(
+                .waitingForInstaller,
+                detail: "Waiting for \(candidate.lastPathComponent) to finish...",
+                installID: installID
+            )
             try await Wine.runProgram(at: candidate, bottle: bottle)
             return
         }
