@@ -135,7 +135,7 @@ jobs:
           set -euo pipefail
 
           brew install mingw-w64
-          ROOT="$RUNNER_TEMP/bourbon-runtime-work/production/Libraries/Wine"
+          ROOT="$RUNNER_TEMP/bourbon-corrected-runtime-extract/Libraries/Wine"
           FIXTURE_SOURCE="Scripts/fixtures/bourbon-pe-fixture.c"
           FIXTURE_DIR="$RUNNER_TEMP/bourbon-pe-fixtures"
           REPORT_DIR="$RUNNER_TEMP/bourbon-runtime-reports"
