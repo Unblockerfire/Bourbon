@@ -930,9 +930,8 @@ struct GlobalInstallStatusBanner: View {
     @ObservedObject var manager: InstallManager
 
     var body: some View {
-        if manager.isInstalling ||
-            manager.noticeMessage != nil ||
-            manager.successMessage != nil ||
+        if manager.isInstalling || manager.noticeMessage != nil ||
+            (manager.workflowState == .succeeded && manager.successMessage != nil) ||
             manager.lastError != nil {
             BourbonGlassCard(maxWidth: 420, cornerRadius: 18) {
                 VStack(alignment: .leading, spacing: 12) {

@@ -15,11 +15,6 @@ struct BottleView: View {
     @ObservedObject var bottle: Bottle
     @ObservedObject private var installManager = InstallManager.shared
     @State private var path = NavigationPath()
-    @State private var programLoading: Bool = false
-    @State private var installStatus: String?
-    @State private var installerSteps = InstallerPipelineStep.initialSteps
-    @State private var installError: InstallerErrorInfo?
-    @State private var lastInstallerURL: URL?
     @State private var showsEmptyBottlePrompt = true
 
     private let gridLayout = [GridItem(.adaptive(minimum: 100, maximum: .infinity))]
@@ -63,14 +58,14 @@ struct BottleView: View {
             .onAppear {
                 updateStartMenu()
             }
-            .disabled(!bottle.isAvailable)
+            .disabled(!bottle.isAvailable || installManager.presentsModal)
             .navigationTitle(bottle.settings.name)
             .onChange(of: bottle.settings) { oldValue, newValue in
                 guard oldValue != newValue else { return }
                 BottleVM.shared.bottles = BottleVM.shared.bottles
             }
             .overlay {
-                if installManager.isInstalling || installManager.lastError != nil {
+                if installManager.presentsModal {
                     installerActivityOverlay
                 }
             }
@@ -236,35 +231,6 @@ struct BottleView: View {
         Array(installedPrograms.prefix(3))
     }
 
-    private var installerOverlay: some View {
-        Color.black.opacity(0.45)
-            .ignoresSafeArea()
-            .overlay {
-                if let installError {
-                    InstallerErrorCard(
-                        error: installError,
-                        tryAgain: {
-                            self.installError = nil
-                            if let url = lastInstallerURL {
-                                runInstaller(url)
-                            }
-                        },
-                        cancel: {
-                            self.installError = nil
-                        },
-                        reportIssue: {
-                            reportIssue(for: installError)
-                        }
-                    )
-                } else {
-                    InstallerProgressCard(
-                        status: installStatus ?? InstallerPipelineStep.Kind.opening.title,
-                        steps: installerSteps
-                    )
-                }
-            }
-    }
-
     private var installerActivityOverlay: some View {
         Color.black.opacity(0.45)
             .ignoresSafeArea()
@@ -307,103 +273,6 @@ struct BottleView: View {
                 .resizable()
                 .frame(width: 42, height: 42)
                 .foregroundStyle(BourbonStyle.amber)
-        }
-    }
-
-    private func attemptDirectInstall(_ url: URL) async throws {
-        await MainActor.run {
-            markInstallerStep(.looking)
-            markInstallerStep(.metadata)
-            markInstallerStep(.architecture)
-        }
-
-        if url.pathExtension.lowercased() == "bat" {
-            await MainActor.run {
-                markInstallerStep(.launching)
-            }
-            try await Wine.runBatchFile(url: url, bottle: bottle)
-        } else {
-            try await Wine.runProgram(at: url, bottle: bottle) { progress in
-                Task { @MainActor in
-                    switch progress {
-                    case .analyzingInstaller:
-                        markInstallerStep(.metadata)
-                    case .preparingApplication:
-                        markInstallerStep(.preparing)
-                    case .launching:
-                        markInstallerStep(.launching)
-                    }
-                }
-            }
-        }
-    }
-
-    private func attemptExtractedInstallerFallback(_ url: URL, originalError: Error) async throws {
-        await MainActor.run {
-            markInstallerStep(.recovering)
-        }
-        let candidates = findCandidateExecutables(in: url.deletingLastPathComponent())
-        if let candidate = candidates.first {
-            await MainActor.run {
-                markInstallerStep(.launching)
-            }
-            try await Wine.runProgram(at: candidate, bottle: bottle)
-            return
-        }
-        // swiftlint:disable:next todo
-        // TODO: Attempt a silent extracted-installer fallback:
-        // 1. Extract installer internally if supported.
-        // 2. Search extracted contents for EXE files.
-        // 3. Prefer likely launchers/installers.
-        // 4. Run the best candidate.
-        throw originalError
-    }
-
-    private func findCandidateExecutables(in directory: URL) -> [URL] {
-        guard let enumerator = FileManager.default.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return []
-        }
-
-        return enumerator
-            .compactMap { $0 as? URL }
-            .filter { $0.pathExtension.lowercased() == "exe" }
-            .sorted(by: rankCandidateExecutable)
-    }
-
-    private func rankCandidateExecutable(_ lhs: URL, _ rhs: URL) -> Bool {
-        candidateScore(lhs) > candidateScore(rhs)
-    }
-
-    private func candidateScore(_ url: URL) -> Int {
-        let name = url.lastPathComponent.lowercased()
-        if name == "setup.exe" { return 500 }
-        if name == "install.exe" { return 450 }
-        if name == "launcher.exe" { return 400 }
-        if name == "bootstrap.exe" { return 350 }
-
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        return min(size / 1_000_000, 300)
-    }
-
-    private func startInstallerPipeline() {
-        installerSteps = InstallerPipelineStep.initialSteps
-        markInstallerStep(.opening)
-    }
-
-    private func markInstallerStep(_ step: InstallerPipelineStep.Kind) {
-        installStatus = step.title
-        installerSteps = installerSteps.map { item in
-            if item.kind.order < step.order {
-                return item.completed()
-            }
-            if item.kind == step {
-                return item.active()
-            }
-            return item.waiting()
         }
     }
 
@@ -454,16 +323,47 @@ enum InstallStage: String {
     }
 }
 
+extension InstallStage {
+    init(workflow: InstallerWorkflow) {
+        switch workflow.state {
+        case .idle:
+            self = .choosingInstaller
+        case .finalizing:
+            self = .refreshingAppList
+        case .cancelling:
+            self = .cancelling
+        case .succeeded:
+            self = .completed
+        case .failed:
+            self = .failed
+        case .cancelled:
+            self = .cancelled
+        case .running:
+            switch workflow.activity {
+            case .opening, .looking, .metadata:
+                self = .analyzingInstaller
+            case .architecture, .searching, .preparing, .recovering:
+                self = .checkingCompatibility
+            case .launching:
+                self = .launchingInstaller
+            case .installing:
+                self = .waitingForInstaller
+            case .refreshing:
+                self = .refreshingAppList
+            case .done:
+                self = .completed
+            }
+        }
+    }
+}
+
 @MainActor
 final class InstallManager: ObservableObject {
     static let shared = InstallManager()
 
-    @Published private(set) var workflowState: InstallerWorkflowState = .idle
+    @Published private(set) var workflow = InstallerWorkflow()
     @Published var activeBottleName: String?
     @Published var installerName: String?
-    @Published var progressStage: InstallStage = .choosingInstaller
-    @Published var progressDetail = ""
-    @Published var pipelineSteps = InstallerPipelineStep.initialSteps
     @Published var startedAt: Date?
     @Published var lastError: InstallerErrorInfo?
     @Published var noticeMessage: String?
@@ -472,15 +372,18 @@ final class InstallManager: ObservableObject {
     private var lastInstallerURL: URL?
     private var lastBottle: Bottle?
     private var installTask: Task<Void, Never>?
-    private var activeInstallID: UUID?
-
     private init() {}
 
-    var isInstalling: Bool { workflowState.isActive }
-    var canCancel: Bool { workflowState.canCancel }
+    var workflowState: InstallerWorkflowState { workflow.state }
+    var isInstalling: Bool { workflow.presentsProgress }
+    var presentsModal: Bool { workflow.presentsProgress || workflow.state == .failed }
+    var canCancel: Bool { workflow.canCancel }
+    var progressStage: InstallStage { InstallStage(workflow: workflow) }
+    var progressDetail: String { workflow.detail }
+    var pipelineSteps: [InstallerPipelineStep] { InstallerPipelineStep.makeSteps(for: workflow) }
 
     func startInstall(_ url: URL, bottle: Bottle) {
-        guard !workflowState.isActive else {
+        guard workflow.canStart else {
             noticeMessage = "You have an install in progress. Please wait for it to finish before starting another."
             return
         }
@@ -490,14 +393,11 @@ final class InstallManager: ObservableObject {
         lastError = nil
         noticeMessage = nil
         successMessage = nil
-        let installID = UUID()
-        activeInstallID = installID
-        workflowState = .running
+        let installID = workflow.start(detail: "Opening \(url.lastPathComponent)...")
         activeBottleName = bottle.settings.name
         installerName = url.lastPathComponent
         startedAt = Date()
-        pipelineSteps = InstallerPipelineStep.initialSteps
-        update(.analyzingInstaller, detail: "Opening \(url.lastPathComponent)...")
+        update(.analyzingInstaller, detail: "Opening \(url.lastPathComponent)...", installID: installID)
 
         installTask = Task(priority: .userInitiated) {
             await runInstall(url, bottle: bottle, installID: installID)
@@ -506,14 +406,14 @@ final class InstallManager: ObservableObject {
 
     func retryLastInstall() {
         guard let lastInstallerURL, let lastBottle else { return }
-        finishCurrentInstall(with: .idle)
+        workflow.clearTerminalState()
         startInstall(lastInstallerURL, bottle: lastBottle)
     }
 
     func chooseAnotherInstaller() {
         guard let lastBottle else { return }
         if let url = selectInstaller(startingDirectory: lastBottle.url.appending(path: "drive_c")) {
-            finishCurrentInstall(with: .idle)
+            workflow.clearTerminalState()
             startInstall(url, bottle: lastBottle)
         }
     }
@@ -524,33 +424,31 @@ final class InstallManager: ObservableObject {
     }
 
     func clearFinishedInstall() {
-        guard workflowState.isTerminal else { return }
-        workflowState = .idle
+        guard workflow.state.isTerminal else { return }
+        workflow.clearTerminalState()
         lastError = nil
         noticeMessage = nil
         successMessage = nil
-        progressDetail = ""
     }
 
     func cancelInstall() {
-        guard workflowState.canCancel, let bottle = lastBottle, let installID = activeInstallID else { return }
-        workflowState = .cancelling
-        update(.cancelling, detail: "Stopping Wine processes for this bottle...")
+        guard let bottle = lastBottle, let installID = workflow.installID,
+              workflow.beginCancellation(detail: "Stopping Wine processes for this bottle...", for: installID) else {
+            return
+        }
         installTask?.cancel()
         Task(priority: .userInitiated) {
             do {
                 try await Wine.stopBottleProcesses(bottle: bottle, reason: "installer_cancelled")
                 await MainActor.run {
-                    guard self.activeInstallID == installID else { return }
-                    self.finishCurrentInstall(with: .cancelled)
-                    self.update(.cancelled, detail: "Wine processes for this bottle were stopped.")
+                    guard self.workflow.cancel(
+                        detail: "Wine processes for this bottle were stopped.", for: installID
+                    ) else { return }
                     self.noticeMessage = "Installation cancelled. Wine processes for this bottle were stopped."
                 }
             } catch {
                 await MainActor.run {
-                    guard self.activeInstallID == installID else { return }
-                    self.finishCurrentInstall(with: .failed)
-                    self.update(.failed, detail: "Prefix cleanup did not finish.")
+                    guard self.workflow.fail(detail: "Prefix cleanup did not finish.", for: installID) else { return }
                     self.lastError = InstallerErrorInfo(
                         bottleName: bottle.settings.name,
                         installerURL: self.lastInstallerURL ?? bottle.url,
@@ -564,27 +462,21 @@ final class InstallManager: ObservableObject {
 
     private func runInstall(_ url: URL, bottle: Bottle, installID: UUID) async {
         do {
-            try await attemptDirectInstall(url, bottle: bottle)
+            try await attemptDirectInstall(url, bottle: bottle, installID: installID)
             try Task.checkCancellation()
-            guard activeInstallID == installID else { return }
-            workflowState = .finalizing
-            update(.refreshingAppList, detail: "Refreshing app list...")
+            guard workflow.beginFinalization(detail: "Refreshing app list...", for: installID) else { return }
             try bottle.refreshInstalledPrograms()
             try Task.checkCancellation()
-            guard activeInstallID == installID else { return }
-            finishCurrentInstall(with: .succeeded)
-            update(.completed, detail: "\(url.lastPathComponent) finished.")
+            guard workflow.succeed(detail: "\(url.lastPathComponent) finished.", for: installID) else { return }
             successMessage = "\(url.lastPathComponent) in \(bottle.settings.name) finished."
         } catch is Wine.ProgramLaunchIntentionalTermination {
             // cancelInstall() owns the user-facing completion state for deliberate cleanup.
         } catch is CancellationError {
             // cancelInstall() owns the user-facing completion state for deliberate cleanup.
         } catch {
-            guard activeInstallID == installID else { return }
+            guard workflow.installID == installID else { return }
             try? await Wine.stopBottleProcesses(bottle: bottle, reason: "installer_failed")
-            guard activeInstallID == installID else { return }
-            finishCurrentInstall(with: .failed)
-            update(.failed, detail: "Bourbon tried the normal path and a recovery path.")
+            guard workflow.fail(detail: "Bourbon tried the normal path and a recovery path.", for: installID) else { return }
             lastError = InstallerErrorInfo(
                 bottleName: bottle.settings.name,
                 installerURL: url,
@@ -593,11 +485,11 @@ final class InstallManager: ObservableObject {
         }
     }
 
-    private func attemptDirectInstall(_ url: URL, bottle: Bottle) async throws {
-        update(.analyzingInstaller, detail: "Analyzing \(url.lastPathComponent)...")
+    private func attemptDirectInstall(_ url: URL, bottle: Bottle, installID: UUID) async throws {
+        update(.analyzingInstaller, detail: "Analyzing \(url.lastPathComponent)...", installID: installID)
 
         if url.pathExtension.lowercased() == "bat" {
-            update(.launchingInstaller, detail: "Launching \(url.lastPathComponent)...")
+            update(.launchingInstaller, detail: "Launching \(url.lastPathComponent)...", installID: installID)
             try await Wine.runBatchFile(url: url, bottle: bottle)
             return
         }
@@ -607,24 +499,26 @@ final class InstallManager: ObservableObject {
                 Task { @MainActor in
                     switch progress {
                     case .analyzingInstaller:
-                        self.update(.analyzingInstaller, detail: "Reading installer metadata...")
+                        self.update(.analyzingInstaller, detail: "Reading installer metadata...", installID: installID)
                     case .preparingApplication:
-                        self.update(.checkingCompatibility, detail: "Checking compatibility...")
+                        self.update(.checkingCompatibility, detail: "Checking compatibility...", installID: installID)
                     case .launching:
-                        self.update(.waitingForInstaller, detail: "Waiting for installer to finish...")
+                        self.update(.waitingForInstaller, detail: "Waiting for installer to finish...", installID: installID)
                     }
                 }
             }
         } catch {
-            try await attemptExtractedInstallerFallback(url, bottle: bottle, originalError: error)
+            try await attemptExtractedInstallerFallback(url, bottle: bottle, originalError: error, installID: installID)
         }
     }
 
-    private func attemptExtractedInstallerFallback(_ url: URL, bottle: Bottle, originalError: Error) async throws {
-        update(.checkingCompatibility, detail: "Trying another installation method...")
+    private func attemptExtractedInstallerFallback(
+        _ url: URL, bottle: Bottle, originalError: Error, installID: UUID
+    ) async throws {
+        update(activity: .recovering, detail: "Trying another installation method...", installID: installID)
         let candidates = findCandidateExecutables(in: url.deletingLastPathComponent())
         if let candidate = candidates.first {
-            update(.waitingForInstaller, detail: "Waiting for \(candidate.lastPathComponent) to finish...")
+            update(.waitingForInstaller, detail: "Waiting for \(candidate.lastPathComponent) to finish...", installID: installID)
             try await Wine.runProgram(at: candidate, bottle: bottle)
             return
         }
@@ -661,43 +555,31 @@ final class InstallManager: ObservableObject {
         return min(size / 1_000_000, 300)
     }
 
-    private func update(_ stage: InstallStage, detail: String) {
-        progressStage = stage
-        progressDetail = detail
-        let step: InstallerPipelineStep.Kind
+    private func update(_ stage: InstallStage, detail: String, installID: UUID) {
+        let activity: InstallerWorkflowActivity
         switch stage {
         case .choosingInstaller:
-            step = .opening
+            activity = .opening
         case .analyzingInstaller:
-            step = .metadata
+            activity = .metadata
         case .checkingCompatibility:
-            step = .recovering
+            activity = .preparing
         case .launchingInstaller:
-            step = .launching
+            activity = .launching
         case .waitingForInstaller:
-            step = .installing
+            activity = .installing
         case .refreshingAppList:
-            step = .refreshing
+            activity = .refreshing
         case .cancelling:
-            step = .installing
+            activity = .installing
         case .completed, .cancelled, .failed:
-            step = .done
+            activity = .done
         }
-        pipelineSteps = pipelineSteps.map { item in
-            if item.kind.order < step.order {
-                return item.completed()
-            }
-            if item.kind == step {
-                return item.active()
-            }
-            return item.waiting()
-        }
+        update(activity: activity, detail: detail, installID: installID)
     }
 
-    private func finishCurrentInstall(with state: InstallerWorkflowState) {
-        workflowState = state
-        activeInstallID = nil
-        installTask = nil
+    private func update(activity: InstallerWorkflowActivity, detail: String, installID: UUID) {
+        _ = workflow.update(activity: activity, detail: detail, for: installID)
     }
 }
 
@@ -706,11 +588,6 @@ struct FirstInstallView: View {
     @ObservedObject private var installManager = InstallManager.shared
     let initialInstallerURL: URL?
     let dismiss: () -> Void
-    @State private var programLoading = false
-    @State private var installStatus: String?
-    @State private var installerSteps = InstallerPipelineStep.initialSteps
-    @State private var installError: InstallerErrorInfo?
-    @State private var lastInstallerURL: URL?
 
     var body: some View {
         BourbonPanelBackdrop {
@@ -743,38 +620,10 @@ struct FirstInstallView: View {
                     .frame(maxWidth: .infinity, minHeight: 420)
                 }
 
-                if programLoading || installError != nil {
-                    Color.black.opacity(0.45)
-                        .ignoresSafeArea()
-                        .overlay {
-                            if let installError {
-                                InstallerErrorCard(
-                                    error: installError,
-                                    tryAgain: {
-                                        self.installError = nil
-                                        if let lastInstallerURL {
-                                            runInstaller(lastInstallerURL)
-                                        }
-                                    },
-                                    cancel: {
-                                        self.installError = nil
-                                    },
-                                    reportIssue: {
-                                        reportIssue(for: installError)
-                                    }
-                                )
-                            } else {
-                                InstallerProgressCard(
-                                    status: installStatus ?? InstallerPipelineStep.Kind.opening.title,
-                                    steps: installerSteps
-                                )
-                            }
-                        }
-                }
             }
         }
         .onAppear {
-            if let initialInstallerURL, lastInstallerURL == nil {
+            if let initialInstallerURL {
                 runInstaller(initialInstallerURL)
             }
         }
@@ -786,31 +635,6 @@ struct FirstInstallView: View {
         dismiss()
     }
 
-    private func reportIssue(for error: InstallerErrorInfo) {
-        BourbonReportCenter.openInstallerReport(
-            bottleName: error.bottleName,
-            installerURL: error.installerURL,
-            errorMessage: error.message
-        )
-    }
-
-    private func startInstallerPipeline() {
-        installerSteps = InstallerPipelineStep.initialSteps
-        markInstallerStep(.opening)
-    }
-
-    private func markInstallerStep(_ step: InstallerPipelineStep.Kind) {
-        installStatus = step.title
-        installerSteps = installerSteps.map { item in
-            if item.kind.order < step.order {
-                return item.completed()
-            }
-            if item.kind == step {
-                return item.active()
-            }
-            return item.waiting()
-        }
-    }
 }
 
 struct InstallerPickerCard: View {
@@ -942,8 +766,35 @@ struct InstallerPipelineStep: Identifiable {
     let kind: Kind
     let state: State
 
-    static let initialSteps = Kind.allCases.map { InstallerPipelineStep(kind: $0, state: .waiting) }
-    static let opening = InstallerPipelineStep(kind: .opening, state: .active)
+    static func makeSteps(for workflow: InstallerWorkflow) -> [InstallerPipelineStep] {
+        let activeKind: Kind? = switch workflow.activity {
+        case .opening: .opening
+        case .looking: .looking
+        case .metadata: .metadata
+        case .architecture: .architecture
+        case .searching: .searching
+        case .preparing: .preparing
+        case .launching: .launching
+        case .installing: .installing
+        case .recovering: .recovering
+        case .refreshing: .refreshing
+        case .done: .done
+        }
+
+        return Kind.allCases.map { kind in
+            let state: State
+            if workflow.state == .succeeded || workflow.activity == .done {
+                state = .complete
+            } else if kind.order < (activeKind?.order ?? 0) {
+                state = .complete
+            } else if kind == activeKind, workflow.state.isActive {
+                state = .active
+            } else {
+                state = .waiting
+            }
+            return InstallerPipelineStep(kind: kind, state: state)
+        }
+    }
 
     func waiting() -> InstallerPipelineStep {
         InstallerPipelineStep(kind: kind, state: .waiting)
@@ -966,9 +817,11 @@ struct InstallerProgressCard: View {
     var body: some View {
         BourbonGlassCard(maxWidth: 420) {
             VStack(alignment: .leading, spacing: 16) {
-                ProgressView()
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
+                if installManager.workflow.showsSpinner {
+                    ProgressView()
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
+                }
                 Text(status)
                     .font(.headline)
 
