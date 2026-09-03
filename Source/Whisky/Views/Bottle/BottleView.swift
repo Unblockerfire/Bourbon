@@ -10,7 +10,6 @@ enum BottleStage {
     case processes
 }
 
-// swiftlint:disable:next type_body_length
 struct BottleView: View {
     @ObservedObject var bottle: Bottle
     @ObservedObject private var installManager = InstallManager.shared
@@ -324,6 +323,7 @@ enum InstallStage: String {
 }
 
 extension InstallStage {
+    // swiftlint:disable:next cyclomatic_complexity
     init(workflow: InstallerWorkflow) {
         switch workflow.state {
         case .idle:
@@ -464,7 +464,9 @@ final class InstallManager: ObservableObject {
         do {
             try await attemptDirectInstall(url, bottle: bottle, installID: installID)
             try Task.checkCancellation()
-            guard workflow.beginFinalization(detail: "Refreshing app list...", for: installID) else { return }
+            guard workflow.beginFinalization(
+                detail: "Refreshing app list...", for: installID
+            ) else { return }
             try bottle.refreshInstalledPrograms()
             try Task.checkCancellation()
             guard workflow.succeed(detail: "\(url.lastPathComponent) finished.", for: installID) else { return }
@@ -503,7 +505,11 @@ final class InstallManager: ObservableObject {
                     case .preparingApplication:
                         self.update(.checkingCompatibility, detail: "Checking compatibility...", installID: installID)
                     case .launching:
-                        self.update(.waitingForInstaller, detail: "Waiting for installer to finish...", installID: installID)
+                        self.update(
+                            .waitingForInstaller,
+                            detail: "Waiting for installer to finish...",
+                            installID: installID
+                        )
                     }
                 }
             }
@@ -515,7 +521,11 @@ final class InstallManager: ObservableObject {
     private func attemptExtractedInstallerFallback(
         _ url: URL, bottle: Bottle, originalError: Error, installID: UUID
     ) async throws {
-        update(activity: .recovering, detail: "Trying another installation method...", installID: installID)
+        update(
+            activity: .recovering,
+            detail: "Trying another installation method...",
+            installID: installID
+        )
         let candidates = findCandidateExecutables(in: url.deletingLastPathComponent())
         if let candidate = candidates.first {
             update(.waitingForInstaller, detail: "Waiting for \(candidate.lastPathComponent) to finish...", installID: installID)
@@ -766,6 +776,7 @@ struct InstallerPipelineStep: Identifiable {
     let kind: Kind
     let state: State
 
+    // swiftlint:disable:next cyclomatic_complexity
     static func makeSteps(for workflow: InstallerWorkflow) -> [InstallerPipelineStep] {
         let activeKind: Kind? = switch workflow.activity {
         case .opening: .opening
