@@ -45,6 +45,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         BottleVM.shared.cancelActiveBottleCreations()
+        // Installer Wine work may have daemonized before its immediate Process
+        // exited. Cancel it by prefix rather than relying on its macOS parent PID.
+        InstallManager.shared.cancelInstall()
         if UserDefaults.standard.bool(forKey: "killOnTerminate") {
             WhiskyApp.killBottles()
         }

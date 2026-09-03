@@ -439,6 +439,7 @@ final class InstallManager: ObservableObject {
 
     private var lastInstallerURL: URL?
     private var lastBottle: Bottle?
+    private var installTask: Task<Void, Never>?
 
     private init() {}
 
@@ -456,10 +457,10 @@ final class InstallManager: ObservableObject {
         activeBottleName = bottle.settings.name
         installerName = url.lastPathComponent
         startedAt = Date()
-        canCancel = false
+        canCancel = true
         update(.analyzingInstaller, detail: "Opening \(url.lastPathComponent)...")
 
-        Task(priority: .userInitiated) {
+        installTask = Task(priority: .userInitiated) {
             await runInstall(url, bottle: bottle)
         }
     }
@@ -490,6 +491,33 @@ final class InstallManager: ObservableObject {
         progressDetail = ""
     }
 
+    func cancelInstall() {
+        guard isInstalling, let bottle = lastBottle else { return }
+        update(.failed, detail: "Cancelling and stopping Wine processes for this bottle...")
+        canCancel = false
+        installTask?.cancel()
+        Task(priority: .userInitiated) {
+            do {
+                try await Wine.stopBottleProcesses(bottle: bottle, reason: "installer_cancelled")
+                await MainActor.run {
+                    self.lastError = InstallerErrorInfo(
+                        bottleName: bottle.settings.name,
+                        installerURL: self.lastInstallerURL ?? bottle.url,
+                        message: "Installation was cancelled and Wine processes for this bottle were stopped."
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    self.lastError = InstallerErrorInfo(
+                        bottleName: bottle.settings.name,
+                        installerURL: self.lastInstallerURL ?? bottle.url,
+                        message: "Installation was cancelled, but prefix cleanup did not finish: \(error.localizedDescription)"
+                    )
+                }
+            }
+        }
+    }
+
     private func runInstall(_ url: URL, bottle: Bottle) async {
         do {
             try await attemptDirectInstall(url, bottle: bottle)
@@ -497,6 +525,7 @@ final class InstallManager: ObservableObject {
             bottle.updateInstalledPrograms()
             update(.completed, detail: "\(url.lastPathComponent) finished.")
         } catch {
+            try? await Wine.stopBottleProcesses(bottle: bottle, reason: "installer_failed")
             update(.failed, detail: "Bourbon tried the normal path and a recovery path.")
             lastError = InstallerErrorInfo(
                 bottleName: bottle.settings.name,
@@ -841,6 +870,7 @@ struct InstallerPipelineStep: Identifiable {
 struct InstallerProgressCard: View {
     let status: String
     let steps: [InstallerPipelineStep]
+    @ObservedObject private var installManager = InstallManager.shared
 
     var body: some View {
         BourbonGlassCard(maxWidth: 420) {
@@ -868,6 +898,14 @@ struct InstallerProgressCard: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
+
+                if installManager.canCancel {
+                    Button("Cancel Installer") {
+                        installManager.cancelInstall()
+                    }
+                    .buttonStyle(BourbonSecondaryButtonStyle())
+                    .frame(maxWidth: .infinity)
+                }
             }
         }
     }

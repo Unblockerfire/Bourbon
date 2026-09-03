@@ -136,7 +136,10 @@ struct ProgramsView: View {
 
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Choose one app to close, or force quit everything running in this bottle.")
+            Text(
+                "Choose an app to close. To prevent orphaned Wine services from restarting it, " +
+                "Bourbon stops the Wine process tree for this bottle only; other bottles are unaffected."
+            )
         }
         .alert(
             "Could not quit application",

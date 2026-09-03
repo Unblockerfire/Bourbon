@@ -73,8 +73,10 @@ extension FileHandle {
 
     func writeInfo(for bottle: Bottle) {
         var header = String()
-        header += "Bottle Name: \(bottle.settings.name)\n"
-        header += "Bottle URL: \(bottle.url.path)\n\n"
+        // Logs are commonly attached to bug reports. A bottle UUID identifies the
+        // WINEPREFIX without exposing a user's home or volume path.
+        header += "Bottle UUID: \(bottle.url.lastPathComponent)\n"
+        header += "WINEPREFIX ID: \(bottle.url.lastPathComponent)\n\n"
 
         if let version = WhiskyWineInstaller.whiskyWineVersion() {
             header += "BourbonWine Version: \(version.major).\(version.minor).\(version.patch)\n"

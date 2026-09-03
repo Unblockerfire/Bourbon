@@ -321,18 +321,35 @@ public class Wine {
             fileHandle: fileHandle
         )
 
-        for await result in stream {
-            switch result {
-            case .started:
-                break
-            case .message(let message), .error(let message):
-                output.append(message)
-            case .terminated(let process):
-                terminationStatus = process.terminationStatus
+        do {
+            for await result in stream {
+                try Task.checkCancellation()
+                switch result {
+                case .started(let process):
+                    // Do not infer ownership from Process.parent. Wine may reparent
+                    // steamservice/steamwebhelper to launchd; wineserver + WINEPREFIX
+                    // remains the bottle-scoped ownership boundary.
+                    BottleWineLifecycle.shared.registerLaunch(
+                        bottle: bottle,
+                        pid: process.processIdentifier,
+                        wineserver: wineserverBinary
+                    )
+                case .message(let message), .error(let message):
+                    output.append(message)
+                case .terminated(let process):
+                    terminationStatus = process.terminationStatus
+                }
             }
+        } catch is CancellationError {
+            try? await stopBottleProcesses(bottle: bottle, reason: "program_launch_cancelled")
+            throw CancellationError()
+        } catch {
+            try? await stopBottleProcesses(bottle: bottle, reason: "program_launch_failed")
+            throw error
         }
 
         guard terminationStatus == 0 else {
+            try? await stopBottleProcesses(bottle: bottle, reason: "program_launch_exit_\(terminationStatus)")
             let rawOutput = output.joined().trimmingCharacters(in: .whitespacesAndNewlines)
             Logger.wineKit.warning(
                 """
@@ -735,14 +752,16 @@ public class Wine {
 
     public static func killBottle(bottle: Bottle) throws {
         _ = Task.detached(priority: .userInitiated) {
-            try await runWineserver(["-k"], bottle: bottle)
+            try await stopBottleProcesses(bottle: bottle, reason: "bottle_terminated")
         }
     }
 
     public static func killProgram(program: Program, bottle: Bottle) throws {
-        let executableName = program.url.lastPathComponent
+        // A Windows program can leave daemonized services behind after its launcher
+        // exits. `taskkill` only sees one Windows image; wineserver owns the complete
+        // WINEPREFIX and is consequently the safe bottle-scoped stop mechanism.
         _ = Task.detached(priority: .userInitiated) {
-            try await runWine(["taskkill", "/F", "/IM", executableName], bottle: bottle)
+            try await stopBottleProcesses(bottle: bottle, reason: "program_terminated")
         }
     }
 
@@ -1555,6 +1574,11 @@ extension Wine {
         reason: String
     ) async throws {
         operation?.cancel(reason: reason)
+        BottleWineLifecycle.shared.beginCleanup(
+            bottle: bottle,
+            reason: reason,
+            wineserver: wineserverBinary
+        )
         let cleanup = Task.detached(priority: .userInitiated) {
             do {
                 _ = try await runWineCommand(
@@ -1573,8 +1597,13 @@ extension Wine {
                     operation: operation,
                     executableURL: wineserverBinary
                 )
+                BottleWineLifecycle.shared.finishCleanup(bottle: bottle, result: "prefix_terminated")
             } catch is WineCommandTimeoutError {
+                BottleWineLifecycle.shared.finishCleanup(bottle: bottle, result: "timeout")
                 throw BottleWineOperationError.wineCancellationTimeout
+            } catch {
+                BottleWineLifecycle.shared.finishCleanup(bottle: bottle, result: "failed")
+                throw error
             }
         }
         try await cleanup.value
