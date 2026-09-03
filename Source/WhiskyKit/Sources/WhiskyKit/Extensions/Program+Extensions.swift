@@ -118,7 +118,7 @@ private func diagnosticScrollView(message: String) -> NSScrollView {
     textView.isVerticallyResizable = true
     textView.isHorizontallyResizable = false
     textView.minSize = NSSize(width: 0, height: height)
-    textView.maxSize = NSSize(width: .greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+    textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     textView.textContainer?.widthTracksTextView = true
     textView.textContainerInset = NSSize(width: 8, height: 8)
     scrollView.documentView = textView
