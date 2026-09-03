@@ -930,14 +930,19 @@ struct GlobalInstallStatusBanner: View {
     @ObservedObject var manager: InstallManager
 
     var body: some View {
-        if manager.isInstalling || manager.noticeMessage != nil || manager.lastError != nil {
+        if manager.isInstalling ||
+            manager.noticeMessage != nil ||
+            manager.successMessage != nil ||
+            manager.lastError != nil {
             BourbonGlassCard(maxWidth: 420, cornerRadius: 18) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {
                         statusIcon
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(manager.noticeMessage ?? manager.progressStage.title)
+                            Text(manager.successMessage == nil
+                                ? manager.noticeMessage ?? manager.progressStage.title
+                                : "Install finished.")
                                 .font(.headline)
                             Text(detailText)
                                 .font(.caption)
@@ -981,6 +986,10 @@ struct GlobalInstallStatusBanner: View {
     }
 
     private var detailText: String {
+        if let success = manager.successMessage {
+            return success
+        }
+
         if let notice = manager.noticeMessage {
             return notice
         }
@@ -995,7 +1004,7 @@ struct GlobalInstallStatusBanner: View {
         if manager.lastError != nil {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(BourbonStyle.amber)
-        } else if manager.progressStage == .completed {
+        } else if manager.workflowState == .succeeded {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
         } else if manager.noticeMessage != nil {

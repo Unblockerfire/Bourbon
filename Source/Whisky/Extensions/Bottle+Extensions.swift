@@ -113,17 +113,28 @@ extension Bottle {
     }
 
     func updateInstalledPrograms() {
+        do {
+            try refreshInstalledPrograms()
+        } catch {
+            Logger.wineKit.error("Failed to refresh installed applications: \(error.localizedDescription)")
+        }
+    }
+
+    func refreshInstalledPrograms() throws {
         let driveC = url.appending(path: "drive_c")
         var programs: [Program] = []
         var foundURLS: Set<URL> = []
 
         for folderName in ["Program Files", "Program Files (x86)"] {
             let folderURL = driveC.appending(path: folderName)
-            let enumerator = FileManager.default.enumerator(
+            guard FileManager.default.fileExists(atPath: folderURL.path(percentEncoded: false)) else { continue }
+            guard let enumerator = FileManager.default.enumerator(
                 at: folderURL, includingPropertiesForKeys: [.isExecutableKey], options: [.skipsHiddenFiles]
-            )
+            ) else {
+                throw InstalledProgramRefreshError.unreadableDirectory(folderURL)
+            }
 
-            while let url = enumerator?.nextObject() as? URL {
+            while let url = enumerator.nextObject() as? URL {
                 guard !url.hasDirectoryPath && url.pathExtension == "exe" else { continue }
                 guard !settings.blocklist.contains(url) else { continue }
                 foundURLS.insert(url)
@@ -223,6 +234,17 @@ extension Bottle {
                 title: "Failed to open \(settings.name)",
                 errorMessage: message
             )
+        }
+    }
+}
+
+private enum InstalledProgramRefreshError: LocalizedError {
+    case unreadableDirectory(URL)
+
+    var errorDescription: String? {
+        switch self {
+        case .unreadableDirectory(let directory):
+            return "Bourbon could not read \(directory.lastPathComponent) while refreshing installed applications."
         }
     }
 }
