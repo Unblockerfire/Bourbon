@@ -84,6 +84,20 @@ function formatRssDate(value) {
 
 function appcastForChannel(channel, release) {
   const title = channel === "pre" ? "Bourbon Pre-release Updates" : "Bourbon Stable Updates";
+  if (release.paused) {
+    return `<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+  xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+  xmlns:bourbon="https://getbourbon.app/appcast">
+  <channel>
+    <title>${escapeXml(title)}</title>
+    <link>https://github.com/Unblockerfire/Bourbon/releases</link>
+    <description>${escapeXml(release.message || "Bourbon updates are temporarily paused.")}</description>
+  </channel>
+</rss>
+`;
+  }
+
   const signatureAttribute = release.edSignature
     ? ` sparkle:edSignature="${escapeXml(release.edSignature)}"`
     : "";
