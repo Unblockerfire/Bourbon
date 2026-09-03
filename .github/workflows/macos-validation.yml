@@ -639,18 +639,18 @@ jobs:
           RUNTIME_WINE_ROOT="$RUNTIME_EXTRACT/Libraries/Wine"
           # The production runtime is intentionally under diagnostic investigation. Record
           # its executable status without blocking validation of the corrected runtime DMG.
-          set +e
           DYLD_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" \
             DYLD_FALLBACK_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" \
             "$RUNTIME_EXTRACT/$SELECTED_LAUNCHER" --version \
-            | tee "$RUNNER_TEMP/bourbon-validation-logs/production-runtime-wine-version.txt"
-          WINE_STATUS=${PIPESTATUS[0]}
+            > "$RUNNER_TEMP/bourbon-validation-logs/production-runtime-wine-version.txt" \
+            2> "$RUNNER_TEMP/bourbon-validation-logs/production-runtime-wine-version.stderr.txt" || WINE_STATUS=$?
+          WINE_STATUS="${WINE_STATUS:-0}"
           DYLD_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" \
             DYLD_FALLBACK_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" \
             "$RUNTIME_WINE_ROOT/bin/wineserver" --version \
-            | tee "$RUNNER_TEMP/bourbon-validation-logs/production-runtime-wineserver-version.txt"
-          WINESERVER_STATUS=${PIPESTATUS[0]}
-          set -e
+            > "$RUNNER_TEMP/bourbon-validation-logs/production-runtime-wineserver-version.txt" \
+            2> "$RUNNER_TEMP/bourbon-validation-logs/production-runtime-wineserver-version.stderr.txt" || WINESERVER_STATUS=$?
+          WINESERVER_STATUS="${WINESERVER_STATUS:-0}"
           printf 'wine_status=%s wineserver_status=%s\n' "$WINE_STATUS" "$WINESERVER_STATUS" \
             > "$RUNNER_TEMP/bourbon-validation-logs/production-runtime-launch-status.txt"
           if [ "$WINE_STATUS" -ne 0 ] || [ "$WINESERVER_STATUS" -ne 0 ]; then
