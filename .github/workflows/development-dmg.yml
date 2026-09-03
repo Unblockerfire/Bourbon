@@ -1,0 +1,180 @@
+name: Development Bourbon DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git branch or commit to build. It must contain the validated installer-state fix.
+        required: true
+        default: codex/macos14-wine-runtime
+        type: string
+      artifact_label:
+        description: Optional short label appended to the private Actions artifact name.
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-development-dmg:
+    name: Build private development DMG
+    runs-on: macos-15
+    env:
+      DEVELOPMENT_VERSION: 3.0.0-dev
+      FIX_COMMIT: 65975699e6c39b64655b4f7cebbeedd4deb1ee6d
+      PROJECT_PATH: Source/Whisky.xcodeproj
+      SCHEME: Bourbon
+      CONFIGURATION: Release
+      REQUESTED_ARTIFACT_LABEL: ${{ inputs.artifact_label }}
+
+    steps:
+      - name: Check out requested ref
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Verify development-build safety and source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test "${GITHUB_REF_TYPE}" != tag
+          git cat-file -e "${FIX_COMMIT}^{commit}"
+          git merge-base --is-ancestor "$FIX_COMMIT" HEAD
+          test -f Source/Whisky/Views/Bottle/BottleView.swift
+          grep -Fq 'workflowState: InstallerWorkflowState' Source/Whisky/Views/Bottle/BottleView.swift
+          grep -Fq 'case finalizing' Source/WhiskyKit/Sources/WhiskyKit/Whisky/InstallerWorkflowState.swift
+          test ! -f updates.json
+
+          if [[ -n "$REQUESTED_ARTIFACT_LABEL" ]]; then
+            [[ "$REQUESTED_ARTIFACT_LABEL" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,48}$ ]]
+            ARTIFACT_SUFFIX="-$REQUESTED_ARTIFACT_LABEL"
+          else
+            ARTIFACT_SUFFIX=""
+          fi
+
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=Bourbon-development-${GITHUB_RUN_ID}${ARTIFACT_SUFFIX}" >> "$GITHUB_OUTPUT"
+        id: source
+
+      - name: Select Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -d /Applications/Xcode-beta.app ]; then
+            sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer
+          elif [ -d /Applications/Xcode_16.4.app ]; then
+            sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          else
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          fi
+          xcodebuild -version
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Resolve Swift packages
+        working-directory: Source
+        run: |
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project Whisky.xcodeproj \
+            -scheme Bourbon
+
+      - name: Run SwiftLint
+        working-directory: Source
+        run: swiftlint lint --strict
+
+      - name: Run WhiskyKit tests
+        run: swift test --package-path Source/WhiskyKit
+
+      - name: Build Bourbon Release configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DERIVED_DATA="$RUNNER_TEMP/BourbonDevelopmentDerivedData"
+          xcodebuild \
+            -project "$PROJECT_PATH" \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            MARKETING_VERSION="$DEVELOPMENT_VERSION" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            build
+
+      - name: Package and verify development DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DERIVED_DATA="$RUNNER_TEMP/BourbonDevelopmentDerivedData"
+          OUTPUT_DIR="$RUNNER_TEMP/bourbon-development-dmg"
+          STAGING_DIR="$RUNNER_TEMP/bourbon-development-root"
+          MOUNT_DIR="$RUNNER_TEMP/bourbon-development-mounted"
+          SOURCE_APP="$DERIVED_DATA/Build/Products/Release/Bourbon.app"
+          DEVELOPMENT_APP="$STAGING_DIR/Bourbon.app"
+          DMG_PATH="$OUTPUT_DIR/Bourbon-3.0.0-dev.dmg"
+
+          test -d "$SOURCE_APP"
+          mkdir -p "$OUTPUT_DIR" "$STAGING_DIR" "$MOUNT_DIR"
+          ditto "$SOURCE_APP" "$DEVELOPMENT_APP"
+
+          /usr/libexec/PlistBuddy -c 'Delete :SUFeedURL' "$DEVELOPMENT_APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :SUEnableAutomaticChecks bool false' \
+            "$DEVELOPMENT_APP/Contents/Info.plist" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c 'Set :SUEnableAutomaticChecks false' "$DEVELOPMENT_APP/Contents/Info.plist"
+          /usr/bin/codesign --force --deep --sign - "$DEVELOPMENT_APP"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$DEVELOPMENT_APP"
+
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            "$DEVELOPMENT_APP/Contents/Info.plist")" = "$DEVELOPMENT_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$DEVELOPMENT_APP/Contents/Info.plist")" = "$GITHUB_RUN_NUMBER"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUEnableAutomaticChecks' \
+            "$DEVELOPMENT_APP/Contents/Info.plist")" = false
+          ! /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$DEVELOPMENT_APP/Contents/Info.plist" \
+            >/dev/null 2>&1
+
+          hdiutil create \
+            -volname 'Bourbon Development 3.0.0-dev' \
+            -srcfolder "$STAGING_DIR" \
+            -ov \
+            -format UDZO \
+            "$DMG_PATH"
+          shasum -a 256 "$DMG_PATH" > "$DMG_PATH.sha256"
+
+          hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_DIR" -nobrowse -readonly -noverify
+          cleanup_mount() { hdiutil detach "$MOUNT_DIR" -quiet || true; }
+          trap cleanup_mount EXIT
+
+          MOUNTED_APP="$MOUNT_DIR/Bourbon.app"
+          test -d "$MOUNTED_APP"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            "$MOUNTED_APP/Contents/Info.plist")" = "$DEVELOPMENT_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$MOUNTED_APP/Contents/Info.plist")" = "$GITHUB_RUN_NUMBER"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUEnableAutomaticChecks' \
+            "$MOUNTED_APP/Contents/Info.plist")" = false
+          ! /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$MOUNTED_APP/Contents/Info.plist" \
+            >/dev/null 2>&1
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$MOUNTED_APP"
+
+          cat "$DMG_PATH.sha256"
+          hdiutil detach "$MOUNT_DIR"
+          trap - EXIT
+
+      - name: Upload private development DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.source.outputs.artifact_name }}
+          path: ${{ runner.temp }}/bourbon-development-dmg
+          if-no-files-found: error
+          retention-days: 14
