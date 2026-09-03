@@ -107,10 +107,7 @@ public final class BottleWineLifecycle: @unchecked Sendable {
     }
 
     private func record(bottle: Bottle, event: String, detail: String) {
-        Logger.wineKit.notice(
-            "wine.prefix.lifecycle \(event, privacy: .public) " +
-                "bottle_uuid=\(bottle.url.lastPathComponent, privacy: .public) " +
-                "wineprefix_id=\(prefixKey(for: bottle), privacy: .public) \(detail, privacy: .public)"
-        )
+        // swiftlint:disable:next line_length
+        Logger.wineKit.notice("wine.prefix.lifecycle \(event, privacy: .public) bottle_uuid=\(bottle.url.lastPathComponent, privacy: .public) wineprefix_id=\(prefixKey(for: bottle), privacy: .public) \(detail, privacy: .public)")
     }
 }
