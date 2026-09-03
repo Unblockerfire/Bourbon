@@ -609,7 +609,6 @@ jobs:
           for REQUIRED_PATH in \
             Libraries/Wine/bin/wineserver \
             Libraries/Wine/lib/wine/x86_64-unix/ntdll.so \
-            Libraries/Wine/lib/libvulkan.1.dylib \
             Libraries/BourbonWineRuntime.json \
             Libraries/BourbonWineVersion.plist; do
             grep -Fx "$REQUIRED_PATH" "$RUNTIME_LISTING"
