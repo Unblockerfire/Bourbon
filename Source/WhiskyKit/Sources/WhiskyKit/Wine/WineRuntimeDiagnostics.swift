@@ -128,12 +128,46 @@ public enum WineRuntimePreflightError: LocalizedError, Sendable {
 
 enum WineDiagnosticSanitizer {
     static let excerptLimit = 4_000
+    static let failureContextLimit = 16_000
 
     static func excerpt(from value: String, limit: Int = excerptLimit) -> String {
         let safe = redact(value).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !safe.isEmpty else { return "<no output>" }
         guard safe.count > limit else { return safe }
         return "[truncated to final \(limit) characters]\n" + String(safe.suffix(limit))
+    }
+
+    /// Preserves the part of a Wine failure that identifies the failing Windows
+    /// process while staying bounded enough to be copied into a report safely.
+    /// A tail alone is not sufficient: loader noise can otherwise push an SEH
+    /// exception and its subsequent backtrace out of the useful diagnostic.
+    static func failureContext(from value: String, limit: Int = failureContextLimit) -> String {
+        let safe = redact(value).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !safe.isEmpty else { return "<no output>" }
+        guard safe.count > limit else { return safe }
+
+        let lines = safe.components(separatedBy: .newlines)
+        let markers = [
+            "err:seh:", "unhandled exception", "backtrace", "stack overflow",
+            "stack buffer", "c0000409", "fatal error", "crash"
+        ]
+        let matchingIndices = lines.indices.filter { index in
+            let line = lines[index].lowercased()
+            return markers.contains { line.contains($0) }
+        }
+
+        guard let lastMatch = matchingIndices.last else {
+            return excerpt(from: safe, limit: limit)
+        }
+
+        let start = max(lines.startIndex, lastMatch - 32)
+        let end = min(lines.endIndex, lastMatch + 97)
+        let context = lines[start..<end].joined(separator: "\n")
+        let contextBudget = max(500, limit - 1_200)
+        let boundedContext = context.count > contextBudget ? String(context.prefix(contextBudget)) : context
+        let tailLimit = min(1_000, max(0, limit - boundedContext.count - 96))
+        let tail = String(safe.suffix(tailLimit))
+        return "[failure context centered on line \(lastMatch + 1)]\n\(boundedContext)\n\n[final output tail]\n\(tail)"
     }
 
     static func redact(_ value: String) -> String {

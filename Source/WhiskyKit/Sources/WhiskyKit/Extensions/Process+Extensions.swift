@@ -168,8 +168,8 @@ private final class ProcessDiagnosticCapture: @unchecked Sendable {
 
         lock.lock()
         combinedOutput.append("[\(channel)] \(safeValue)")
-        if combinedOutput.count > WineDiagnosticSanitizer.excerptLimit * 2 {
-            combinedOutput = String(combinedOutput.suffix(WineDiagnosticSanitizer.excerptLimit))
+        if combinedOutput.count > WineDiagnosticSanitizer.failureContextLimit * 2 {
+            combinedOutput = String(combinedOutput.suffix(WineDiagnosticSanitizer.failureContextLimit))
         }
         fileHandle?.write(line: message)
         lock.unlock()
@@ -184,7 +184,7 @@ private final class ProcessDiagnosticCapture: @unchecked Sendable {
     func logFailureSummary(name: String, status: Int32, fileHandle: FileHandle?) {
         lock.lock()
         let output = combinedOutput
-        let excerpt = WineDiagnosticSanitizer.excerpt(from: output)
+        let excerpt = WineDiagnosticSanitizer.failureContext(from: output)
         let message = """
         [BourbonWine Diagnostic] Failed process output excerpt
         Name: \(name)

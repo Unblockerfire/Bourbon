@@ -309,7 +309,7 @@ public class Wine {
         let outputMode = outputMode(for: launchPlan, diagnostics: launchDiagnostics)
         logProgramOutputMode(outputMode, fileHandle: fileHandle)
 
-        var output: [String] = []
+        var output = ""
         var terminationStatus: Int32 = 0
 
         let stream = try runWineProcess(
@@ -335,7 +335,10 @@ public class Wine {
                         wineserver: wineserverBinary
                     )
                 case .message(let message), .error(let message):
-                    output.append(message)
+                    output.append(contentsOf: message)
+                    if output.count > WineDiagnosticSanitizer.failureContextLimit * 2 {
+                        output = String(output.suffix(WineDiagnosticSanitizer.failureContextLimit))
+                    }
                 case .terminated(let process):
                     terminationStatus = process.terminationStatus
                 }
@@ -355,7 +358,7 @@ public class Wine {
                 throw ProgramLaunchIntentionalTermination(url: url)
             }
             try? await stopBottleProcesses(bottle: bottle, reason: "program_launch_exit_\(terminationStatus)")
-            let rawOutput = output.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+            let rawOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
             Logger.wineKit.warning(
                 """
                 Failed to launch \(url.lastPathComponent, privacy: .public).
@@ -365,7 +368,7 @@ public class Wine {
             throw ProgramLaunchError(
                 url: url,
                 diagnostics: launchDiagnostics,
-                output: rawOutput.isEmpty ? "" : WineDiagnosticSanitizer.excerpt(from: rawOutput)
+                output: rawOutput.isEmpty ? "" : WineDiagnosticSanitizer.failureContext(from: rawOutput)
             )
         }
     }
@@ -1254,27 +1257,25 @@ extension Wine {
     static func logProgramLaunchDiagnostics(
         url: URL, diagnostics: ProgramLaunchDiagnostics, fileHandle: FileHandle
     ) {
-        #if DEBUG
         guard diagnostics.isWindowsExecutable else { return }
+        let safePath = WineDiagnosticSanitizer.displayPath(url.path(percentEncoded: false))
         Logger.wineKit.info(
             """
-            Launching Windows executable: \(url.path(percentEncoded: false), privacy: .public)
+            Launching Windows executable: \(safePath, privacy: .public)
             \(diagnostics.summary, privacy: .public)
             """
         )
         fileHandle.write(
             line: """
             Launch Diagnostics:
-            File: \(url.path(percentEncoded: false))
+            File: \(safePath)
             \(diagnostics.summary)
 
             """
         )
-        #endif
     }
 
     static func logCompatibilityLaunchPlan(_ plan: CompatibilityLaunchPlan, fileHandle: FileHandle) {
-        #if DEBUG
         let technologies = plan.analysis.technologies
             .map(\.rawValue)
             .sorted()
@@ -1285,14 +1286,19 @@ extension Wine {
             : plan.appliedProfiles.joined(separator: ", ")
         let finalArguments = plan.arguments.isEmpty
             ? "none"
-            : plan.arguments.joined(separator: " ")
+            : WineDiagnosticSanitizer.redact(plan.arguments.joined(separator: " "))
+        let target = WineDiagnosticSanitizer.displayPath(plan.executableURL.path(percentEncoded: false))
+        let directory = plan.workingDirectory.map {
+            WineDiagnosticSanitizer.displayPath($0.path(percentEncoded: false))
+        } ?? "none"
         Logger.wineKit.info(
             """
             Compatibility launch plan:
             Rule: \(rule, privacy: .public)
             Technologies: \(technologies, privacy: .public)
             Applied launch profiles: \(profiles, privacy: .public)
-            Target: \(plan.executableURL.path(percentEncoded: false), privacy: .public)
+            Target: \(target, privacy: .public)
+            Working directory: \(directory, privacy: .public)
             Final arguments: \(finalArguments, privacy: .public)
             """
         )
@@ -1302,12 +1308,12 @@ extension Wine {
             Rule: \(rule)
             Technologies: \(technologies)
             Applied launch profiles: \(profiles)
-            Target: \(plan.executableURL.path(percentEncoded: false))
+            Target: \(target)
+            Working directory: \(directory)
             Final arguments: \(finalArguments)
 
             """
         )
-        #endif
     }
 
     static func logFinalLaunchDiagnostics(
@@ -1316,14 +1322,12 @@ extension Wine {
         fileHandle: FileHandle
     ) -> ProgramLaunchDiagnostics {
         let diagnostics = ProgramLaunchDiagnostics.inspect(url: plan.executableURL)
-        #if DEBUG
         guard plan.executableURL != originalURL else { return diagnostics }
         logProgramLaunchDiagnostics(
             url: plan.executableURL,
             diagnostics: diagnostics,
             fileHandle: fileHandle
         )
-        #endif
         return diagnostics
     }
 
@@ -1339,7 +1343,6 @@ extension Wine {
     }
 
     private static func logProgramOutputMode(_ mode: WineProcessOutputMode, fileHandle: FileHandle) {
-        #if DEBUG
         let description: String
         switch mode {
         case .captured:
@@ -1354,7 +1357,6 @@ extension Wine {
 
             """
         )
-        #endif
     }
 }
 

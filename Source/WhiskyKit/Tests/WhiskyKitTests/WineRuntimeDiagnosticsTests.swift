@@ -61,6 +61,36 @@ final class WineRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertTrue(output.contains("truncated"))
     }
 
+    func testFailureContextRetainsFailFastAndFollowingBacktrace() {
+        let noise = (0..<800).map { "vulkan noisy loader line \($0)" }.joined(separator: "\n")
+        let failure = "0024:err:seh:NtRaiseException Unhandled exception code c0000409 flags 1 addr 0x14041229d\n" +
+            "0024:err:seh:virtual_unwind backtrace frame 00\n" +
+            "0024:err:module:loader_init loaded target.dll"
+        let output = WineDiagnosticSanitizer.failureContext(
+            from: noise + "\n" + failure + "\n" + String(repeating: "tail ", count: 4_000),
+            limit: 4_000
+        )
+
+        XCTAssertTrue(output.contains("c0000409"))
+        XCTAssertTrue(output.contains("backtrace frame 00"))
+        XCTAssertTrue(output.contains("loaded target.dll"))
+        XCTAssertTrue(output.contains("final output tail"))
+        XCTAssertLessThanOrEqual(output.count, 4_200)
+    }
+
+    func testFailureContextRedactsSensitiveValues() {
+        let output = WineDiagnosticSanitizer.failureContext(
+            from: String(repeating: "noise\n", count: 5_000) +
+                "err:seh: Unhandled exception c0000409 token=top-secret /Users/private-user/app.exe",
+            limit: 2_000
+        )
+
+        XCTAssertFalse(output.contains("top-secret"))
+        XCTAssertFalse(output.contains("private-user"))
+        XCTAssertTrue(output.contains("token=[redacted]"))
+        XCTAssertTrue(output.contains("c0000409"))
+    }
+
     func testRedactsSensitiveEnvironmentValuesByKey() {
         let output = WineDiagnosticSanitizer.redactEnvironment([
             "PATH": "/usr/bin:/bin",
