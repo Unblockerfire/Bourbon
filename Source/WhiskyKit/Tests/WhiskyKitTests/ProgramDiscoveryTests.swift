@@ -30,7 +30,12 @@ final class ProgramDiscoveryTests: XCTestCase {
     func testNewlyInstalledExecutablesReturnsOnlyNewEligiblePrograms() {
         let existingSteam = executable("Steam/steam.exe")
         let notepadPlusPlus = executable("Notepad++/notepad++.exe")
-        let steamAlias = URL(fileURLWithPath: "/PREFIX/drive_c/Program Files/Steam/STEAM.EXE")
+        let steamAlias = URL(fileURLWithPath: "/PREFIX/drive_c/Program Files/Test/Steam/STEAM.EXE")
+
+        XCTAssertEqual(
+            ProgramDiscovery.canonicalExecutablePath(for: existingSteam),
+            ProgramDiscovery.canonicalExecutablePath(for: steamAlias)
+        )
 
         XCTAssertEqual(
             ProgramDiscovery.newlyInstalledExecutables(
