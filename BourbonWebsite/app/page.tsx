@@ -63,7 +63,6 @@ export default function HomePage() {
     operatingSystem: `macOS ${siteConfig.minimumMacOSVersion} or later`,
     applicationCategory: "UtilitiesApplication",
     url: siteConfig.canonicalDomain,
-    downloadUrl: siteConfig.directDownloadUrl,
     softwareVersion: siteConfig.currentVersion,
     offers: {
       "@type": "Offer",
@@ -83,7 +82,7 @@ export default function HomePage() {
         <div className="heroCopy heroEntrance">
           <div className="releasePill">
             <BadgeCheck aria-hidden="true" size={16} />
-            <span>Bourbon {siteConfig.currentVersion} is available</span>
+            <span>Public downloads are temporarily paused</span>
             <ChevronRight aria-hidden="true" size={15} />
           </div>
           <p className="eyebrow">A native home for Windows apps</p>
@@ -250,15 +249,14 @@ export default function HomePage() {
           <p className="eyebrow">Your next pour</p>
           <h2 id="download-title">Bring your Windows apps home.</h2>
           <p>
-            Download Bourbon {siteConfig.currentVersion} for an Apple Silicon
-            Mac running macOS {siteConfig.minimumMacOSVersion} or later.
+            {siteConfig.publicDownloadPauseMessage}
           </p>
         </div>
         <div className="buttonRow">
           <DownloadButton />
           <Link className="button buttonSecondary" href="/download">
             <FolderOpen aria-hidden="true" size={18} />
-            <span>More options</span>
+            <span>Read status</span>
           </Link>
         </div>
       </section>

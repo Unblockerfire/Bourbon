@@ -7,10 +7,9 @@ export const siteConfig = {
   githubRepository: "Unblockerfire/Bourbon",
   githubRepositoryUrl: "https://github.com/Unblockerfire/Bourbon",
   releasesPageUrl: "https://github.com/Unblockerfire/Bourbon/releases",
-  directDownloadUrl:
-    "https://github.com/Unblockerfire/Bourbon/releases/download/v2.0.19/Bourbon2.0.19.dmg",
-  developmentDownloadUrl:
-    "https://github.com/Unblockerfire/Bourbon/releases/download/development-97639d8f/Bourbon-diagnostic-97639d8f0777.dmg",
+  publicDownloadsPaused: true,
+  publicDownloadPauseMessage:
+    "Public Bourbon downloads are temporarily paused while we investigate a compatibility issue.",
   documentationUrl: "/docs",
   supportUrl: "/support",
   privacyUrl: "/privacy",
