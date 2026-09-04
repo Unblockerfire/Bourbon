@@ -1280,8 +1280,7 @@ extension Wine {
     static func logProgramLaunchContext(_ context: String, url: URL, fileHandle: FileHandle) {
         let safePath = WineDiagnosticSanitizer.displayPath(url.path(percentEncoded: false))
         Logger.wineKit.info(
-            "Program launch context: \(context, privacy: .public); " +
-                "selected executable: \(safePath, privacy: .public)"
+            "Program launch context: \(context, privacy: .public); selected executable: \(safePath, privacy: .public)"
         )
         fileHandle.write(
             line: """
