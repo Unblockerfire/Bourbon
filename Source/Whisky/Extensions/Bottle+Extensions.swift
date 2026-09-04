@@ -137,6 +137,7 @@ extension Bottle {
             while let url = enumerator.nextObject() as? URL {
                 guard !url.hasDirectoryPath && url.pathExtension == "exe" else { continue }
                 guard !settings.blocklist.contains(url) else { continue }
+                guard ProgramDiscovery.isUserFacingExecutable(at: url) else { continue }
                 foundURLS.insert(url)
                 programs.append(Program(url: url, bottle: self))
             }

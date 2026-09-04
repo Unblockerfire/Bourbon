@@ -1156,9 +1156,9 @@ public struct RuntimeDiscovery: Sendable, Equatable {
 
     public var requiresDownload: Bool {
         switch state {
-        case .missing, .corruptOrIncomplete, .unsupported:
+        case .missing, .installedUnverified, .corruptOrIncomplete, .unsupported, .verificationFailed:
             return true
-        case .installedUnverified, .gatekeeperBlocked, .ready, .verificationFailed:
+        case .gatekeeperBlocked, .ready:
             return false
         }
     }

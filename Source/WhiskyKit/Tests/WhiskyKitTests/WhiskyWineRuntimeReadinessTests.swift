@@ -97,6 +97,21 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         XCTAssertTrue(discovery.requiresDownload)
     }
 
+    func testVerificationFailureRequiresCleanReplacement() async throws {
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        try fixture.makeRuntime(version: "1.0.2")
+        try fixture.writeWine(contents: "#!/bin/sh\necho 'unexpected runtime failure' >&2\nexit 1\n")
+
+        let discovery = await WhiskyWineInstaller.discoverRuntime(
+            in: fixture.applicationFolder,
+            expectedRuntimeVersion: "1.0.2"
+        )
+
+        XCTAssertEqual(discovery.state, .verificationFailed)
+        XCTAssertTrue(discovery.requiresDownload)
+    }
+
     func testRuntimeUpdaterInstallLifecycleReplacesOldRuntimeAndRunsWine() throws {
         let fixture = try RuntimeFixture()
         defer { fixture.remove() }
@@ -109,6 +124,45 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
         XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
         XCTAssertEqual(readiness.wineVersion?.trimmingCharacters(in: .whitespacesAndNewlines), "wine-11.16")
         XCTAssertTrue(WhiskyWineInstaller.hasRestorablePreviousRuntime(in: fixture.applicationFolder))
+    }
+
+    func testLiveProductionArchiveReplacesInvalidRuntimeWhenProvided() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let archivePath = environment["BOURBON_LIVE_RUNTIME_ARCHIVE"], !archivePath.isEmpty else {
+            throw XCTSkip("Live production archive is supplied only by macOS Validation.")
+        }
+        guard let expectedSHA256 = environment["BOURBON_LIVE_RUNTIME_SHA256"], !expectedSHA256.isEmpty,
+              let expectedVersion = environment["BOURBON_LIVE_RUNTIME_VERSION"], !expectedVersion.isEmpty else {
+            XCTFail("macOS Validation must supply live runtime version and SHA-256.")
+            return
+        }
+
+        let archive = URL(fileURLWithPath: archivePath)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archive.path), "Live runtime archive was not downloaded.")
+        let fixture = try RuntimeFixture()
+        defer { fixture.remove() }
+        try fixture.makeRuntime(version: "0.0.0", includeNTDLL: false)
+
+        try WhiskyWineInstaller.install(
+            from: archive,
+            runtimeVersion: expectedVersion,
+            expectedSHA256: expectedSHA256,
+            into: fixture.applicationFolder
+        )
+
+        let readiness = WhiskyWineInstaller.runtimeReadiness(
+            in: fixture.applicationFolder,
+            expectedRuntimeVersion: expectedVersion
+        )
+        XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
+        XCTAssertEqual(
+            WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder).map(String.init(describing:)),
+            expectedVersion
+        )
+        let preflight = try await WhiskyWineInstaller.retryInstalledRuntimeReadiness(
+            in: fixture.applicationFolder
+        )
+        XCTAssertEqual(preflight.version, "11.16")
     }
 
     func testRestorePreviousRuntimeRetainsTheReplacedRuntime() throws {

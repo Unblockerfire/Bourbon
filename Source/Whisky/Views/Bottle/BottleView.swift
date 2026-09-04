@@ -201,28 +201,9 @@ struct BottleView: View {
     }
 
     private var installedPrograms: [Program] {
-        let hiddenSystemApps = [
-            "wine",
-            "wine 11",
-            "wine configuration",
-            "wine file explorer",
-            "wine uninstaller",
-            "registry editor",
-            "command prompt",
-            "notepad",
-            "wordpad",
-            "internet explorer",
-            "oleview",
-            "winemine"
-        ]
-
         return bottle.programs
             .filter { FileManager.default.fileExists(atPath: $0.url.path(percentEncoded: false)) }
-            .filter { program in
-                let name = program.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                let executable = program.url.deletingPathExtension().lastPathComponent.lowercased()
-                return !hiddenSystemApps.contains(name) && !hiddenSystemApps.contains(executable)
-            }
+            .filter { ProgramDiscovery.isUserFacingExecutable(at: $0.url) }
             .sorted { $0.name < $1.name }
     }
 

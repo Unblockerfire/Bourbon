@@ -182,12 +182,10 @@ struct WhiskyWineDownloadView: View {
                 detail: "existing_runtime_\(discovery.state.rawValue)"
             )
             WhiskyWineInstaller.recordRuntimeEvent(
-                "runtime.download.skipped_existing",
+                "runtime.download.required",
                 detail: "state=\(discovery.state.rawValue)"
             )
-            downloadError = discovery.errorDescription
-                ?? "BourbonWine is already installed. Retry its readiness check before replacing it."
-            return true
+            return false
         case .missing, .corruptOrIncomplete, .unsupported:
             WhiskyWineInstaller.recordRuntimeEvent(
                 "runtime.download.reason",
