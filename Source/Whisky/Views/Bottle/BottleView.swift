@@ -495,27 +495,6 @@ final class InstallManager: ObservableObject {
         }
     }
 
-    private func launchInstalledProgram(_ program: Program) {
-        let programURL = program.url
-        let bottle = program.bottle
-        Task.detached(priority: .userInitiated) {
-            do {
-                try await Wine.runProgram(
-                    at: programURL,
-                    bottle: bottle,
-                    launchContext: "post-installer handoff"
-                )
-            } catch is Wine.ProgramLaunchIntentionalTermination {
-                // The user deliberately stopped this Bottle's Wine prefix.
-            } catch {
-                await MainActor.run {
-                    self.noticeMessage = "Installation finished, but Bourbon could not automatically launch " +
-                        "\(programURL.lastPathComponent): \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
     private func attemptDirectInstall(_ url: URL, bottle: Bottle, installID: UUID) async throws {
         update(.analyzingInstaller, detail: "Analyzing \(url.lastPathComponent)...", installID: installID)
 
@@ -623,6 +602,29 @@ final class InstallManager: ObservableObject {
 
     private func update(activity: InstallerWorkflowActivity, detail: String, installID: UUID) {
         _ = workflow.update(activity: activity, detail: detail, for: installID)
+    }
+}
+
+private extension InstallManager {
+    func launchInstalledProgram(_ program: Program) {
+        let programURL = program.url
+        let bottle = program.bottle
+        Task.detached(priority: .userInitiated) {
+            do {
+                try await Wine.runProgram(
+                    at: programURL,
+                    bottle: bottle,
+                    launchContext: "post-installer handoff"
+                )
+            } catch is Wine.ProgramLaunchIntentionalTermination {
+                // The user deliberately stopped this Bottle's Wine prefix.
+            } catch {
+                await MainActor.run {
+                    self.noticeMessage = "Installation finished, but Bourbon could not automatically launch " +
+                        "\(programURL.lastPathComponent): \(error.localizedDescription)"
+                }
+            }
+        }
     }
 }
 

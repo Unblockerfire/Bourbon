@@ -292,9 +292,7 @@ public class Wine {
         let fileHandle = try makeFileHandle()
         fileHandle.writeApplicaitonInfo()
         fileHandle.writeInfo(for: bottle)
-        if let launchContext {
-            logProgramLaunchContext(launchContext, url: url, fileHandle: fileHandle)
-        }
+        recordProgramLaunchContext(launchContext, url: url, fileHandle: fileHandle)
 
         let diagnostics = ProgramLaunchDiagnostics.inspect(url: url)
         logProgramLaunchDiagnostics(url: url, diagnostics: diagnostics, fileHandle: fileHandle)
@@ -1380,6 +1378,11 @@ extension Wine {
 }
 
 public extension Wine {
+    static func recordProgramLaunchContext(_ context: String?, url: URL, fileHandle: FileHandle) {
+        guard let context else { return }
+        logProgramLaunchContext(context, url: url, fileHandle: fileHandle)
+    }
+
     struct RuntimeDependency: Identifiable, Sendable {
         public let id: String
         public let libraryName: String
