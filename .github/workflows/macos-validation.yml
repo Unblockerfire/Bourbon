@@ -562,8 +562,16 @@ jobs:
           tar -xzf "$RUNTIME_ARCHIVE" -C "$RUNTIME_EXTRACT"
           test -x "$RUNTIME_EXTRACT/$SELECTED_LAUNCHER"
 
+          RUNTIME_WINE_ROOT="$RUNTIME_EXTRACT/Libraries/Wine"
+          test -L "$RUNTIME_WINE_ROOT/lib/libvulkan.dylib"
+          test "$(readlink "$RUNTIME_WINE_ROOT/lib/libvulkan.dylib")" = 'libvulkan.1.dylib'
+          test -e "$RUNTIME_WINE_ROOT/lib/libvulkan.dylib"
+
           RUNTIME_MANIFEST_VERSION="$(python3 -c \
             'import json,sys; print(json.load(open(sys.argv[1]))["runtimeVersion"])' \
+            "$RUNTIME_EXTRACT/Libraries/BourbonWineRuntime.json")"
+          RUNTIME_MANIFEST_WINE_VERSION="$(python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["wineVersion"])' \
             "$RUNTIME_EXTRACT/Libraries/BourbonWineRuntime.json")"
           RUNTIME_MARKER_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :version' \
             "$RUNTIME_EXTRACT/Libraries/BourbonWineVersion.plist")"
@@ -572,6 +580,14 @@ jobs:
             "$RUNTIME_JSON")"
           test "$RUNTIME_MANIFEST_VERSION" = "$RUNTIME_API_VERSION"
           test "$RUNTIME_MARKER_VERSION" = "$RUNTIME_API_VERSION"
+          test "$RUNTIME_MANIFEST_WINE_VERSION" = "$RUNTIME_WINE_VERSION"
+
+          for BINARY in "$RUNTIME_EXTRACT/$SELECTED_LAUNCHER" "$RUNTIME_WINE_ROOT/bin/wineserver" "$RUNTIME_WINE_ROOT/lib/wine/x86_64-unix/ntdll.so" "$RUNTIME_WINE_ROOT/lib/libvulkan.1.dylib"; do
+            lipo -archs "$BINARY" | tr ' ' '\n' | grep -Fx 'x86_64'
+          done
+          DYLD_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" DYLD_FALLBACK_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" "$RUNTIME_EXTRACT/$SELECTED_LAUNCHER" --version | grep -F "$RUNTIME_WINE_VERSION"
+          WINEPREFIX="$RUNNER_TEMP/bourbon-production-runtime-smoke-prefix" WINEDEBUG=-all DYLD_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" DYLD_FALLBACK_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" "$RUNTIME_EXTRACT/$SELECTED_LAUNCHER" cmd /c exit 0
+          DYLD_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" DYLD_FALLBACK_LIBRARY_PATH="$RUNTIME_WINE_ROOT/lib" "$RUNTIME_WINE_ROOT/bin/wineserver" -w
 
           echo "Resolver-selected production runtime launcher: $SELECTED_LAUNCHER"
           echo "Production runtime Wine version: $RUNTIME_WINE_VERSION"
