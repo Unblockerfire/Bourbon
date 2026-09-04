@@ -92,7 +92,7 @@ struct WhiskyWineDownloadView: View {
         }
     }
 
-    // swiftlint:disable:next function_body_length
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     private func download() {
         let attemptID = UUID()
         downloadAttemptID = attemptID
