@@ -22,7 +22,7 @@ jobs:
     name: Build private development DMG
     runs-on: macos-15
     env:
-      DEVELOPMENT_VERSION: 3.2.1-dev
+      DEVELOPMENT_VERSION: 3.2.2-dev
       FIX_COMMIT: 65975699e6c39b64655b4f7cebbeedd4deb1ee6d
       PROJECT_PATH: Source/Whisky.xcodeproj
       SCHEME: Bourbon
@@ -121,7 +121,7 @@ jobs:
           MOUNT_DIR="$RUNNER_TEMP/bourbon-development-mounted"
           SOURCE_APP="$DERIVED_DATA/Build/Products/Release/Bourbon.app"
           DEVELOPMENT_APP="$STAGING_DIR/Bourbon.app"
-          DMG_PATH="$OUTPUT_DIR/Bourbon-3.2.1-dev.dmg"
+          DMG_PATH="$OUTPUT_DIR/Bourbon-3.2.2-dev.dmg"
 
           test -d "$SOURCE_APP"
           mkdir -p "$OUTPUT_DIR" "$STAGING_DIR" "$MOUNT_DIR"
@@ -144,7 +144,7 @@ jobs:
             >/dev/null 2>&1
 
           hdiutil create \
-            -volname 'Bourbon Development 3.2.1-dev' \
+            -volname 'Bourbon Development 3.2.2-dev' \
             -srcfolder "$STAGING_DIR" \
             -ov \
             -format UDZO \
