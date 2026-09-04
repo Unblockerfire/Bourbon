@@ -741,9 +741,12 @@ jobs:
           wine, steam, log_path = sys.argv[1:]
           with open(log_path, "a", encoding="utf-8") as log:
               log.write("\n--- steam.exe launch ---\n")
+              launch_environment = os.environ.copy()
+              launch_environment["WINEDEBUG"] = "-all,+seh"
               process = subprocess.Popen(
                   [wine, steam, "-silent"],
-                  env=os.environ.copy(),
+                  cwd=os.path.dirname(steam),
+                  env=launch_environment,
                   stdout=log,
                   stderr=subprocess.STDOUT,
               )
