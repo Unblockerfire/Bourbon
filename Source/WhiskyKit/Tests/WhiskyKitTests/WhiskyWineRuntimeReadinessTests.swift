@@ -150,10 +150,7 @@ final class WhiskyWineRuntimeReadinessTests: XCTestCase {
             into: fixture.applicationFolder
         )
 
-        let readiness = WhiskyWineInstaller.runtimeReadiness(
-            in: fixture.applicationFolder,
-            expectedRuntimeVersion: expectedVersion
-        )
+        let readiness = WhiskyWineInstaller.runtimeReadiness(in: fixture.applicationFolder)
         XCTAssertTrue(readiness.isReady, readiness.failures.joined(separator: ", "))
         XCTAssertEqual(
             WhiskyWineInstaller.whiskyWineVersion(in: fixture.applicationFolder).map(String.init(describing:)),
