@@ -17,6 +17,10 @@ struct WhiskyWineDownloadView: View {
     @State private var downloadError: String?
     @State private var manualDownloadMessage: String?
     @State private var localArchivePanel: NSOpenPanel?
+    // A selection from the manual flow and a URLSession completion can arrive in
+    // either order.  This token makes only the currently active acquisition
+    // attempt eligible to mutate navigation state.
+    @State private var downloadAttemptID = UUID()
 
     var body: some View {
         BourbonPanelBackdrop {
@@ -32,8 +36,7 @@ struct WhiskyWineDownloadView: View {
             download()
         }
         .onDisappear {
-            downloadTask?.cancel()
-            observation?.invalidate()
+            cancelActiveDownload()
         }
     }
 
@@ -58,6 +61,9 @@ struct WhiskyWineDownloadView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
+                Button("Cancel") { cancelSetupFlow() }
+                    .buttonStyle(BourbonSecondaryButtonStyle())
+                    .help("Return to Setup check without installing BourbonWine.")
             }
         }
     }
@@ -88,25 +94,28 @@ struct WhiskyWineDownloadView: View {
 
     // swiftlint:disable:next function_body_length
     private func download() {
+        let attemptID = UUID()
+        downloadAttemptID = attemptID
         downloadError = nil
         manualDownloadMessage = nil
         downloadProgress = 0
         verifyingDownload = false
         manualRuntimeArchive = false
         runtimeSHA256 = nil
-        downloadTask?.cancel()
-        observation?.invalidate()
+        cancelActiveDownload(invalidateAttempt: false)
 
         Task {
             do {
-                if await existingRuntimePreventsDownload() { return }
+                if await existingRuntimePreventsDownload(for: attemptID) { return }
                 let runtimeInfo = try await WhiskyWineInstaller.latestRuntimeInfo()
+                guard isCurrentDownloadAttempt(attemptID) else { return }
                 let sourceURL = runtimeInfo.archiveUrl
                 runtimeVersion = runtimeInfo.version
                 runtimeSHA256 = runtimeInfo.sha256
 
                 let task = URLSession(configuration: .ephemeral).downloadTask(with: sourceURL) { url, response, error in
                     DispatchQueue.main.async {
+                        guard isCurrentDownloadAttempt(attemptID) else { return }
                         if let error {
                             verifyingDownload = false
                             downloadError = error.localizedDescription
@@ -130,13 +139,16 @@ struct WhiskyWineDownloadView: View {
                                         expectedSHA256: runtimeInfo.sha256
                                     )
                                 }.value
+                                guard isCurrentDownloadAttempt(attemptID) else { return }
                                 verifyingDownload = false
                                 tarLocation = persistedArchive
                                 path.append(.whiskyWineInstall)
                             } catch is CancellationError {
+                                guard isCurrentDownloadAttempt(attemptID) else { return }
                                 verifyingDownload = false
                                 downloadError = "BourbonWine download was cancelled. You can retry safely."
                             } catch {
+                                guard isCurrentDownloadAttempt(attemptID) else { return }
                                 verifyingDownload = false
                                 downloadError = error.localizedDescription
                             }
@@ -147,6 +159,7 @@ struct WhiskyWineDownloadView: View {
                 downloadTask = task
                 observation = task.observe(\.countOfBytesReceived) { task, _ in
                     DispatchQueue.main.async {
+                        guard isCurrentDownloadAttempt(attemptID) else { return }
                         let expected = Double(task.countOfBytesExpectedToReceive)
                         guard expected > 0 else { return }
                         downloadProgress = Double(task.countOfBytesReceived) / expected
@@ -155,20 +168,25 @@ struct WhiskyWineDownloadView: View {
 
                 task.resume()
             } catch {
+                guard isCurrentDownloadAttempt(attemptID) else { return }
                 downloadError = error.localizedDescription
             }
         }
     }
 
-    private func existingRuntimePreventsDownload() async -> Bool {
+    private func existingRuntimePreventsDownload(for attemptID: UUID) async -> Bool {
         let discovery = await WhiskyWineInstaller.discoverRuntime()
-        switch discovery.state {
-        case .ready:
+        guard isCurrentDownloadAttempt(attemptID) else { return true }
+        switch RuntimeSetupFlowPolicy.automaticDownloadAction(for: discovery.state) {
+        case .showReadyWithoutDismissing:
             WhiskyWineInstaller.recordRuntimeEvent("runtime.download.reason", detail: "existing_runtime_ready")
-            WhiskyWineInstaller.recordRuntimeEvent("runtime.download.skipped_existing", detail: "state=ready")
-            path.removeAll()
+            // This is a second, asynchronous observation after Setup check
+            // elected to enter this flow. It must never dismiss the flow by
+            // mutating the navigation path. The user can explicitly cancel.
+            WhiskyWineInstaller.recordRuntimeEvent("runtime.download.recheck_ready", detail: "state=ready")
+            downloadError = "BourbonWine is now ready. Cancel Setup to return to Bourbon."
             return true
-        case .gatekeeperBlocked:
+        case .showGatekeeperRecovery:
             WhiskyWineInstaller.recordRuntimeEvent("runtime.download.reason", detail: "gatekeeper_blocked")
             WhiskyWineInstaller.recordRuntimeEvent(
                 "runtime.download.skipped_existing",
@@ -176,17 +194,7 @@ struct WhiskyWineDownloadView: View {
             )
             path.append(.whiskyWineGatekeeperRecovery)
             return true
-        case .installedUnverified, .verificationFailed:
-            WhiskyWineInstaller.recordRuntimeEvent(
-                "runtime.download.reason",
-                detail: "existing_runtime_\(discovery.state.rawValue)"
-            )
-            WhiskyWineInstaller.recordRuntimeEvent(
-                "runtime.download.required",
-                detail: "state=\(discovery.state.rawValue)"
-            )
-            return false
-        case .missing, .corruptOrIncomplete, .unsupported:
+        case .continueDownload:
             WhiskyWineInstaller.recordRuntimeEvent(
                 "runtime.download.reason",
                 detail: discovery.state.rawValue
@@ -200,6 +208,12 @@ struct WhiskyWineDownloadView: View {
     }
 
     private func chooseLocalArchive() {
+        // A manual archive supersedes the automatic acquisition attempt. This
+        // prevents a late automatic completion from pushing a second install
+        // destination over the manual installer.
+        if RuntimeSetupFlowPolicy.manualArchiveSupersedesAutomaticDownload {
+            cancelActiveDownload()
+        }
         let panel = NSOpenPanel()
         localArchivePanel = panel
         defer {
@@ -246,5 +260,24 @@ struct WhiskyWineDownloadView: View {
                 downloadError = "Could not open the BourbonWine download: \(error.localizedDescription)"
             }
         }
+    }
+
+    private func cancelSetupFlow() {
+        cancelActiveDownload()
+        path.removeAll()
+    }
+
+    private func cancelActiveDownload(invalidateAttempt: Bool = true) {
+        if invalidateAttempt {
+            downloadAttemptID = UUID()
+        }
+        downloadTask?.cancel()
+        downloadTask = nil
+        observation?.invalidate()
+        observation = nil
+    }
+
+    private func isCurrentDownloadAttempt(_ attemptID: UUID) -> Bool {
+        downloadAttemptID == attemptID
     }
 }

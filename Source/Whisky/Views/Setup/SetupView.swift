@@ -20,7 +20,7 @@ import SwiftUI
 @preconcurrency import Sparkle
 import WhiskyKit
 
-enum SetupStage {
+enum SetupStage: Hashable {
     case rosetta
     case whiskyWineDownload
     case whiskyWineInstall
