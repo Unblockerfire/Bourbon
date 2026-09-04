@@ -282,6 +282,7 @@ public class Wine {
         args: [String] = [],
         bottle: Bottle,
         environment: [String: String] = [:],
+        launchContext: String? = nil,
         progress: (@Sendable (CompatibilityProgress) -> Void)? = nil
     ) async throws {
         if bottle.settings.dxvk {
@@ -291,6 +292,9 @@ public class Wine {
         let fileHandle = try makeFileHandle()
         fileHandle.writeApplicaitonInfo()
         fileHandle.writeInfo(for: bottle)
+        if let launchContext {
+            logProgramLaunchContext(launchContext, url: url, fileHandle: fileHandle)
+        }
 
         let diagnostics = ProgramLaunchDiagnostics.inspect(url: url)
         logProgramLaunchDiagnostics(url: url, diagnostics: diagnostics, fileHandle: fileHandle)
@@ -1270,6 +1274,21 @@ extension Wine {
             Launch Diagnostics:
             File: \(safePath)
             \(diagnostics.summary)
+
+            """
+        )
+    }
+
+    static func logProgramLaunchContext(_ context: String, url: URL, fileHandle: FileHandle) {
+        let safePath = WineDiagnosticSanitizer.displayPath(url.path(percentEncoded: false))
+        Logger.wineKit.info(
+            "Program launch context: \(context, privacy: .public); " +
+                "selected executable: \(safePath, privacy: .public)"
+        )
+        fileHandle.write(
+            line: """
+            Launch context: \(context)
+            Selected executable: \(safePath)
 
             """
         )

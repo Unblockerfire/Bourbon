@@ -7,6 +7,12 @@ final class ProgramDiscoveryTests: XCTestCase {
         XCTAssertTrue(ProgramDiscovery.isUserFacingExecutable(at: executable("My Game Launcher.exe")))
     }
 
+    func testNotepadPlusPlusDoesNotCollapseIntoWineBuiltInNotepad() {
+        let notepadPlusPlus = executable("Notepad++/notepad++.exe")
+
+        XCTAssertTrue(ProgramDiscovery.isUserFacingExecutable(at: notepadPlusPlus))
+    }
+
     func testInfrastructureAndHelperExecutablesAreExcluded() {
         [
             "Fossilize Replay.exe",
@@ -19,6 +25,42 @@ final class ProgramDiscoveryTests: XCTestCase {
         ].forEach { name in
             XCTAssertFalse(ProgramDiscovery.isUserFacingExecutable(at: executable(name)), name)
         }
+    }
+
+    func testNewlyInstalledExecutablesReturnsOnlyNewEligiblePrograms() {
+        let existingSteam = executable("Steam/steam.exe")
+        let notepadPlusPlus = executable("Notepad++/notepad++.exe")
+        let steamAlias = URL(fileURLWithPath: "/PREFIX/drive_c/Program Files/Steam/STEAM.EXE")
+
+        XCTAssertEqual(
+            ProgramDiscovery.newlyInstalledExecutables(
+                before: [existingSteam],
+                after: [steamAlias, notepadPlusPlus]
+            ),
+            [notepadPlusPlus]
+        )
+    }
+
+    func testPreferredExecutableSelectsProductLauncherAmongMultipleNewApps() {
+        let updater = executable("Notepad++/updater/GUP.exe")
+        let notepadPlusPlus = executable("Notepad++/notepad++.exe")
+        let documentation = executable("Notepad++/docs/readme.exe")
+
+        XCTAssertEqual(
+            ProgramDiscovery.preferredExecutable(from: [updater, documentation, notepadPlusPlus]),
+            notepadPlusPlus
+        )
+    }
+
+    func testNoNewApplicationProducesNoPostInstallerHandoffCandidate() {
+        let steam = executable("Steam/steam.exe")
+        let newPrograms = ProgramDiscovery.newlyInstalledExecutables(
+            before: [steam],
+            after: [steam]
+        )
+
+        XCTAssertTrue(newPrograms.isEmpty)
+        XCTAssertNil(ProgramDiscovery.preferredExecutable(from: newPrograms))
     }
 
     private func executable(_ name: String) -> URL {

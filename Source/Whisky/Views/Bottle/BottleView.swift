@@ -443,6 +443,13 @@ final class InstallManager: ObservableObject {
 
     private func runInstall(_ url: URL, bottle: Bottle, installID: UUID) async {
         do {
+            // Establish the baseline immediately before launch. The handoff
+            // must only consider applications introduced by this installer.
+            try bottle.refreshInstalledPrograms()
+            let programsBeforeInstall = bottle.programs
+                .map(\.url)
+                .filter { ProgramDiscovery.isUserFacingExecutable(at: $0) }
+
             try await attemptDirectInstall(url, bottle: bottle, installID: installID)
             try Task.checkCancellation()
             guard workflow.beginFinalization(
@@ -451,7 +458,25 @@ final class InstallManager: ObservableObject {
             try bottle.refreshInstalledPrograms()
             try Task.checkCancellation()
             guard workflow.succeed(detail: "\(url.lastPathComponent) finished.", for: installID) else { return }
-            successMessage = "\(url.lastPathComponent) in \(bottle.settings.name) finished."
+
+            let newPrograms = ProgramDiscovery.newlyInstalledExecutables(
+                before: programsBeforeInstall,
+                after: bottle.programs.map(\.url)
+            )
+            guard let selectedURL = ProgramDiscovery.preferredExecutable(from: newPrograms),
+                  let selectedProgram = bottle.programs.first(where: {
+                      ProgramDiscovery.canonicalExecutablePath(for: $0.url)
+                          == ProgramDiscovery.canonicalExecutablePath(for: selectedURL)
+                  }) else {
+                successMessage = "\(url.lastPathComponent) in \(bottle.settings.name) finished."
+                return
+            }
+
+            if !selectedProgram.pinned {
+                selectedProgram.pinned = true
+            }
+            successMessage = "\(url.lastPathComponent) finished. Launching \(selectedProgram.name)..."
+            launchInstalledProgram(selectedProgram)
         } catch is Wine.ProgramLaunchIntentionalTermination {
             // cancelInstall() owns the user-facing completion state for deliberate cleanup.
         } catch is CancellationError {
@@ -467,6 +492,27 @@ final class InstallManager: ObservableObject {
                 installerURL: url,
                 message: error.localizedDescription
             )
+        }
+    }
+
+    private func launchInstalledProgram(_ program: Program) {
+        let programURL = program.url
+        let bottle = program.bottle
+        Task.detached(priority: .userInitiated) {
+            do {
+                try await Wine.runProgram(
+                    at: programURL,
+                    bottle: bottle,
+                    launchContext: "post-installer handoff"
+                )
+            } catch is Wine.ProgramLaunchIntentionalTermination {
+                // The user deliberately stopped this Bottle's Wine prefix.
+            } catch {
+                await MainActor.run {
+                    self.noticeMessage = "Installation finished, but Bourbon could not automatically launch " +
+                        "\(programURL.lastPathComponent): \(error.localizedDescription)"
+                }
+            }
         }
     }
 

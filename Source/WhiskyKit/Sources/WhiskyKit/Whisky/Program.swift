@@ -39,12 +39,18 @@ public final class Program: ObservableObject, Equatable, Hashable, Identifiable,
     @Published public var pinned: Bool {
         didSet {
             if pinned {
-                bottle.settings.pins.append(PinnedProgram(
-                    name: name,
-                    url: url
-                ))
+                guard !bottle.settings.pins.contains(where: { pin in
+                    guard let pinnedURL = pin.url else { return false }
+                    return ProgramDiscovery.canonicalExecutablePath(for: pinnedURL)
+                        == ProgramDiscovery.canonicalExecutablePath(for: url)
+                }) else { return }
+                bottle.settings.pins.append(PinnedProgram(name: name, url: url))
             } else {
-                bottle.settings.pins.removeAll(where: { $0.url == url })
+                bottle.settings.pins.removeAll { pin in
+                    guard let pinnedURL = pin.url else { return false }
+                    return ProgramDiscovery.canonicalExecutablePath(for: pinnedURL)
+                        == ProgramDiscovery.canonicalExecutablePath(for: url)
+                }
             }
         }
     }
@@ -56,7 +62,11 @@ public final class Program: ObservableObject, Equatable, Hashable, Identifiable,
         self.bottle = bottle
         self.url = url
         self.preferredName = preferredName
-        self.pinned = bottle.settings.pins.contains(where: { $0.url == url })
+        self.pinned = bottle.settings.pins.contains { pin in
+            guard let pinnedURL = pin.url else { return false }
+            return ProgramDiscovery.canonicalExecutablePath(for: pinnedURL)
+                == ProgramDiscovery.canonicalExecutablePath(for: url)
+        }
 
         // Warning: This will break if two programs share the same name such as "Launch.exe"
         // Best to add some sort of UUID in the path or file
