@@ -439,7 +439,6 @@ public class Wine {
         )
     }
 
-    // swiftlint:disable:next function_body_length
     public static func parseProgramArguments(_ value: String) -> [String] {
         var arguments: [String] = []
         var current = ""
