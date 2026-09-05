@@ -26,13 +26,17 @@ extension Program {
     }
 
     func runInWine() {
-        let arguments = settings.arguments.split { $0.isWhitespace }.map(String.init)
+        let arguments = Wine.parseProgramArguments(settings.arguments)
         let environment = generateEnvironment()
 
         Task.detached(priority: .userInitiated) {
             do {
                 try await Wine.runProgram(
-                    at: self.url, args: arguments, bottle: self.bottle, environment: environment
+                    at: self.url,
+                    args: arguments,
+                    bottle: self.bottle,
+                    environment: environment,
+                    launchMode: .terminalEquivalentGUI
                 )
             } catch is Wine.ProgramLaunchIntentionalTermination {
                 // Bourbon deliberately ended this Bottle's prefix. Its original launcher

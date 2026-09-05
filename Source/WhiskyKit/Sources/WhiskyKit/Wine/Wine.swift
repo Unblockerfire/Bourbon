@@ -24,8 +24,22 @@ import os.log
 
 // swiftlint:disable:next type_body_length
 public class Wine {
-    private enum WineProcessOutputMode {
+    private enum WineProcessOutputMode: Equatable {
         case captured
+        case uncaptured
+    }
+
+    public enum ProgramLaunchMode: Sendable, Equatable {
+        case captured
+        case terminalEquivalentGUI
+    }
+
+    public struct ProgramProcessConfiguration: Sendable, Equatable {
+        public let wineExecutable: URL
+        public let targetExecutable: URL
+        public let arguments: [String]
+        public let environment: [String: String]
+        public let workingDirectory: URL
     }
 
     private enum CustomWineSettings {
@@ -207,6 +221,8 @@ public class Wine {
             switch outputMode {
             case .captured:
                 return try process.runStream(name: processName, fileHandle: fileHandle)
+            case .uncaptured:
+                return try process.runUncaptured(name: processName, fileHandle: fileHandle)
             }
         } catch {
             debugLogProcessLaunchError(
@@ -282,6 +298,7 @@ public class Wine {
         args: [String] = [],
         bottle: Bottle,
         environment: [String: String] = [:],
+        launchMode: ProgramLaunchMode = .captured,
         progress: (@Sendable (CompatibilityProgress) -> Void)? = nil
     ) async throws {
         if bottle.settings.dxvk {
@@ -306,18 +323,36 @@ public class Wine {
             originalURL: url,
             fileHandle: fileHandle
         )
-        let outputMode = outputMode(for: launchPlan, diagnostics: launchDiagnostics)
+        let outputMode = outputMode(
+            for: launchPlan,
+            diagnostics: launchDiagnostics,
+            launchMode: launchMode
+        )
         logProgramOutputMode(outputMode, fileHandle: fileHandle)
+
+        let processConfiguration = programProcessConfiguration(
+            at: launchPlan.executableURL,
+            args: launchPlan.arguments,
+            bottle: bottle,
+            environment: environment,
+            workingDirectory: launchPlan.workingDirectory
+        )
+        logProgramProcessConfiguration(
+            processConfiguration,
+            outputMode: outputMode,
+            fileHandle: fileHandle
+        )
 
         var output: [String] = []
         var terminationStatus: Int32 = 0
 
         let stream = try runWineProcess(
             name: launchPlan.executableURL.lastPathComponent,
-            args: runProgramArguments(for: launchPlan.executableURL, args: launchPlan.arguments),
-            environment: constructWineEnvironment(for: bottle, environment: environment),
-            directory: launchPlan.workingDirectory,
+            args: processConfiguration.arguments,
+            environment: processConfiguration.environment,
+            directory: processConfiguration.workingDirectory,
             outputMode: outputMode,
+            executableURL: processConfiguration.wineExecutable,
             fileHandle: fileHandle
         )
 
@@ -373,13 +408,90 @@ public class Wine {
     public static func generateRunCommand(
         at url: URL, bottle: Bottle, args: String, environment: [String: String]
     ) -> String {
-        var wineCmd = generateRunProgramCommand(at: url, args: args)
-        let env = constructWineEnvironment(for: bottle, environment: environment)
-        for environment in env {
-            wineCmd = "\(environment.key)=\"\(environment.value)\" " + wineCmd
+        let configuration = programProcessConfiguration(
+            at: url,
+            args: parseProgramArguments(args),
+            bottle: bottle,
+            environment: environment
+        )
+        let environmentCommand = configuration.environment.keys.sorted().map { key in
+            "\(key)=\((configuration.environment[key] ?? "").esc)"
+        }.joined(separator: " ")
+        let processCommand = ([configuration.wineExecutable.path] + configuration.arguments)
+            .map(\.esc)
+            .joined(separator: " ")
+        return "cd \(configuration.workingDirectory.path.esc) && \(environmentCommand) \(processCommand)"
+    }
+
+    public static func programProcessConfiguration(
+        at url: URL,
+        args: [String],
+        bottle: Bottle,
+        environment: [String: String] = [:],
+        workingDirectory: URL? = nil
+    ) -> ProgramProcessConfiguration {
+        ProgramProcessConfiguration(
+            wineExecutable: resolveWineExecutable(),
+            targetExecutable: url,
+            arguments: runProgramArguments(for: url, args: args),
+            environment: constructWineEnvironment(for: bottle, environment: environment),
+            workingDirectory: workingDirectory ?? url.deletingLastPathComponent()
+        )
+    }
+
+    // swiftlint:disable:next function_body_length
+    public static func parseProgramArguments(_ value: String) -> [String] {
+        var arguments: [String] = []
+        var current = ""
+        var quote: Character?
+        var hasContent = false
+        let characters = Array(value)
+        var index = 0
+
+        while index < characters.count {
+            let character = characters[index]
+            if character == "\\" && quote != "'" {
+                let nextIndex = index + 1
+                let next = nextIndex < characters.count ? characters[nextIndex] : nil
+                let escapesNext = if quote == "\"" {
+                    next == "\\" || next == "\""
+                } else {
+                    next?.isWhitespace == true || next == "\\" || next == "\"" || next == "'"
+                }
+                if escapesNext, let next {
+                    current.append(next)
+                    index += 2
+                    hasContent = true
+                    continue
+                }
+                current.append(character)
+                hasContent = true
+            } else if character == "\"" || character == "'" {
+                if quote == character {
+                    quote = nil
+                } else if quote == nil {
+                    quote = character
+                    hasContent = true
+                } else {
+                    current.append(character)
+                }
+            } else if character.isWhitespace && quote == nil {
+                if hasContent {
+                    arguments.append(current)
+                    current = ""
+                    hasContent = false
+                }
+            } else {
+                current.append(character)
+                hasContent = true
+            }
+            index += 1
         }
 
-        return wineCmd
+        if hasContent {
+            arguments.append(current)
+        }
+        return arguments
     }
 
     public static func generateTerminalEnvironmentCommand(bottle: Bottle) -> String {
@@ -1136,17 +1248,6 @@ extension Wine {
         }
     }
 
-    static func generateRunProgramCommand(at url: URL, args: String) -> String {
-        switch url.pathExtension.lowercased() {
-        case "exe":
-            return "\(wineBinary.esc) \(url.esc) \(args)"
-        case "msi":
-            return "\(wineBinary.esc) msiexec /i \(url.esc) \(args)"
-        default:
-            return "\(wineBinary.esc) start /unix \(url.esc) \(args)"
-        }
-    }
-
     struct ProgramLaunchDiagnostics {
         let isWindowsExecutable: Bool
         let peType: String
@@ -1323,13 +1424,20 @@ extension Wine {
 
     private static func outputMode(
         for plan: CompatibilityLaunchPlan,
-        diagnostics: ProgramLaunchDiagnostics
+        diagnostics: ProgramLaunchDiagnostics,
+        launchMode: ProgramLaunchMode
     ) -> WineProcessOutputMode {
-        // GUI programs still present their own windows with stdout/stderr piped.  Capturing
-        // is essential for diagnosing a nonzero Wine exit; PE type must not discard it.
         _ = plan
-        _ = diagnostics
-        return .captured
+        return shouldCaptureProgramOutput(launchMode: launchMode, diagnostics: diagnostics)
+            ? .captured
+            : .uncaptured
+    }
+
+    static func shouldCaptureProgramOutput(
+        launchMode: ProgramLaunchMode,
+        diagnostics: ProgramLaunchDiagnostics
+    ) -> Bool {
+        launchMode != .terminalEquivalentGUI || !diagnostics.isWindowsGUI
     }
 
     private static func logProgramOutputMode(_ mode: WineProcessOutputMode, fileHandle: FileHandle) {
@@ -1337,6 +1445,8 @@ extension Wine {
         switch mode {
         case .captured:
             description = "captured stdout/stderr"
+        case .uncaptured:
+            description = "inherited stdout/stderr (no Swift Pipe)"
         }
 
         Logger.wineKit.info("Wine output mode: \(description, privacy: .public)")
@@ -1347,6 +1457,32 @@ extension Wine {
 
             """
         )
+    }
+
+    private static func logProgramProcessConfiguration(
+        _ configuration: ProgramProcessConfiguration,
+        outputMode: WineProcessOutputMode,
+        fileHandle: FileHandle
+    ) {
+        let environment = WineDiagnosticSanitizer.filteredRuntimeEnvironment(configuration.environment)
+        let captured = outputMode == .captured
+        let message = WineDiagnosticSanitizer.redact(
+            """
+            Terminal-equivalent GUI launch configuration:
+            Selected Wine executable: \(configuration.wineExecutable.path)
+            Target Windows executable: \(configuration.targetExecutable.path)
+            Final argv: \(configuration.arguments)
+            Working directory: \(configuration.workingDirectory.path)
+            Core Wine environment:
+            \(WineDiagnosticSanitizer.redactEnvironment(environment))
+            Standard output captured by Swift: \(captured)
+            Standard error captured by Swift: \(captured)
+            Launch mode: \(captured ? "captured" : "terminalEquivalentGUI")
+
+            """
+        )
+        Logger.wineKit.info("\(message, privacy: .public)")
+        fileHandle.write(line: message)
     }
 }
 

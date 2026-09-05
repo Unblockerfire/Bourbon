@@ -80,13 +80,28 @@ final class ProcessCaptureTests: XCTestCase {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", "exit 0"]
+        process.environment = [
+            "WINEPREFIX": "/tmp/Test Bottle",
+            "PRIVATE_TOKEN": "must-not-appear"
+        ]
 
         for await _ in try process.runUncaptured(name: "gui-boundary", fileHandle: logHandle) {}
 
         let log = try String(contentsOf: logURL, encoding: .utf8)
-        XCTAssertTrue(log.contains("Standard output attachment:"))
-        XCTAssertTrue(log.contains("Standard error attachment:"))
+        let outputAttachment = try XCTUnwrap(log.line(containing: "Standard output attachment:"))
+        let errorAttachment = try XCTUnwrap(log.line(containing: "Standard error attachment:"))
+        XCTAssertFalse(outputAttachment.contains("Pipe"))
+        XCTAssertFalse(errorAttachment.contains("Pipe"))
         XCTAssertTrue(log.contains("Termination handler attached: true"))
         XCTAssertTrue(log.contains("Launch mode: normalGUI"))
+        XCTAssertTrue(log.contains("WINEPREFIX=/tmp/Test Bottle"))
+        XCTAssertFalse(log.contains("PRIVATE_TOKEN"))
+        XCTAssertFalse(log.contains("must-not-appear"))
+    }
+}
+
+private extension String {
+    func line(containing value: String) -> String? {
+        split(separator: "\n").map(String.init).first { $0.contains(value) }
     }
 }
