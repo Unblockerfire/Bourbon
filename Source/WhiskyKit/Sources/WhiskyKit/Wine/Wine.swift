@@ -1254,7 +1254,6 @@ extension Wine {
     static func logProgramLaunchDiagnostics(
         url: URL, diagnostics: ProgramLaunchDiagnostics, fileHandle: FileHandle
     ) {
-        #if DEBUG
         guard diagnostics.isWindowsExecutable else { return }
         Logger.wineKit.info(
             """
@@ -1270,11 +1269,9 @@ extension Wine {
 
             """
         )
-        #endif
     }
 
     static func logCompatibilityLaunchPlan(_ plan: CompatibilityLaunchPlan, fileHandle: FileHandle) {
-        #if DEBUG
         let technologies = plan.analysis.technologies
             .map(\.rawValue)
             .sorted()
@@ -1307,7 +1304,6 @@ extension Wine {
 
             """
         )
-        #endif
     }
 
     static func logFinalLaunchDiagnostics(
@@ -1316,14 +1312,12 @@ extension Wine {
         fileHandle: FileHandle
     ) -> ProgramLaunchDiagnostics {
         let diagnostics = ProgramLaunchDiagnostics.inspect(url: plan.executableURL)
-        #if DEBUG
         guard plan.executableURL != originalURL else { return diagnostics }
         logProgramLaunchDiagnostics(
             url: plan.executableURL,
             diagnostics: diagnostics,
             fileHandle: fileHandle
         )
-        #endif
         return diagnostics
     }
 
@@ -1339,7 +1333,6 @@ extension Wine {
     }
 
     private static func logProgramOutputMode(_ mode: WineProcessOutputMode, fileHandle: FileHandle) {
-        #if DEBUG
         let description: String
         switch mode {
         case .captured:
@@ -1354,7 +1347,6 @@ extension Wine {
 
             """
         )
-        #endif
     }
 }
 

@@ -32,6 +32,17 @@ public extension Process {
         let stream = makeStream(name: name, fileHandle: fileHandle)
         self.logProcessInfo(name: name)
         fileHandle?.writeInfo(for: self)
+        self.logRunBoundary(name: name, launchMode: "captured", fileHandle: fileHandle)
+        try run()
+        return stream
+    }
+
+    /// Run a process without piping stdout/stderr through Swift.
+    func runUncaptured(name: String, fileHandle: FileHandle?) throws -> AsyncStream<ProcessOutput> {
+        let stream = makeUncapturedStream(name: name, fileHandle: fileHandle)
+        self.logProcessInfo(name: name)
+        fileHandle?.writeInfo(for: self)
+        self.logRunBoundary(name: name, launchMode: "normalGUI", fileHandle: fileHandle)
         try run()
         return stream
     }
@@ -85,6 +96,25 @@ public extension Process {
                     try fileHandle?.close()
                 } catch {
                     Logger.wineKit.error("Error while clearing data: \(error)")
+                }
+
+                continuation.yield(.terminated(process))
+                continuation.finish()
+            }
+        }
+    }
+
+    private func makeUncapturedStream(name: String, fileHandle: FileHandle?) -> AsyncStream<ProcessOutput> {
+        AsyncStream<ProcessOutput> { continuation in
+            configureCancellation(for: continuation)
+            continuation.yield(.started(self))
+
+            terminationHandler = { process in
+                do {
+                    process.logTermination(name: name, fileHandle: fileHandle)
+                    try fileHandle?.close()
+                } catch {
+                    Logger.wineKit.error("Error while closing log: \(error)")
                 }
 
                 continuation.yield(.terminated(process))
@@ -154,6 +184,39 @@ public extension Process {
             let safeEnvironment = WineDiagnosticSanitizer.redactEnvironment(runtimeEnvironment)
             Logger.wineKit.info("Environment: \(safeEnvironment, privacy: .public)")
         }
+    }
+
+    private func logRunBoundary(name: String, launchMode: String, fileHandle: FileHandle?) {
+        let executable = executableURL?.path(percentEncoded: false) ?? "<nil>"
+        let processArguments = arguments ?? []
+        let directory = currentDirectoryURL?.path(percentEncoded: false) ?? "<nil>"
+        let processEnvironment = WineDiagnosticSanitizer.redactEnvironment(
+            WineDiagnosticSanitizer.filteredRuntimeEnvironment(environment ?? [:])
+        )
+        let rawMessage = """
+        [BourbonWine Diagnostic] Process.run boundary
+        Name: \(name)
+        Process executableURL: \(executable)
+        Process argv: \(processArguments)
+        Process working directory: \(directory)
+        Process environment:
+        \(processEnvironment)
+        Standard input attachment: \(Self.attachmentDescription(standardInput))
+        Standard output attachment: \(Self.attachmentDescription(standardOutput))
+        Standard error attachment: \(Self.attachmentDescription(standardError))
+        Termination handler attached: \(terminationHandler != nil)
+        Launch API: Foundation.Process.run
+        Launch mode: \(launchMode)
+
+        """
+        let message = WineDiagnosticSanitizer.redact(rawMessage)
+        Logger.wineKit.info("\(message, privacy: .public)")
+        fileHandle?.write(line: message)
+    }
+
+    private static func attachmentDescription(_ attachment: Any?) -> String {
+        guard let attachment else { return "<nil>" }
+        return String(describing: type(of: attachment))
     }
 }
 
