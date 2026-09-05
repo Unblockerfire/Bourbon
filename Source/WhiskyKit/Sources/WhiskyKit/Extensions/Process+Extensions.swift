@@ -34,6 +34,7 @@ public extension Process {
         self.logProcessInfo(name: name)
         fileHandle?.writeInfo(for: self)
         #endif
+        self.logRunBoundary(name: name, launchMode: "captured", fileHandle: fileHandle)
         try run()
         return stream
     }
@@ -45,6 +46,7 @@ public extension Process {
         self.logProcessInfo(name: name)
         fileHandle?.writeInfo(for: self)
         #endif
+        self.logRunBoundary(name: name, launchMode: "normalGUI", fileHandle: fileHandle)
         try run()
         return stream
     }
@@ -186,6 +188,49 @@ public extension Process {
         }
     }
     #endif
+
+    private func logRunBoundary(name: String, launchMode: String, fileHandle: FileHandle?) {
+        let executable = executableURL?.path(percentEncoded: false) ?? "<nil>"
+        let processArguments = arguments ?? []
+        let directory = currentDirectoryURL?.path(percentEncoded: false) ?? "<nil>"
+        let processEnvironment = Self.diagnosticEnvironment(environment ?? [:])
+        let message = """
+        [BourbonWine Diagnostic] Process.run boundary
+        Name: \(name)
+        Process executableURL: \(executable)
+        Process argv: \(processArguments)
+        Process working directory: \(directory)
+        Process environment:
+        \(processEnvironment)
+        Standard input attachment: \(Self.attachmentDescription(standardInput))
+        Standard output attachment: \(Self.attachmentDescription(standardOutput))
+        Standard error attachment: \(Self.attachmentDescription(standardError))
+        Termination handler attached: \(terminationHandler != nil)
+        Launch API: Foundation.Process.run
+        Launch mode: \(launchMode)
+
+        """
+
+        Logger.wineKit.info("\(message, privacy: .public)")
+        fileHandle?.write(line: message)
+    }
+
+    private static func attachmentDescription(_ attachment: Any?) -> String {
+        guard let attachment else { return "<nil>" }
+        return String(describing: type(of: attachment))
+    }
+
+    private static func diagnosticEnvironment(_ environment: [String: String]) -> String {
+        guard !environment.isEmpty else { return "<empty>" }
+        return environment
+            .sorted { $0.key < $1.key }
+            .map { key, value in
+                let sensitiveFragments = ["TOKEN", "PASSWORD", "SECRET", "CREDENTIAL", "AUTH"]
+                let isSensitive = sensitiveFragments.contains { key.uppercased().contains($0) }
+                return "\(key)=\(isSensitive ? "<redacted>" : value)"
+            }
+            .joined(separator: "\n")
+    }
 }
 
 extension FileHandle {
