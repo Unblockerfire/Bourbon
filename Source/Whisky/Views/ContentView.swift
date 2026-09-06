@@ -101,6 +101,7 @@ struct ContentView: View {
     // an EmptyView while no update payload was available.
     @State private var runtimeUpdatePresentation: BourbonWineRuntimeUpdatePresentation?
     @State private var resolvedAccountLicense: BourbonLicenseRecord?
+    @State private var hasPresentedStartupRuntimeRepair = false
 
     @State private var bottleFilter = ""
 
@@ -275,7 +276,12 @@ struct ContentView: View {
                     "runtime.install.destination",
                     detail: "bundle_identifier=\(Bundle.whiskyBundleIdentifier)"
                 )
-                showSetup = true
+                // Present a given startup repair once. A user who explicitly closes
+                // it must be able to reach the app; the next launch will re-check.
+                if !hasPresentedStartupRuntimeRepair {
+                    hasPresentedStartupRuntimeRepair = true
+                    showSetup = true
+                }
             }
 
             if let legacyMarker = WhiskyWineInstaller.legacyRuntimeMarkerURL(),
@@ -1038,9 +1044,13 @@ struct GlobalInstallStatusBanner: View {
 enum BourbonStyle {
     static let amber = Color(red: 0.95, green: 0.63, blue: 0.24)
     static let amberDeep = Color(red: 0.58, green: 0.31, blue: 0.12)
-    static let backgroundTop = Color(red: 0.12, green: 0.08, blue: 0.06)
-    static let backgroundBottom = Color(red: 0.03, green: 0.025, blue: 0.022)
-    static let cardStroke = Color.white.opacity(0.14)
+    static let backgroundTop = Color(red: 0.08, green: 0.065, blue: 0.055)
+    static let backgroundBottom = Color(red: 0.027, green: 0.023, blue: 0.02)
+    static let panel = Color(red: 0.09, green: 0.075, blue: 0.06)
+    static let panelStrong = Color(red: 0.13, green: 0.10, blue: 0.078)
+    static let primaryText = Color(red: 1.0, green: 0.98, blue: 0.94)
+    static let secondaryText = Color(red: 0.78, green: 0.72, blue: 0.66)
+    static let cardStroke = Color(red: 0.96, green: 0.63, blue: 0.28).opacity(0.26)
 }
 
 struct BourbonBackground<Content: View>: View {
@@ -1057,7 +1067,7 @@ struct BourbonBackground<Content: View>: View {
 
             content
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(BourbonStyle.primaryText)
     }
 }
 
@@ -1083,13 +1093,10 @@ struct BourbonPanelBackdrop<Content: View>: View {
 
     var body: some View {
         ZStack {
-            Color.black
-                .ignoresSafeArea()
-
             LinearGradient(
                 colors: [
-                    Color.white.opacity(0.05),
-                    Color.black.opacity(0.2)
+                    BourbonStyle.backgroundTop,
+                    BourbonStyle.backgroundBottom
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -1099,7 +1106,7 @@ struct BourbonPanelBackdrop<Content: View>: View {
             content
                 .padding(34)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(BourbonStyle.primaryText)
     }
 }
 
@@ -1113,18 +1120,17 @@ struct BourbonFloatingPanel<Content: View>: View {
             .frame(maxWidth: maxWidth)
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(.ultraThinMaterial)
+                            .fill(BourbonStyle.panel)
                             .overlay {
                                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .fill(.white.opacity(0.16))
+                                    .fill(BourbonStyle.panelStrong.opacity(0.65))
                             }
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(.white.opacity(0.34), lineWidth: 1)
+                    .stroke(BourbonStyle.cardStroke, lineWidth: 1)
             }
             .shadow(color: .black.opacity(0.82), radius: 54, y: 38)
-            .shadow(color: .white.opacity(0.1), radius: 18, y: -10)
     }
 }
 
@@ -1134,13 +1140,13 @@ struct BourbonGlassCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        let effectiveCornerRadius = min(cornerRadius, 8)
+        let effectiveCornerRadius = cornerRadius
 
         content
             .padding(28)
             .frame(maxWidth: maxWidth)
             .background(
-                .white.opacity(0.07),
+                BourbonStyle.panelStrong,
                 in: RoundedRectangle(cornerRadius: effectiveCornerRadius, style: .continuous)
             )
             .overlay {

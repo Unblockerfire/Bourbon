@@ -46,6 +46,7 @@ struct WelcomeView: View {
         case displayName
         case legal
         case license
+        case licenseRecovery
         case welcomeHome
     }
 
@@ -60,11 +61,16 @@ struct WelcomeView: View {
     @State private var isCreatingAccount = false
     @State private var activatedLicenseKey: String?
     @State private var hasUsableLicense = false
+    @AppStorage("hasRejectedLicense") private var licenseWasRejected = false
+    @State private var recoveryLicenseKey = ""
+    @State private var isRecoveringLicense = false
+    @State private var recoveryError: String?
     @State private var installStatusRequestID = UUID()
     @State private var runtimeDiscovery: RuntimeDiscovery?
     @Binding var path: [SetupStage]
     @Binding var showSetup: Bool
     @Binding var showBottleCreation: Bool
+    @Binding var runtimeRepairState: RuntimeDiscovery.State?
     @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @AppStorage("hasCompletedFirstRunOnboarding") private var hasCompletedFirstRunOnboarding = false
     @AppStorage("hasInstalledDependencies") private var hasInstalledDependencies = false
@@ -92,6 +98,8 @@ struct WelcomeView: View {
                             legalAcceptanceContent
                         case .license:
                             licenseCreationContent
+                        case .licenseRecovery:
+                            licenseRecoveryContent
                         case .welcomeHome:
                             welcomeContent
                         }
@@ -121,6 +129,12 @@ struct WelcomeView: View {
         }
         .onChange(of: shouldCheckInstallStatus) {
             checkInstallStatus()
+        }
+        .onChange(of: runtimeRepairState) { _, state in
+            guard state == .ready else { return }
+            whiskyWineInstalled = true
+            rosettaInstalled = Rosetta2.isRequiredForBourbonWine ? Rosetta2.isRosettaInstalled : true
+            hasInstalledDependencies = true
         }
     }
 
@@ -521,6 +535,7 @@ struct WelcomeView: View {
             }.value
             guard requestID == installStatusRequestID, !Task.isCancelled else { return }
             runtimeDiscovery = discovery
+            runtimeRepairState = discovery.state
             let installed = discovery.state == .ready
             whiskyWineInstalled = installed
             hasInstalledDependencies = Rosetta2.bourbonWineDependenciesAreReady(
@@ -542,12 +557,18 @@ struct WelcomeView: View {
     }
 
     private var currentStep: OnboardingStep {
+        let licenseState = OnboardingLicenseState.resolve(
+            hasCompletedFirstRun: hasCompletedFirstRunOnboarding,
+            hasStoredLicense: hasUsableLicense,
+            storedLicenseIsRejected: licenseWasRejected
+        )
         if hasCompletedFirstRunOnboarding {
             let route = RuntimeStartupRouting.route(
                 onboardingCompleted: true,
-                runtimeState: runtimeDiscovery?.state
+                runtimeState: runtimeRepairState
             )
-            return route == .home ? .welcomeHome : .dependencies
+            if route != .home { return .dependencies }
+            return licenseState.requiresRecovery ? .licenseRecovery : .welcomeHome
         }
         if !hasSeenWelcome {
             return .welcome
@@ -561,10 +582,16 @@ struct WelcomeView: View {
         if !hasAcceptedLegalDocuments {
             return .legal
         }
-        if !hasCreatedLicense || !hasUsableLicense {
+        switch licenseState {
+        case .firstRunNeedsLicense:
             return .license
+        case .firstRunHasStoredLicense:
+            return .welcomeHome
+        case .returningValid:
+            return .welcomeHome
+        case .returningMissing, .returningInvalid:
+            return .licenseRecovery
         }
-        return .welcomeHome
     }
 
     private var sanitizedDisplayName: String {
@@ -592,7 +619,7 @@ struct WelcomeView: View {
         }
 
         if whiskyWineInstalled != true {
-            switch runtimeDiscovery?.state {
+            switch runtimeRepairState {
             case .gatekeeperBlocked:
                 WhiskyWineInstaller.recordRuntimeEvent(
                     "runtime.download.skipped_existing",
@@ -617,9 +644,18 @@ struct WelcomeView: View {
     }
 
     private func finishOnboardingAndCreateBottle() {
-        hasCompletedFirstRunOnboarding = true
+        persistCompletedFirstRun()
         showSetup = false
         showBottleCreation = true
+    }
+
+    private func persistCompletedFirstRun() {
+        hasSeenWelcome = true
+        hasChosenDisplayName = !storedDisplayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        hasAcceptedLegalDocuments = true
+        hasCreatedLicense = hasUsableLicense
+        hasInstalledDependencies = dependenciesAvailable
+        hasCompletedFirstRunOnboarding = true
     }
 
     private func migrateLegacyOnboardingFlags() {
@@ -653,6 +689,7 @@ struct WelcomeView: View {
                 await MainActor.run {
                     activatedLicenseKey = record.licenseKey ?? "\(record.publicLicenseId).\(record.licenseToken)"
                     hasUsableLicense = true
+                    hasCreatedLicense = true
                     isCreatingAccount = false
                 }
             } catch {
@@ -670,6 +707,60 @@ struct WelcomeView: View {
         hasUsableLicense = record != nil
         if hasUsableLicense {
             hasCreatedLicense = true
+        }
+    }
+
+    private var licenseRecoveryContent: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "key.horizontal.fill")
+                .font(.system(size: 46, weight: .semibold))
+                .foregroundStyle(BourbonStyle.amber)
+            Text("Restore your Bourbon license")
+                .font(.largeTitle.bold())
+            Text("This Mac no longer has a usable local license. Restore your existing license or contact support; Bourbon will not create a new identity here.")
+                .foregroundStyle(BourbonStyle.secondaryText)
+                .multilineTextAlignment(.center)
+            TextField("Existing license key", text: $recoveryLicenseKey)
+                .textFieldStyle(.roundedBorder)
+                .disabled(isRecoveringLicense)
+            if let recoveryError {
+                Text(recoveryError)
+                    .foregroundStyle(BourbonStyle.amber)
+                    .multilineTextAlignment(.center)
+            }
+            HStack {
+                Button("Open Support") {
+                    if let url = URL(string: BourbonSupport.discordURL) { NSWorkspace.shared.open(url) }
+                }
+                .buttonStyle(BourbonSecondaryButtonStyle())
+                Spacer()
+                Button(isRecoveringLicense ? "Restoring…" : "Restore License") { restoreExistingLicense() }
+                    .buttonStyle(BourbonPrimaryButtonStyle())
+                    .disabled(recoveryLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRecoveringLicense)
+            }
+        }
+    }
+
+    private func restoreExistingLicense() {
+        recoveryError = nil
+        isRecoveringLicense = true
+        let key = recoveryLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            do {
+                let outcome = try await BourbonLicenseAPI.recoverLicense(key: key)
+                try await LicenseKeychainStore.saveAsync(outcome.record)
+                await MainActor.run {
+                    hasUsableLicense = true
+                    hasCreatedLicense = true
+                    licenseWasRejected = false
+                    isRecoveringLicense = false
+                }
+            } catch {
+                await MainActor.run {
+                    isRecoveringLicense = false
+                    recoveryError = "Bourbon could not restore that license. Check the key, retry, or contact support."
+                }
+            }
         }
     }
 }

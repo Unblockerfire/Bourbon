@@ -9,6 +9,7 @@ struct WhiskyWineDownloadView: View {
     @Binding var runtimeSHA256: String?
     @Binding var manualRuntimeArchive: Bool
     @Binding var path: [SetupStage]
+    let onRuntimeReady: () -> Void
 
     @State private var downloadTask: URLSessionDownloadTask?
     @State private var observation: NSKeyValueObservation?
@@ -166,7 +167,7 @@ struct WhiskyWineDownloadView: View {
         case .ready:
             WhiskyWineInstaller.recordRuntimeEvent("runtime.download.reason", detail: "existing_runtime_ready")
             WhiskyWineInstaller.recordRuntimeEvent("runtime.download.skipped_existing", detail: "state=ready")
-            path.removeAll()
+            onRuntimeReady()
             return true
         case .gatekeeperBlocked:
             WhiskyWineInstaller.recordRuntimeEvent("runtime.download.reason", detail: "gatekeeper_blocked")

@@ -37,7 +37,10 @@ public final class Bottle: ObservableObject, Equatable, Hashable, Identifiable, 
                                  id: String)] {
         return settings.pins.compactMap { pin in
             let exists = FileManager.default.fileExists(atPath: pin.url?.path(percentEncoded: false) ?? "")
-            guard let program = programs.first(where: { $0.url == pin.url && exists }) else { return nil }
+            guard let pinURL = pin.url,
+                  let program = programs.first(where: {
+                      $0.canonicalIdentifier == ApplicationDiscovery.canonicalIdentifier(for: pinURL)
+                  }), exists else { return nil }
             return (pin, program, "\(pin.name)//\(program.url)")
         }
     }
@@ -63,11 +66,11 @@ public final class Bottle: ObservableObject, Equatable, Hashable, Identifiable, 
         }
 
         // Get rid of duplicates and pins that reference removed files
-        var found: Set<URL> = []
+        var found = Set<String>()
         self.settings.pins = self.settings.pins.filter { pin in
             guard let url = pin.url else { return false }
-            guard !found.contains(url) else { return false }
-            found.insert(url)
+            guard ApplicationDiscovery.isEligibleExecutable(url) else { return false }
+            guard found.insert(ApplicationDiscovery.canonicalIdentifier(for: url)).inserted else { return false }
             let urlPath = url.path(percentEncoded: false)
             let volume: URL?
             do {

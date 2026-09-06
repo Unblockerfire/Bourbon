@@ -39,6 +39,7 @@ struct SetupView: View {
     var firstTime: Bool = true
     var runtimeRepairState: RuntimeDiscovery.State?
     @State private var showIntro = true
+    @State private var resolvedRuntimeState: RuntimeDiscovery.State?
     @AppStorage("hasSeenIntroVideo") private var hasSeenIntroVideo = false
     @AppStorage("hasCompletedFirstRunOnboarding") private var hasCompletedFirstRunOnboarding = false
 
@@ -60,7 +61,8 @@ struct SetupView: View {
                         path: $path,
                         showSetup: $showSetup,
                         showBottleCreation: $showBottleCreation,
-                        firstTime: firstTime
+                        firstTime: firstTime,
+                        runtimeRepairState: $resolvedRuntimeState
                     )
                     .navigationBarBackButtonHidden(true)
                     .navigationDestination(for: SetupStage.self) { stage in
@@ -73,7 +75,8 @@ struct SetupView: View {
                                 runtimeVersion: $runtimeVersion,
                                 runtimeSHA256: $runtimeSHA256,
                                 manualRuntimeArchive: $manualRuntimeArchive,
-                                path: $path
+                                path: $path,
+                                onRuntimeReady: runtimeBecameReady
                             )
                         case .whiskyWineInstall:
                             WhiskyWineInstallView(
@@ -82,12 +85,14 @@ struct SetupView: View {
                                 runtimeSHA256: $runtimeSHA256,
                                 manualRuntimeArchive: $manualRuntimeArchive,
                                 path: $path,
-                                showSetup: $showSetup
+                                showSetup: $showSetup,
+                                onRuntimeReady: runtimeBecameReady
                             )
                         case .whiskyWineGatekeeperRecovery:
                             WhiskyWineGatekeeperRecoveryView(
                                 path: $path,
-                                showSetup: $showSetup
+                                showSetup: $showSetup,
+                                onRuntimeReady: runtimeBecameReady
                             )
                         }
                     }
@@ -95,11 +100,18 @@ struct SetupView: View {
             }
         }
         .onAppear {
+            if resolvedRuntimeState == nil { resolvedRuntimeState = runtimeRepairState }
             if hasSeenIntroVideo {
                 showIntro = false
             }
             routeReturningUserToRuntimeRecovery()
         }
+    }
+
+    private func runtimeBecameReady() {
+        resolvedRuntimeState = .ready
+        path.removeAll()
+        if hasCompletedFirstRunOnboarding { showSetup = false }
     }
 
     private func startReturningUserUpdateCheck() {

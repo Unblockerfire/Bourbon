@@ -87,7 +87,10 @@ struct PinCreationView: View {
         guard let selectedProgram else { return }
 
         // Ensure this pin doesn't already exist
-        guard !bottle.settings.pins.contains(where: { $0.url == selectedProgram.url })
+        guard !bottle.settings.pins.contains(where: {
+            guard let url = $0.url else { return false }
+            return ApplicationDiscovery.canonicalIdentifier(for: url) == selectedProgram.canonicalIdentifier
+        })
         else {
             isDuplicate = true
             return

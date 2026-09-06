@@ -30,6 +30,7 @@ struct WhiskyWineInstallView: View {
     @Binding var manualRuntimeArchive: Bool
     @Binding var path: [SetupStage]
     @Binding var showSetup: Bool
+    let onRuntimeReady: () -> Void
     @AppStorage("hasInstalledDependencies") private var hasInstalledDependencies = false
 
     var body: some View {
@@ -140,6 +141,6 @@ struct WhiskyWineInstallView: View {
     func proceed(runtimeReady: Bool) {
         hasInstalledDependencies = runtimeReady
         installing = false
-        path.removeAll()
+        onRuntimeReady()
     }
 }

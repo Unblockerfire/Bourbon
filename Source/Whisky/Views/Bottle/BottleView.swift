@@ -461,13 +461,16 @@ final class InstallManager: ObservableObject {
     }
 
     private func runInstall(_ url: URL, bottle: Bottle, installID: UUID) async {
+        recordInstallerLifecycleEvidence(phase: "before_launch", installer: url, bottle: bottle)
         do {
             try await attemptDirectInstall(url, bottle: bottle, installID: installID)
+            recordInstallerLifecycleEvidence(phase: "launcher_terminated", installer: url, bottle: bottle)
             try Task.checkCancellation()
             guard workflow.beginFinalization(
                 detail: "Refreshing app list...", for: installID
             ) else { return }
             try bottle.refreshInstalledPrograms()
+            recordInstallerLifecycleEvidence(phase: "after_refresh", installer: url, bottle: bottle)
             try Task.checkCancellation()
             guard workflow.succeed(detail: "\(url.lastPathComponent) finished.", for: installID) else { return }
             successMessage = "\(url.lastPathComponent) in \(bottle.settings.name) finished."
@@ -476,6 +479,7 @@ final class InstallManager: ObservableObject {
         } catch is CancellationError {
             // cancelInstall() owns the user-facing completion state for deliberate cleanup.
         } catch {
+            recordInstallerLifecycleEvidence(phase: "launch_failed", installer: url, bottle: bottle)
             guard workflow.installID == installID else { return }
             try? await Wine.stopBottleProcesses(bottle: bottle, reason: "installer_failed")
             guard workflow.fail(
@@ -487,6 +491,35 @@ final class InstallManager: ObservableObject {
                 message: error.localizedDescription
             )
         }
+    }
+
+    /// Evidence only: this does not change installer or Wine lifecycle behavior.
+    /// It deliberately records counts and filenames rather than bottle paths.
+    private func recordInstallerLifecycleEvidence(phase: String, installer: URL, bottle: Bottle) {
+        let driveC = bottle.url.appending(path: "drive_c")
+        let enumerator = FileManager.default.enumerator(
+            at: driveC,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )
+        var executableCount = 0
+        var shortcutCount = 0
+        var steamExecutablePresent = false
+        while let candidate = enumerator?.nextObject() as? URL {
+            let name = candidate.lastPathComponent.lowercased()
+            if candidate.pathExtension.caseInsensitiveCompare("exe") == .orderedSame {
+                executableCount += 1
+                steamExecutablePresent = steamExecutablePresent || name == "steam.exe"
+            } else if candidate.pathExtension.caseInsensitiveCompare("lnk") == .orderedSame {
+                shortcutCount += 1
+            }
+        }
+        BourbonLicenseDiagnostics.record(
+            "installer.lifecycle",
+            detail: "phase=\(phase) installer=\(installer.lastPathComponent) " +
+                "executables=\(executableCount) shortcuts=\(shortcutCount) " +
+                "visible_apps=\(bottle.programs.count) steam_executable_present=\(steamExecutablePresent)"
+        )
     }
 
     private func attemptDirectInstall(_ url: URL, bottle: Bottle, installID: UUID) async throws {

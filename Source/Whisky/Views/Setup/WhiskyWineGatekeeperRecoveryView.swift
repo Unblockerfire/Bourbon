@@ -10,6 +10,7 @@ import WhiskyKit
 struct WhiskyWineGatekeeperRecoveryView: View {
     @Binding var path: [SetupStage]
     @Binding var showSetup: Bool
+    let onRuntimeReady: () -> Void
     @AppStorage("hasInstalledDependencies") private var hasInstalledDependencies = false
     @State private var retrying = false
     @State private var errorMessage: String?
@@ -101,7 +102,7 @@ struct WhiskyWineGatekeeperRecoveryView: View {
                 _ = try await WhiskyWineInstaller.retryInstalledRuntimeReadiness()
                 outcome = "success"
                 hasInstalledDependencies = true
-                path.removeAll()
+                onRuntimeReady()
             } catch let error as WineRuntimePreflightError where error.isGatekeeperBlocked {
                 outcome = "gatekeeper_blocked"
                 WhiskyWineInstaller.recordRuntimeEvent("runtime.gatekeeper.detected")
@@ -131,7 +132,7 @@ struct WhiskyWineGatekeeperRecoveryView: View {
                 _ = try await WhiskyWineInstaller.retryInstalledRuntimeReadiness()
                 outcome = "restored_previous"
                 hasInstalledDependencies = true
-                path.removeAll()
+                onRuntimeReady()
             } catch {
                 outcome = "restore_failed"
                 errorMessage = error.localizedDescription

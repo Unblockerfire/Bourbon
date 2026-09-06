@@ -99,9 +99,10 @@ extension Bottle {
                 if let program = ShellLinkHeader.getProgram(url: link,
                                                             handle: try FileHandle(forReadingFrom: link),
                                                             bottle: self) {
-                    if !startMenuPrograms.contains(where: { $0.url == program.url }) {
+                    if !startMenuPrograms.contains(where: {
+                        $0.canonicalIdentifier == program.canonicalIdentifier
+                    }) {
                         startMenuPrograms.append(program)
-                        try FileManager.default.removeItem(at: link)
                     }
                 }
             } catch {
@@ -122,8 +123,8 @@ extension Bottle {
 
     func refreshInstalledPrograms() throws {
         let driveC = url.appending(path: "drive_c")
-        var programs: [Program] = []
-        var foundURLS: Set<URL> = []
+        var scannedURLs: [URL] = []
+        let blocked = Set(settings.blocklist.map(ApplicationDiscovery.canonicalIdentifier(for:)))
 
         for folderName in ["Program Files", "Program Files (x86)"] {
             let folderURL = driveC.appending(path: folderName)
@@ -135,21 +136,30 @@ extension Bottle {
             }
 
             while let url = enumerator.nextObject() as? URL {
-                guard !url.hasDirectoryPath && url.pathExtension == "exe" else { continue }
-                guard !settings.blocklist.contains(url) else { continue }
-                foundURLS.insert(url)
-                programs.append(Program(url: url, bottle: self))
+                guard !url.hasDirectoryPath && url.pathExtension.caseInsensitiveCompare("exe") == .orderedSame else { continue }
+                guard !blocked.contains(ApplicationDiscovery.canonicalIdentifier(for: url)) else { continue }
+                scannedURLs.append(url)
             }
         }
 
-        // Add missing programs from pins
+        let startMenuURLs = getStartMenuPrograms().map(\.url)
+        let selection = ApplicationDiscovery.deduplicatedEligibleURLs(startMenuURLs + scannedURLs)
+        var selectedURLs = selection.urls
+        var seen = Set(selectedURLs.map(ApplicationDiscovery.canonicalIdentifier(for:)))
+
+        // Retain existing pins only when they still identify a user-facing program.
         for pin in settings.pins {
             guard let url = pin.url else { continue }
-            guard !foundURLS.contains(url) else { continue }
-            programs.append(Program(url: url, bottle: self))
+            guard ApplicationDiscovery.isEligibleExecutable(url) else { continue }
+            if seen.insert(ApplicationDiscovery.canonicalIdentifier(for: url)).inserted {
+                selectedURLs.append(url)
+            }
         }
 
-        self.programs = programs.sorted { $0.name.lowercased() < $1.name.lowercased() }
+        Logger.wineKit.info("Application discovery \(selection.report.diagnosticSummary, privacy: .public)")
+        self.programs = selectedURLs
+            .map { Program(url: $0, bottle: self) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     @MainActor

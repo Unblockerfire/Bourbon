@@ -24,6 +24,8 @@ struct BourbonIntroVideoView: View {
     @State private var surfaceDiagnosticReport = "No window hierarchy has been captured yet."
     @State private var diagnosticCopyConfirmation = false
     @State private var didStartReturningUserUpdateCheck = false
+    @State private var playerNotificationTokens: [NSObjectProtocol] = []
+    @AppStorage("hasRejectedLicense") private var hasRejectedLicense = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -48,6 +50,7 @@ struct BourbonIntroVideoView: View {
             applyDiagnosticWindowTitle()
             BourbonLicenseDiagnostics.record("license.ui.opened")
             reportResponsive(stage: "opened")
+            prepareIntroPlayerIfNeeded()
             startLicenseValidation()
         }
         .onDisappear {
@@ -301,6 +304,7 @@ struct BourbonIntroVideoView: View {
                         detail: "status=\(result.status.rawValue) allowed=\(result.allowed)"
                     )
                     if result.isValid && result.allowed && result.status == .valid {
+                        hasRejectedLicense = false
                         if result.warnings.isEmpty {
                             licenseGate = .valid
                             if finishPendingAfterValidation {
@@ -313,6 +317,7 @@ struct BourbonIntroVideoView: View {
                             licenseGate = .warning(result)
                         }
                     } else {
+                        hasRejectedLicense = true
                         player?.pause()
                         licenseGate = .blocked(result)
                     }
@@ -446,6 +451,7 @@ struct BourbonIntroVideoView: View {
                 await MainActor.run {
                     guard licenseActivity.finish(requestID) else { return }
                     if outcome.validation.warnings.isEmpty {
+                        hasRejectedLicense = false
                         licenseGate = .valid
                         if finishPendingAfterValidation {
                             completeIntro()
@@ -544,8 +550,20 @@ struct BourbonIntroVideoView: View {
 
         let player = AVPlayer(url: url)
         self.player = player
+        BourbonLicenseDiagnostics.record("intro.video.asset.loaded", detail: "resource=BourbonIntro.mov")
+        let center = NotificationCenter.default
+        playerNotificationTokens = [
+            center.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { _ in
+                BourbonLicenseDiagnostics.record("intro.video.playback.completed")
+            },
+            center.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: player.currentItem, queue: .main) { notification in
+                let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+                BourbonLicenseDiagnostics.record("intro.video.playback.failed", detail: "error=\(error?.localizedDescription ?? \"unknown\")")
+            }
+        ]
         player.play()
-        BourbonLicenseDiagnostics.record("license.player.created", detail: "stage=validation_succeeded")
+        BourbonLicenseDiagnostics.record("intro.video.player.created")
+        BourbonLicenseDiagnostics.record("intro.video.playback.started")
         reportSurfaceOwnership(stage: "intro_ready")
         if !didStartReturningUserUpdateCheck {
             didStartReturningUserUpdateCheck = true
@@ -558,6 +576,8 @@ struct BourbonIntroVideoView: View {
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         player = nil
+        playerNotificationTokens.forEach(NotificationCenter.default.removeObserver)
+        playerNotificationTokens.removeAll()
         showButton = false
         if hadPlayerSurface {
             BourbonLicenseDiagnostics.record("license.player.destroyed", detail: "reason=\(reason)")
@@ -609,10 +629,12 @@ private enum IntroLicenseGate {
     }
 
     var mountsIntroSurface: Bool {
-        if case .valid = self {
-            return true
+        switch self {
+        case .idle, .checking, .checkingAfterFinish, .valid:
+            true
+        case .recovering, .warning, .blocked, .unavailable:
+            false
         }
-        return false
     }
 
     var overlayDiagnosticName: String? {
