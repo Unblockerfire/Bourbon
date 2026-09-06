@@ -26,6 +26,20 @@ public class Rosetta2 {
         return FileManager.default.fileExists(atPath: rosetta2RuntimeBin)
     }()
 
+    /// BourbonWine is currently x86_64. It needs Rosetta only on Apple Silicon;
+    /// it runs natively on Intel Macs.
+    public static var isRequiredForBourbonWine: Bool {
+        HostArchitecture.current.requiresRosettaForX86Runtime
+    }
+
+    public static func bourbonWineDependenciesAreReady(
+        rosettaInstalled: Bool,
+        runtimeReady: Bool,
+        hostArchitecture: HostArchitecture = .current
+    ) -> Bool {
+        runtimeReady && (!hostArchitecture.requiresRosettaForX86Runtime || rosettaInstalled)
+    }
+
     public static func installRosetta() async throws -> Bool {
         let process = Process()
         let fileHandle = try Wine.makeFileHandle()

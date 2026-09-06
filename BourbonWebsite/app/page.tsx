@@ -24,7 +24,7 @@ import { featureCards, siteConfig } from "@/lib/siteConfig";
 const facts = [
   { value: `v${siteConfig.currentVersion}`, label: "Latest release" },
   { value: `macOS ${siteConfig.minimumMacOSVersion}+`, label: "System" },
-  { value: "Apple Silicon", label: "Architecture" },
+  { value: "Universal 2", label: "Architecture" },
   { value: "Free", label: "Price" }
 ];
 
@@ -103,7 +103,7 @@ export default function HomePage() {
           </div>
           <p className="heroFinePrint">
             <Apple aria-hidden="true" size={15} />
-            Built for Apple Silicon · Requires macOS{" "}
+            Apple Silicon + Intel · Requires macOS{" "}
             {siteConfig.minimumMacOSVersion}+
           </p>
         </div>
@@ -251,7 +251,7 @@ export default function HomePage() {
           <h2 id="download-title">Bring your Windows apps home.</h2>
           <p>
             Download Bourbon {siteConfig.currentVersion} for an Apple Silicon
-            Mac running macOS {siteConfig.minimumMacOSVersion} or later.
+            or Intel Mac running macOS {siteConfig.minimumMacOSVersion} or later.
           </p>
         </div>
         <div className="buttonRow">
@@ -281,7 +281,7 @@ export default function HomePage() {
         </nav>
         <p>
           <Cpu aria-hidden="true" size={15} />
-          Made for Apple Silicon
+          Universal 2 for Apple Silicon + Intel
         </p>
       </footer>
     </main>

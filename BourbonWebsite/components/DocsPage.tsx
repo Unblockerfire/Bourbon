@@ -173,13 +173,14 @@ function GettingStarted() {
       <section className="docsSection">
         <h2>What you need</h2>
         <ul>
-          <li>An Apple Silicon Mac with an M-series chip.</li>
-          <li>macOS 14 Sonoma or later.</li>
+          <li>An Apple Silicon or Intel Mac.</li>
+          <li>macOS 14 or later.</li>
         </ul>
       </section>
       <Callout warning>
-        Bourbon is designed for Apple Silicon. Intel Macs and macOS releases
-        before Sonoma are not supported by this release.
+        Bourbon supports Apple Silicon and Intel Macs running macOS 14 or later.
+        BourbonWine is currently x86_64, so Rosetta is required only on Apple
+        Silicon Macs.
       </Callout>
       <section className="docsSection">
         <h2>What is a Bottle?</h2>
@@ -568,7 +569,7 @@ function FAQ() {
     ["Is Bourbon free?", "Yes. Bourbon is available at no cost."],
     [
       "What Macs are supported?",
-      "Apple Silicon Macs with an M-series chip running macOS 14 Sonoma or later."
+      "Apple Silicon and Intel Macs running macOS 14 or later. Rosetta is required only on Apple Silicon while BourbonWine remains x86_64."
     ],
     [
       "Does Bourbon include Wine?",

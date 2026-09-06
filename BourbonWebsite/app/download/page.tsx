@@ -58,7 +58,7 @@ export default function DownloadPage() {
         <article>
           <ShieldCheck aria-hidden="true" size={26} />
           <h2>Minimum macOS</h2>
-          <p>{siteConfig.minimumMacOSVersion} or later on Apple Silicon.</p>
+          <p>{siteConfig.minimumMacOSVersion} or later on Apple Silicon or Intel.</p>
         </article>
         <article>
           <Github aria-hidden="true" size={26} />

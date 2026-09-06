@@ -161,9 +161,11 @@ struct WelcomeView: View {
             }
 
             VStack(spacing: 10) {
-                InstallStatusView(isInstalled: $rosettaInstalled,
-                                  shouldCheckInstallStatus: $shouldCheckInstallStatus,
-                                  name: "Rosetta")
+                if Rosetta2.isRequiredForBourbonWine {
+                    InstallStatusView(isInstalled: $rosettaInstalled,
+                                      shouldCheckInstallStatus: $shouldCheckInstallStatus,
+                                      name: "Rosetta")
+                }
                 InstallStatusView(isInstalled: $whiskyWineInstalled,
                                   shouldCheckInstallStatus: $shouldCheckInstallStatus,
                                   showUninstall: true,
@@ -509,7 +511,7 @@ struct WelcomeView: View {
     }
 
     func checkInstallStatus() {
-        rosettaInstalled = Rosetta2.isRosettaInstalled
+        rosettaInstalled = Rosetta2.isRequiredForBourbonWine ? Rosetta2.isRosettaInstalled : true
         installStatusRequestID = UUID()
         let requestID = installStatusRequestID
         WhiskyWineInstaller.recordRuntimeEvent("runtime.bootstrap.setup_check.started")
@@ -521,7 +523,10 @@ struct WelcomeView: View {
             runtimeDiscovery = discovery
             let installed = discovery.state == .ready
             whiskyWineInstalled = installed
-            hasInstalledDependencies = rosettaInstalled == true && installed
+            hasInstalledDependencies = Rosetta2.bourbonWineDependenciesAreReady(
+                rosettaInstalled: rosettaInstalled == true,
+                runtimeReady: installed
+            )
             WhiskyWineInstaller.recordRuntimeEvent(
                 "runtime.bootstrap.setup_check.completed",
                 detail: "state=\(discovery.state.rawValue) ready=\(installed)"
@@ -530,7 +535,10 @@ struct WelcomeView: View {
     }
 
     private var dependenciesInstalled: Bool {
-        rosettaInstalled == true && whiskyWineInstalled == true
+        Rosetta2.bourbonWineDependenciesAreReady(
+            rosettaInstalled: rosettaInstalled == true,
+            runtimeReady: whiskyWineInstalled == true
+        )
     }
 
     private var currentStep: OnboardingStep {
@@ -569,11 +577,16 @@ struct WelcomeView: View {
     }
 
     private var dependenciesAvailable: Bool {
-        dependenciesInstalled || (hasInstalledDependencies && rosettaInstalled == true && whiskyWineInstalled == true)
+        dependenciesInstalled || (
+            hasInstalledDependencies && Rosetta2.bourbonWineDependenciesAreReady(
+                rosettaInstalled: rosettaInstalled == true,
+                runtimeReady: whiskyWineInstalled == true
+            )
+        )
     }
 
     private func continueFromDependencies() {
-        if rosettaInstalled != true {
+        if Rosetta2.isRequiredForBourbonWine && rosettaInstalled != true {
             path.append(.rosetta)
             return
         }
@@ -697,7 +710,7 @@ struct ManualSetupView: View {
 
     var body: some View {
         VStack(alignment: .center, spacing: 10) {
-            if rosettaInstalled != true {
+            if Rosetta2.isRequiredForBourbonWine && rosettaInstalled != true {
                 ManualDependencyView(
                     name: "Rosetta",
                     reason: "Rosetta lets Bourbon run Intel Wine tools on Apple silicon Macs.",

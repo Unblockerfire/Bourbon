@@ -86,6 +86,12 @@ struct RosettaView: View {
     }
 
     func checkOrInstall() async {
+        guard Rosetta2.isRequiredForBourbonWine else {
+            installing = false
+            await proceed()
+            return
+        }
+
         if Rosetta2.isRosettaInstalled {
             installing = false
             await proceed()

@@ -71,8 +71,9 @@ Originally inspired by Whisky, Bourbon has grown into its own actively maintaine
 
 ## Requirements
 
-- Apple Silicon
-- macOS Sonoma 14+
+- macOS 14 or later
+- Apple Silicon and Intel Macs
+- Rosetta 2 on Apple Silicon (BourbonWine is currently x86_64); Intel Macs run it natively
 - Internet connection for downloads & updates
 
 ---
