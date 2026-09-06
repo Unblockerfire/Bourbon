@@ -34,6 +34,6 @@ lipo -create \
   "$WORK_DIR/build-arm64/cabextract" \
   "$WORK_DIR/build-x86_64/cabextract" \
   -output "$OUTPUT_PATH"
-lipo "$OUTPUT_PATH" -verify_arch arm64 x86_64
+lipo -verify_arch arm64 x86_64 "$OUTPUT_PATH"
 file "$OUTPUT_PATH"
 shasum -a 256 "$OUTPUT_PATH"
