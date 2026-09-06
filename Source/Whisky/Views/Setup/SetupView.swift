@@ -61,8 +61,8 @@ struct SetupView: View {
                         path: $path,
                         showSetup: $showSetup,
                         showBottleCreation: $showBottleCreation,
-                        firstTime: firstTime,
-                        runtimeRepairState: $resolvedRuntimeState
+                        runtimeRepairState: $resolvedRuntimeState,
+                        firstTime: firstTime
                     )
                     .navigationBarBackButtonHidden(true)
                     .navigationDestination(for: SetupStage.self) { stage in
