@@ -120,7 +120,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          APP="$RUNNER_TEMP/BourbonDevelopmentDerivedData/Build/Products/Release/Bourbon.app"
+          PRODUCTS="$RUNNER_TEMP/BourbonDevelopmentDerivedData/Build/Products/Release"
+          APP="$PRODUCTS/Bourbon.app"
           verify_universal() {
             local binary="$1"
             test -f "$binary"
@@ -129,7 +130,7 @@ jobs:
           }
 
           verify_universal "$APP/Contents/MacOS/Bourbon"
-          verify_universal "$APP/Contents/MacOS/WhiskyCmd"
+          verify_universal "$PRODUCTS/WhiskyCmd"
           verify_universal "$APP/Contents/MacOS/cabextract"
           verify_universal "$APP/Contents/PlugIns/WhiskyThumbnail.appex/Contents/MacOS/WhiskyThumbnail"
           verify_universal "$APP/Contents/Frameworks/Sparkle.framework/Sparkle"
