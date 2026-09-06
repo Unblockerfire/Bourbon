@@ -14,6 +14,7 @@ public struct InstallerLifecycleObservation: Equatable, Sendable {
     public let targetProcessIsRunning: Bool
     public let childWineProcessCount: Int
     public let wineDebuggerIsRunning: Bool
+    public let processTableStatus: InstallerProcessTableStatus
 
     public init(
         launcherPID: Int32? = nil,
@@ -21,7 +22,8 @@ public struct InstallerLifecycleObservation: Equatable, Sendable {
         launcherExitStatus: Int32? = nil,
         targetProcessIsRunning: Bool,
         childWineProcessCount: Int,
-        wineDebuggerIsRunning: Bool
+        wineDebuggerIsRunning: Bool,
+        processTableStatus: InstallerProcessTableStatus = .complete
     ) {
         self.launcherPID = launcherPID
         self.launcherIsRunning = launcherIsRunning
@@ -29,6 +31,7 @@ public struct InstallerLifecycleObservation: Equatable, Sendable {
         self.targetProcessIsRunning = targetProcessIsRunning
         self.childWineProcessCount = childWineProcessCount
         self.wineDebuggerIsRunning = wineDebuggerIsRunning
+        self.processTableStatus = processTableStatus
     }
 }
 

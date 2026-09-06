@@ -1623,57 +1623,22 @@ extension Wine {
         try await cleanup.value
     }
 
-    /// Observes the current macOS process table without changing Wine state.
-    /// `ps -E` exposes inherited WINEPREFIX values, allowing WineDbg to be
-    /// attributed to this Bottle rather than another active Bottle.
-    public static func installerLifecycleObservation(
+    /// Captures only immutable state so process-table inspection can run away from MainActor.
+    public static func installerLifecycleObservationRequest(
         bottle: Bottle,
         targetExecutableName: String
-    ) -> InstallerLifecycleObservation {
-        let lifecycle = BottleWineLifecycle.shared.snapshot(for: bottle)
-        let prefix = bottle.url.path(percentEncoded: false)
-        let target = targetExecutableName.lowercased()
-        let output: String
-        do {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/ps")
-            process.arguments = ["-axE", "-o", "pid=,ppid=,state=,command="]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = Pipe()
-            try process.run()
-            process.waitUntilExit()
-            output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        } catch {
-            return InstallerLifecycleObservation(
-                launcherPID: lifecycle?.launchPID,
-                launcherIsRunning: lifecycle?.launchPID != nil,
-                targetProcessIsRunning: false,
-                childWineProcessCount: 0,
-                wineDebuggerIsRunning: false
-            )
-        }
-
-        let scopedLines = output.split(separator: "\n").map(String.init).filter { line in
-            line.localizedCaseInsensitiveContains("WINEPREFIX=\(prefix)")
-        }
-        let launcherPID = lifecycle?.launchPID
-        let launcherIsRunning = launcherPID.map { pid in
-            scopedLines.contains { $0.split(whereSeparator: { $0.isWhitespace }).first == "\(pid)" }
-        } ?? false
-        let targetIsRunning = scopedLines.contains { $0.localizedCaseInsensitiveContains(target) }
-        let childWineProcesses = scopedLines.filter { line in
-            let lowercased = line.lowercased()
-            return lowercased.contains("wine") && !lowercased.contains("winedbg")
-        }.count
-        let wineDebuggerIsRunning = scopedLines.contains { $0.lowercased().contains("winedbg") }
-
-        return InstallerLifecycleObservation(
-            launcherPID: launcherPID,
-            launcherIsRunning: launcherIsRunning,
-            targetProcessIsRunning: targetIsRunning,
-            childWineProcessCount: childWineProcesses,
-            wineDebuggerIsRunning: wineDebuggerIsRunning
+    ) -> InstallerLifecycleObservationRequest {
+        InstallerLifecycleObservationRequest(
+            prefixPath: bottle.url.path(percentEncoded: false),
+            targetExecutableName: targetExecutableName,
+            lifecycle: BottleWineLifecycle.shared.snapshot(for: bottle)
         )
+    }
+
+    /// Observes the current macOS process table without changing Wine state.
+    public static func installerLifecycleObservation(
+        request: InstallerLifecycleObservationRequest
+    ) async -> InstallerLifecycleObservation {
+        await InstallerProcessTableObserver().observe(request)
     }
 }

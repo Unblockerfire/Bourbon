@@ -501,16 +501,21 @@ final class InstallManager: ObservableObject {
 
     private func startLifecycleObservation(for installer: URL, bottle: Bottle, installID: UUID) {
         lifecycleObservationTask?.cancel()
+        let request = Wine.installerLifecycleObservationRequest(
+            bottle: bottle,
+            targetExecutableName: installer.lastPathComponent
+        )
         lifecycleObservationTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled, let self, self.workflow.installID == installID,
                       self.workflow.state == .running else { return }
 
-                let observation = Wine.installerLifecycleObservation(
-                    bottle: bottle,
-                    targetExecutableName: installer.lastPathComponent
-                )
+                let observation = await Task.detached(priority: .utility) {
+                    await Wine.installerLifecycleObservation(request: request)
+                }.value
+                guard !Task.isCancelled, self.workflow.installID == installID,
+                      self.workflow.state == .running else { return }
                 if case let .failed(message) = InstallerLifecycleClassifier.decision(for: observation) {
                     self.recordInstallerLifecycleEvidence(
                         phase: "abnormal_process_state",
@@ -555,44 +560,52 @@ final class InstallManager: ObservableObject {
         bottle: Bottle,
         observation: InstallerLifecycleObservation? = nil
     ) {
-        let driveC = bottle.url.appending(path: "drive_c")
-        let enumerator = FileManager.default.enumerator(
-            at: driveC,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        )
-        var executableCount = 0
-        var shortcutCount = 0
-        var steamExecutablePresent = false
-        while let candidate = enumerator?.nextObject() as? URL {
-            let name = candidate.lastPathComponent.lowercased()
-            if candidate.pathExtension.caseInsensitiveCompare("exe") == .orderedSame {
-                executableCount += 1
-                steamExecutablePresent = steamExecutablePresent || name == "steam.exe"
-            } else if candidate.pathExtension.caseInsensitiveCompare("lnk") == .orderedSame {
-                shortcutCount += 1
-            }
-        }
-        let snapshot = observation ?? Wine.installerLifecycleObservation(
+        let request = Wine.installerLifecycleObservationRequest(
             bottle: bottle,
             targetExecutableName: installer.lastPathComponent
         )
+        let driveC = bottle.url.appending(path: "drive_c")
+        let visibleApplicationCount = bottle.programs.count
+        let windowsVersion = String(describing: bottle.settings.windowsVersion)
         let runtimeVersion = WhiskyWineInstaller.whiskyWineVersion().map(String.init(describing:)) ?? "unknown"
-        let launcherPID = snapshot.launcherPID.map(String.init) ?? "none"
-        let launcherExitStatus = snapshot.launcherExitStatus.map(String.init) ?? "unknown"
-        BourbonLicenseDiagnostics.record(
-            "installer.lifecycle",
-            detail: "phase=\(phase) installer=\(installer.lastPathComponent) " +
-                "executables=\(executableCount) shortcuts=\(shortcutCount) " +
-                "visible_apps=\(bottle.programs.count) steam_executable_present=\(steamExecutablePresent) " +
-                "launcher_pid=\(launcherPID) " +
-                "launcher_running=\(snapshot.launcherIsRunning) exit_status=" +
-                "\(launcherExitStatus) " +
-                "target_running=\(snapshot.targetProcessIsRunning) wine_children=" +
-                "\(snapshot.childWineProcessCount) winedbg=\(snapshot.wineDebuggerIsRunning) " +
-                "windows_version=\(bottle.settings.windowsVersion) host_arch=\(HostArchitecture.current) " +
-                "runtime_version=\(runtimeVersion) env=WINEPREFIX,WINEESYNC,WINEMSYNC,WINEDEBUG"
-        )
+        let hostArchitecture = String(describing: HostArchitecture.current)
+        let installerName = installer.lastPathComponent
+        Task.detached(priority: .utility) {
+            let snapshot = observation ?? await Wine.installerLifecycleObservation(request: request)
+            let enumerator = FileManager.default.enumerator(
+                at: driveC,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+            var executableCount = 0
+            var shortcutCount = 0
+            var steamExecutablePresent = false
+            while let candidate = enumerator?.nextObject() as? URL {
+                let name = candidate.lastPathComponent.lowercased()
+                if candidate.pathExtension.caseInsensitiveCompare("exe") == .orderedSame {
+                    executableCount += 1
+                    steamExecutablePresent = steamExecutablePresent || name == "steam.exe"
+                } else if candidate.pathExtension.caseInsensitiveCompare("lnk") == .orderedSame {
+                    shortcutCount += 1
+                }
+            }
+            let launcherPID = snapshot.launcherPID.map(String.init) ?? "none"
+            let launcherExitStatus = snapshot.launcherExitStatus.map(String.init) ?? "unknown"
+            BourbonLicenseDiagnostics.record(
+                "installer.lifecycle",
+                detail: "phase=\(phase) installer=\(installerName) " +
+                    "executables=\(executableCount) shortcuts=\(shortcutCount) " +
+                    "visible_apps=\(visibleApplicationCount) steam_executable_present=\(steamExecutablePresent) " +
+                    "launcher_pid=\(launcherPID) " +
+                    "launcher_running=\(snapshot.launcherIsRunning) exit_status=" +
+                    "\(launcherExitStatus) " +
+                    "target_running=\(snapshot.targetProcessIsRunning) wine_children=" +
+                    "\(snapshot.childWineProcessCount) winedbg=\(snapshot.wineDebuggerIsRunning) " +
+                    "process_table_status=\(snapshot.processTableStatus.rawValue) " +
+                    "windows_version=\(windowsVersion) host_arch=\(hostArchitecture) " +
+                    "runtime_version=\(runtimeVersion) env=WINEPREFIX,WINEESYNC,WINEMSYNC,WINEDEBUG"
+            )
+        }
     }
 
     private func attemptDirectInstall(_ url: URL, bottle: Bottle, installID: UUID) async throws {
