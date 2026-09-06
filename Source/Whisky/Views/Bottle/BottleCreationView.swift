@@ -142,20 +142,24 @@ struct BottleCreationView: View {
                     .font(.title2.bold())
 
                 TextField("Bottle Name (optional)", text: $newBottleName)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(BourbonTextFieldStyle())
                     .help("Name this bottle after the app or game you plan to install.")
 
                 Text(bottleNameHelperText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Picker("Bottle Type", selection: $bottleType) {
+                HStack(spacing: 8) {
                     ForEach(BourbonBottleType.allCases) { type in
-                        Label(type.title, systemImage: type.systemImage)
-                            .tag(type)
+                        Button {
+                            bottleType = type
+                        } label: {
+                            Label(type.title, systemImage: type.systemImage)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(BourbonChoiceButtonStyle(isSelected: bottleType == type))
                     }
                 }
-                .pickerStyle(.segmented)
                 .help("Choose a simple starting profile for this bottle.")
 
                 Picker("Windows version", selection: $newBottleVersion) {
@@ -164,6 +168,8 @@ struct BottleCreationView: View {
                             .tag(version)
                     }
                 }
+                .pickerStyle(.menu)
+                .tint(BourbonStyle.amber)
                 .help("Choose the Windows version this app should see.")
 
                 Text(newBottleVersion.supportDescription)
@@ -298,6 +304,27 @@ struct BottleCreationView: View {
             .lastPathComponent
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "-", with: " ")
+    }
+}
+
+private struct BourbonChoiceButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(isSelected ? BourbonStyle.backgroundBottom : BourbonStyle.primaryText)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 8)
+            .background(
+                isSelected ? BourbonStyle.amber : BourbonStyle.panelStrong,
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isSelected ? BourbonStyle.amber : BourbonStyle.cardStroke, lineWidth: 1)
+            }
+            .opacity(configuration.isPressed ? 0.82 : 1)
     }
 }
 

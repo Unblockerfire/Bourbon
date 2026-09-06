@@ -315,9 +315,11 @@ struct ContentView: View {
         HStack(spacing: 0) {
             sidebar
                 .frame(width: 260)
-                .background(.regularMaterial)
+                .background(BourbonStyle.sidebar)
 
-            Divider()
+            Rectangle()
+                .fill(BourbonStyle.cardStroke)
+                .frame(width: 1)
 
             NavigationStack {
                 detail
@@ -1047,10 +1049,25 @@ enum BourbonStyle {
     static let backgroundTop = Color(red: 0.08, green: 0.065, blue: 0.055)
     static let backgroundBottom = Color(red: 0.027, green: 0.023, blue: 0.02)
     static let panel = Color(red: 0.09, green: 0.075, blue: 0.06)
+    static let sidebar = Color(red: 0.055, green: 0.045, blue: 0.038)
     static let panelStrong = Color(red: 0.13, green: 0.10, blue: 0.078)
     static let primaryText = Color(red: 1.0, green: 0.98, blue: 0.94)
     static let secondaryText = Color(red: 0.78, green: 0.72, blue: 0.66)
     static let cardStroke = Color(red: 0.96, green: 0.63, blue: 0.28).opacity(0.26)
+}
+
+struct BourbonTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(BourbonStyle.panelStrong, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(BourbonStyle.cardStroke, lineWidth: 1)
+            }
+            .foregroundStyle(BourbonStyle.primaryText)
+    }
 }
 
 struct BourbonBackground<Content: View>: View {
@@ -1357,18 +1374,18 @@ struct DistilleryRequestView: View {
                             .foregroundStyle(.secondary)
 
                         TextField("Game or app name", text: $appName)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(BourbonTextFieldStyle())
                         TextField("Official website", text: $officialWebsite)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(BourbonTextFieldStyle())
                         TextField("Official download URL", text: $officialDownloadURL)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(BourbonTextFieldStyle())
                         Picker("Category", selection: $category) {
                             ForEach(categories, id: \.self) { category in
                                 Text(category).tag(category)
                             }
                         }
                         TextField("Notes", text: $notes, axis: .vertical)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(BourbonTextFieldStyle())
                             .lineLimit(3, reservesSpace: true)
 
                         Toggle(

@@ -36,7 +36,7 @@ private struct BottomBarViewModifier<BarContent>: ViewModifier where BarContent:
                     Divider()
                     barContent
                 }
-                .background(.regularMaterial)
+                .background(BourbonStyle.sidebar)
                 .buttonStyle(BottomBarButtonStyle())
             }
     }

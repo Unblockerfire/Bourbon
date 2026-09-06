@@ -323,7 +323,7 @@ struct WelcomeView: View {
             }
 
             TextField("Display name", text: $draftDisplayName)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(BourbonTextFieldStyle())
                 .disabled(isCreatingAccount)
 
             HStack {
@@ -724,7 +724,7 @@ struct WelcomeView: View {
                 .foregroundStyle(BourbonStyle.secondaryText)
                 .multilineTextAlignment(.center)
             TextField("Existing license key", text: $recoveryLicenseKey)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(BourbonTextFieldStyle())
                 .disabled(isRecoveringLicense)
             if let recoveryError {
                 Text(recoveryError)

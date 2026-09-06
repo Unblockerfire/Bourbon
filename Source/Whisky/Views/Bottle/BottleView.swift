@@ -372,6 +372,7 @@ final class InstallManager: ObservableObject {
     private var lastInstallerURL: URL?
     private var lastBottle: Bottle?
     private var installTask: Task<Void, Never>?
+    private var lifecycleObservationTask: Task<Void, Never>?
     private init() {}
 
     var workflowState: InstallerWorkflowState { workflow.state }
@@ -402,6 +403,8 @@ final class InstallManager: ObservableObject {
         installTask = Task(priority: .userInitiated) {
             await runInstall(url, bottle: bottle, installID: installID)
         }
+        recordRuntimeEvidence(for: bottle, installer: url)
+        startLifecycleObservation(for: url, bottle: bottle, installID: installID)
     }
 
     func retryLastInstall() {
@@ -437,6 +440,7 @@ final class InstallManager: ObservableObject {
             return
         }
         installTask?.cancel()
+        lifecycleObservationTask?.cancel()
         Task(priority: .userInitiated) {
             do {
                 try await Wine.stopBottleProcesses(bottle: bottle, reason: "installer_cancelled")
@@ -481,6 +485,7 @@ final class InstallManager: ObservableObject {
         } catch {
             recordInstallerLifecycleEvidence(phase: "launch_failed", installer: url, bottle: bottle)
             guard workflow.installID == installID else { return }
+            guard workflow.state != .failed else { return }
             try? await Wine.stopBottleProcesses(bottle: bottle, reason: "installer_failed")
             guard workflow.fail(
                 detail: "Bourbon tried the normal path and a recovery path.", for: installID
@@ -493,9 +498,62 @@ final class InstallManager: ObservableObject {
         }
     }
 
+    private func startLifecycleObservation(for installer: URL, bottle: Bottle, installID: UUID) {
+        lifecycleObservationTask?.cancel()
+        lifecycleObservationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled, let self, self.workflow.installID == installID,
+                      self.workflow.state == .running else { return }
+
+                let observation = Wine.installerLifecycleObservation(
+                    bottle: bottle,
+                    targetExecutableName: installer.lastPathComponent
+                )
+                if case let .failed(message) = InstallerLifecycleClassifier.decision(for: observation) {
+                    self.recordInstallerLifecycleEvidence(
+                        phase: "abnormal_process_state",
+                        installer: installer,
+                        bottle: bottle,
+                        observation: observation
+                    )
+                    guard self.workflow.fail(detail: "Installation failed. \(message)", for: installID) else {
+                        return
+                    }
+                    self.lastError = InstallerErrorInfo(
+                        bottleName: bottle.settings.name,
+                        installerURL: installer,
+                        message: message
+                    )
+                    return
+                }
+            }
+        }
+    }
+
+    private func recordRuntimeEvidence(for bottle: Bottle, installer: URL) {
+        Task(priority: .utility) {
+            let wineVersion = (try? await Wine.wineVersion()) ?? "unavailable"
+            let runtimeVersion = WhiskyWineInstaller.whiskyWineVersion()
+                .map(String.init(describing:)) ?? "unknown"
+            BourbonLicenseDiagnostics.record(
+                "installer.runtime",
+                detail: "installer=\(installer.lastPathComponent) bottle_id=\(bottle.url.lastPathComponent) " +
+                    "windows_version=\(bottle.settings.windowsVersion) host_arch=\(HostArchitecture.current) " +
+                    "bourbonwine_version=\(runtimeVersion) wine_version=\(wineVersion) " +
+                    "environment=WINEPREFIX,WINEESYNC,WINEMSYNC,WINEDEBUG"
+            )
+        }
+    }
+
     /// Evidence only: this does not change installer or Wine lifecycle behavior.
     /// It deliberately records counts and filenames rather than bottle paths.
-    private func recordInstallerLifecycleEvidence(phase: String, installer: URL, bottle: Bottle) {
+    private func recordInstallerLifecycleEvidence(
+        phase: String,
+        installer: URL,
+        bottle: Bottle,
+        observation: InstallerLifecycleObservation? = nil
+    ) {
         let driveC = bottle.url.appending(path: "drive_c")
         let enumerator = FileManager.default.enumerator(
             at: driveC,
@@ -514,11 +572,23 @@ final class InstallManager: ObservableObject {
                 shortcutCount += 1
             }
         }
+        let snapshot = observation ?? Wine.installerLifecycleObservation(
+            bottle: bottle,
+            targetExecutableName: installer.lastPathComponent
+        )
+        let runtimeVersion = WhiskyWineInstaller.whiskyWineVersion().map(String.init(describing:)) ?? "unknown"
         BourbonLicenseDiagnostics.record(
             "installer.lifecycle",
             detail: "phase=\(phase) installer=\(installer.lastPathComponent) " +
                 "executables=\(executableCount) shortcuts=\(shortcutCount) " +
-                "visible_apps=\(bottle.programs.count) steam_executable_present=\(steamExecutablePresent)"
+                "visible_apps=\(bottle.programs.count) steam_executable_present=\(steamExecutablePresent) " +
+                "launcher_pid=\(snapshot.launcherPID.map(String.init) ?? \"none\") " +
+                "launcher_running=\(snapshot.launcherIsRunning) exit_status=" +
+                "\(snapshot.launcherExitStatus.map(String.init) ?? \"unknown\") " +
+                "target_running=\(snapshot.targetProcessIsRunning) wine_children=" +
+                "\(snapshot.childWineProcessCount) winedbg=\(snapshot.wineDebuggerIsRunning) " +
+                "windows_version=\(bottle.settings.windowsVersion) host_arch=\(HostArchitecture.current) " +
+                "runtime_version=\(runtimeVersion) env=WINEPREFIX,WINEESYNC,WINEMSYNC,WINEDEBUG"
         )
     }
 
@@ -934,13 +1004,10 @@ struct InstallerErrorCard: View {
                     .font(.system(size: 36, weight: .semibold))
                     .foregroundStyle(BourbonStyle.amber)
 
-                Text("Installation couldn’t be completed.")
+                Text("Installation Failed")
                     .font(.title2.bold())
 
-                Text(
-                    "Bourbon tried the normal installation path and a recovery path. " +
-                    "You can try again or report the issue with diagnostic details."
-                )
+                Text(error.message)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -954,7 +1021,7 @@ struct InstallerErrorCard: View {
                         .buttonStyle(BourbonSecondaryButtonStyle())
                         .help("Prepare a troubleshooting report.")
 
-                    Button("Cancel", action: cancel)
+                    Button("Close", action: cancel)
                         .buttonStyle(BourbonSecondaryButtonStyle())
                         .help("Close this message.")
                 }

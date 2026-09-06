@@ -145,12 +145,11 @@ struct BourbonIntroVideoView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 28)
             .padding(.vertical, 12)
-            .background(.white.opacity(0.32), in: Capsule())
-            .background(.ultraThinMaterial, in: Capsule())
-            .foregroundStyle(.white)
+            .background(BourbonStyle.panelStrong, in: Capsule())
+            .foregroundStyle(BourbonStyle.primaryText)
             .overlay(
                 Capsule()
-                    .stroke(.white.opacity(0.38), lineWidth: 1)
+                    .stroke(BourbonStyle.cardStroke, lineWidth: 1)
             )
             .controlSize(.large)
             .padding(.bottom, 8)
@@ -161,19 +160,14 @@ struct BourbonIntroVideoView: View {
         .frame(width: introPanelSide(proxy), height: introPanelSide(proxy))
         .background(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(.white.opacity(0.12))
-                }
+                .fill(BourbonStyle.panel)
         )
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(.white.opacity(0.32), lineWidth: 1)
+                .stroke(BourbonStyle.cardStroke, lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.82), radius: 54, y: 38)
-        .shadow(color: .white.opacity(0.08), radius: 18, y: -10)
         .background(BourbonSurfaceOwnershipMarker(role: "intro_surface"))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -858,7 +852,7 @@ private struct LicenseUnavailableView: View {
                             .buttonStyle(BourbonSecondaryButtonStyle())
                     } else if showingKeyInput {
                         TextField("Paste your Bourbon license key", text: $licenseKey)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(BourbonTextFieldStyle())
                             .textSelection(.enabled)
 
                         HStack {
@@ -937,11 +931,11 @@ struct AdminUnlockView: View {
 
             VStack(spacing: 12) {
                 TextField("License ID", text: $licenseID)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(BourbonTextFieldStyle())
                     .disabled(isUnlocking)
 
                 SecureField("Admin password", text: $password)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(BourbonTextFieldStyle())
                     .disabled(isUnlocking)
             }
 
@@ -1055,7 +1049,7 @@ struct AdminLicenseModerationView: View {
 
             HStack {
                 TextField("BRBN-00000001", text: $lookupLicenseID)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(BourbonTextFieldStyle())
                     .disabled(isLookingUp || isApplying)
 
                 Button {
@@ -1106,7 +1100,7 @@ struct AdminLicenseModerationView: View {
             }
 
             TextField("Reason", text: $reason, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(BourbonTextFieldStyle())
                 .lineLimit(4, reservesSpace: true)
 
             Picker("Appeal", selection: $appealOption) {

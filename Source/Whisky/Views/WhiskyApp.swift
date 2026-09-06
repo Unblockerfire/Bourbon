@@ -67,6 +67,8 @@ struct WhiskyApp: App {
                     mainContent
                 }
             }
+            .preferredColorScheme(.dark)
+            .background(BourbonWindowAppearance())
         }
         // Don't ask me how this works, it just does
         .handlesExternalEvents(matching: ["{same path of URL?}"])
@@ -252,6 +254,28 @@ struct WhiskyApp: App {
             try FileManager.default.removeItem(atPath: d3dmPath)
         } catch {
             return
+        }
+    }
+}
+
+/// SwiftUI's preferred color scheme does not always reach AppKit's split-view
+/// chrome on a Light-mode host. Keep Bourbon's own windows in dark Aqua.
+private struct BourbonWindowAppearance: NSViewRepresentable {
+    func makeNSView(context: Context) -> AppearanceView { AppearanceView() }
+
+    func updateNSView(_ nsView: AppearanceView, context: Context) {
+        nsView.applyBourbonAppearance()
+    }
+
+    final class AppearanceView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            applyBourbonAppearance()
+        }
+
+        func applyBourbonAppearance() {
+            window?.appearance = NSAppearance(named: .darkAqua)
+            window?.backgroundColor = NSColor(calibratedRed: 0.027, green: 0.023, blue: 0.02, alpha: 1)
         }
     }
 }
