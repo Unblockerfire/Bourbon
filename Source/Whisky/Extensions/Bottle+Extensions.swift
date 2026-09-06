@@ -136,7 +136,8 @@ extension Bottle {
             }
 
             while let url = enumerator.nextObject() as? URL {
-                guard !url.hasDirectoryPath && url.pathExtension.caseInsensitiveCompare("exe") == .orderedSame else { continue }
+                guard !url.hasDirectoryPath,
+                      url.pathExtension.caseInsensitiveCompare("exe") == .orderedSame else { continue }
                 guard !blocked.contains(ApplicationDiscovery.canonicalIdentifier(for: url)) else { continue }
                 scannedURLs.append(url)
             }

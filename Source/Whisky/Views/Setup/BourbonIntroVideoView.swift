@@ -553,10 +553,14 @@ struct BourbonIntroVideoView: View {
         BourbonLicenseDiagnostics.record("intro.video.asset.loaded", detail: "resource=BourbonIntro.mov")
         let center = NotificationCenter.default
         playerNotificationTokens = [
-            center.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { _ in
+            center.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main
+            ) { _ in
                 BourbonLicenseDiagnostics.record("intro.video.playback.completed")
             },
-            center.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: player.currentItem, queue: .main) { notification in
+            center.addObserver(
+                forName: .AVPlayerItemFailedToPlayToEndTime, object: player.currentItem, queue: .main
+            ) { notification in
                 let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
                 BourbonLicenseDiagnostics.record("intro.video.playback.failed", detail: "error=\(error?.localizedDescription ?? \"unknown\")")
             }

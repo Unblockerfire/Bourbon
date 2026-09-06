@@ -717,7 +717,10 @@ struct WelcomeView: View {
                 .foregroundStyle(BourbonStyle.amber)
             Text("Restore your Bourbon license")
                 .font(.largeTitle.bold())
-            Text("This Mac no longer has a usable local license. Restore your existing license or contact support; Bourbon will not create a new identity here.")
+            Text(
+                "This Mac no longer has a usable local license. Restore your existing license or " +
+                    "contact support; Bourbon will not create a new identity here."
+            )
                 .foregroundStyle(BourbonStyle.secondaryText)
                 .multilineTextAlignment(.center)
             TextField("Existing license key", text: $recoveryLicenseKey)
@@ -734,7 +737,9 @@ struct WelcomeView: View {
                 }
                 .buttonStyle(BourbonSecondaryButtonStyle())
                 Spacer()
-                Button(isRecoveringLicense ? "Restoring…" : "Restore License") { restoreExistingLicense() }
+                Button(isRecoveringLicense ? "Restoring…" : "Restore License") {
+                    restoreExistingLicense()
+                }
                     .buttonStyle(BourbonPrimaryButtonStyle())
                     .disabled(recoveryLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRecoveringLicense)
             }

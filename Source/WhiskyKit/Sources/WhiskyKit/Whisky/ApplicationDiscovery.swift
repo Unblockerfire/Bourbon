@@ -49,7 +49,9 @@ public enum ApplicationDiscovery {
         return true
     }
 
-    public static func deduplicatedEligibleURLs(_ urls: [URL]) -> (urls: [URL], report: ApplicationDiscoveryReport) {
+    public static func deduplicatedEligibleURLs(
+        _ urls: [URL]
+    ) -> (urls: [URL], report: ApplicationDiscoveryReport) {
         var seen = Set<String>()
         var accepted: [URL] = []
         var rejectedHelpers = 0
