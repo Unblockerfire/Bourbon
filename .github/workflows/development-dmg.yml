@@ -124,7 +124,7 @@ jobs:
           verify_universal() {
             local binary="$1"
             test -f "$binary"
-            /usr/bin/lipo -verify_arch arm64 x86_64 "$binary"
+            /usr/bin/lipo "$binary" -verify_arch arm64 x86_64
             /usr/bin/file "$binary"
           }
 
