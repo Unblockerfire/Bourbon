@@ -578,14 +578,16 @@ final class InstallManager: ObservableObject {
             targetExecutableName: installer.lastPathComponent
         )
         let runtimeVersion = WhiskyWineInstaller.whiskyWineVersion().map(String.init(describing:)) ?? "unknown"
+        let launcherPID = snapshot.launcherPID.map(String.init) ?? "none"
+        let launcherExitStatus = snapshot.launcherExitStatus.map(String.init) ?? "unknown"
         BourbonLicenseDiagnostics.record(
             "installer.lifecycle",
             detail: "phase=\(phase) installer=\(installer.lastPathComponent) " +
                 "executables=\(executableCount) shortcuts=\(shortcutCount) " +
                 "visible_apps=\(bottle.programs.count) steam_executable_present=\(steamExecutablePresent) " +
-                "launcher_pid=\(snapshot.launcherPID.map(String.init) ?? \"none\") " +
+                "launcher_pid=\(launcherPID) " +
                 "launcher_running=\(snapshot.launcherIsRunning) exit_status=" +
-                "\(snapshot.launcherExitStatus.map(String.init) ?? \"unknown\") " +
+                "\(launcherExitStatus) " +
                 "target_running=\(snapshot.targetProcessIsRunning) wine_children=" +
                 "\(snapshot.childWineProcessCount) winedbg=\(snapshot.wineDebuggerIsRunning) " +
                 "windows_version=\(bottle.settings.windowsVersion) host_arch=\(HostArchitecture.current) " +
