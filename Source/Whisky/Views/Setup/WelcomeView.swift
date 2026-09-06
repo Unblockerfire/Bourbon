@@ -741,7 +741,10 @@ struct WelcomeView: View {
                     restoreExistingLicense()
                 }
                     .buttonStyle(BourbonPrimaryButtonStyle())
-                    .disabled(recoveryLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRecoveringLicense)
+                    .disabled(
+                        recoveryLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                            isRecoveringLicense
+                    )
             }
         }
     }

@@ -13,7 +13,8 @@ public struct ApplicationDiscoveryReport: Equatable, Sendable {
 
     /// This intentionally contains no paths: it is safe to include in diagnostics.
     public var diagnosticSummary: String {
-        "raw_candidates=\(rawCandidateCount) accepted_apps=\(acceptedApplicationCount) rejected_helpers=\(rejectedHelperCount)"
+        "raw_candidates=\(rawCandidateCount) accepted_apps=\(acceptedApplicationCount) " +
+            "rejected_helpers=\(rejectedHelperCount)"
     }
 }
 

@@ -562,7 +562,10 @@ struct BourbonIntroVideoView: View {
                 forName: .AVPlayerItemFailedToPlayToEndTime, object: player.currentItem, queue: .main
             ) { notification in
                 let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
-                BourbonLicenseDiagnostics.record("intro.video.playback.failed", detail: "error=\(error?.localizedDescription ?? \"unknown\")")
+                BourbonLicenseDiagnostics.record(
+                    "intro.video.playback.failed",
+                    detail: "error=\(error?.localizedDescription ?? \"unknown\")"
+                )
             }
         ]
         player.play()
