@@ -568,7 +568,6 @@ final class InstallManager: ObservableObject {
         let visibleApplicationCount = bottle.programs.count
         let windowsVersion = String(describing: bottle.settings.windowsVersion)
         let runtimeVersion = WhiskyWineInstaller.whiskyWineVersion().map(String.init(describing:)) ?? "unknown"
-        let hostArchitecture = String(describing: HostArchitecture.current)
         let installerName = installer.lastPathComponent
         Task.detached(priority: .utility) {
             let snapshot: InstallerLifecycleObservation
@@ -607,7 +606,7 @@ final class InstallManager: ObservableObject {
                     "target_running=\(snapshot.targetProcessIsRunning) wine_children=" +
                     "\(snapshot.childWineProcessCount) winedbg=\(snapshot.wineDebuggerIsRunning) " +
                     "process_table_status=\(snapshot.processTableStatus.rawValue) " +
-                    "windows_version=\(windowsVersion) host_arch=\(hostArchitecture) " +
+                    "windows_version=\(windowsVersion) host_arch=\(HostArchitecture.current) " +
                     "runtime_version=\(runtimeVersion) env=WINEPREFIX,WINEESYNC,WINEMSYNC,WINEDEBUG"
             )
         }
