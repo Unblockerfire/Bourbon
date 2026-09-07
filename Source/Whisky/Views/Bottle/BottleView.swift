@@ -571,7 +571,12 @@ final class InstallManager: ObservableObject {
         let hostArchitecture = String(describing: HostArchitecture.current)
         let installerName = installer.lastPathComponent
         Task.detached(priority: .utility) {
-            let snapshot = observation ?? await Wine.installerLifecycleObservation(request: request)
+            let snapshot: InstallerLifecycleObservation
+            if let observation {
+                snapshot = observation
+            } else {
+                snapshot = await Wine.installerLifecycleObservation(request: request)
+            }
             let enumerator = FileManager.default.enumerator(
                 at: driveC,
                 includingPropertiesForKeys: [.isRegularFileKey],
