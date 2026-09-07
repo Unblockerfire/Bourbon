@@ -155,6 +155,9 @@ jobs:
           test -d "$SOURCE_APP"
           mkdir -p "$OUTPUT_DIR" "$STAGING_DIR" "$MOUNT_DIR"
           ditto "$SOURCE_APP" "$DEVELOPMENT_APP"
+          ln -s /Applications "$STAGING_DIR/Applications"
+          test -L "$STAGING_DIR/Applications"
+          test "$(readlink "$STAGING_DIR/Applications")" = /Applications
 
           /usr/libexec/PlistBuddy -c 'Delete :SUFeedURL' "$DEVELOPMENT_APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c 'Add :SUEnableAutomaticChecks bool false' \
@@ -186,6 +189,8 @@ jobs:
 
           MOUNTED_APP="$MOUNT_DIR/Bourbon.app"
           test -d "$MOUNTED_APP"
+          test -L "$MOUNT_DIR/Applications"
+          test "$(readlink "$MOUNT_DIR/Applications")" = /Applications
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             "$MOUNTED_APP/Contents/Info.plist")" = "$DEVELOPMENT_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
@@ -195,6 +200,7 @@ jobs:
           ! /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$MOUNTED_APP/Contents/Info.plist" \
             >/dev/null 2>&1
           /usr/bin/codesign --verify --deep --strict --verbose=2 "$MOUNTED_APP"
+          /usr/bin/lipo "$MOUNTED_APP/Contents/MacOS/Bourbon" -verify_arch arm64 x86_64
 
           cat "$DMG_PATH.sha256"
           hdiutil detach "$MOUNT_DIR"

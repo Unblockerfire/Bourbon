@@ -146,6 +146,7 @@ private enum BourbonInstallationGuard {
 
         if isRunningFromMountedInstaller {
             showMountedInstallerAlert()
+            return
         }
 
         let copies = findInstalledCopies()
@@ -192,14 +193,14 @@ private enum BourbonInstallationGuard {
     @MainActor
     private static func showMountedInstallerAlert() {
         let alert = NSAlert()
-        alert.messageText = "Bourbon is currently running from the installer."
+        alert.messageText = "Move Bourbon to Applications before using it."
         alert.informativeText = """
-        To receive automatic updates and the best experience, drag Bourbon into your Applications folder before
-        using it.
+        Bourbon is running from a mounted installer. Drag Bourbon.app to Applications, then open the copy in
+        Applications for automatic updates and the best experience.
         """
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Open Applications")
-        alert.addButton(withTitle: "Reveal Installer")
+        alert.addButton(withTitle: "Show Applications Folder")
+        alert.addButton(withTitle: "Quit Bourbon")
         alert.addButton(withTitle: "Continue Anyway")
 
         NSApp.activate(ignoringOtherApps: true)
@@ -207,7 +208,7 @@ private enum BourbonInstallationGuard {
         case .alertFirstButtonReturn:
             NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications"))
         case .alertSecondButtonReturn:
-            NSWorkspace.shared.activateFileViewerSelecting([currentAppURL])
+            NSApp.terminate(nil)
         default:
             break
         }
