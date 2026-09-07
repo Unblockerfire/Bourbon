@@ -225,7 +225,7 @@ private final class ScopedProcessLineCollector: @unchecked Sendable {
     }
 
     func consumeRemaining(from handle: FileHandle) {
-        if let data = try? handle.readToEnd(), let data {
+        if let data = try? handle.readToEnd() {
             consume(data)
         }
     }
